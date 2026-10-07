@@ -1,17 +1,35 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Yujian.Mining;
+using Yujian.Shop;
 
 namespace Yujian.Building
 {
     /// <summary>
+    /// 蓝图的两种相位。新增值一律追加到末尾。
+    /// </summary>
+    public enum BuildingPhase
+    {
+        /// <summary>蓝图跟着鼠标走，等玩家点击地面落位。阶段 3 的行为。</summary>
+        Placing = 0,
+
+        /// <summary>蓝图已落位冻结，等玩家放入材料、再确认建造。阶段 4 新增。</summary>
+        Filling = 1,
+    }
+
+    /// <summary>
     /// 建筑系统入口。职责：
-    /// 1. 记住"玩家当前选中了哪个建筑"、"当前有没有蓝图在场"、"已经放了哪些建筑"；
+    /// 1. 记住"玩家当前选中了哪个建筑"、"当前有没有蓝图在场"、"已经放了哪些建筑"、"蓝图落位在哪"；
     /// 2. 生成 / 销毁蓝图；
-    /// 3. 确认放置时生成实体建筑。
+    /// 3. 蓝图落位（AnchorBlueprint）；
+    /// 4. 按材料颜色生成实体建筑（BuildAtAnchor）。
     ///
-    /// 不做坐标换算与重叠检测（BuildingPlacement 负责），不消耗材料（阶段 4 才做）。
-    /// 阶段 3 的建材是"只记录不结算"的，即使玩家零原料也允许放置。
+    /// 不做坐标换算与重叠检测（BuildingPlacement 负责），不决定该放哪几块料（BuildingConstruction 负责）。
+    ///
+    /// 阶段 4 的流程：SelectBuilding（蓝图跟鼠标）→ AnchorBlueprint（落位冻结）→
+    /// BuildingConstruction 往蓝图里放材料 → BuildAtAnchor（生成实体建筑）。
+    /// "点地面"不再是"立刻建出来"，中间多了填料这一步，这是阶段 4 与阶段 3 最大的区别。
     /// </summary>
     public class BuildingManager : MonoBehaviour
     {
@@ -50,12 +68,36 @@ namespace Yujian.Building
         private BuildingData selectedBuilding;
         private BuildingBlueprint currentBlueprint;
 
+        private BuildingPhase phase = BuildingPhase.Placing;
+        private Vector3 anchoredPosition;
+        private bool hasAnchor;
+
         private bool miningSuppressed;
         private bool miningEnabledBeforeSuppression;
         private bool miningRestorePending;
 
-        /// <summary>当前是否处于放置模式（场上有蓝图）。</summary>
+        /// <summary>
+        /// 蓝图被销毁时触发（无论是取消、撤回还是建成）。触发时机在蓝图被 Destroy 之前。
+        /// 参数 built = true 表示已经生成实体建筑，材料应视为已消耗；
+        /// false 表示放弃，订阅方（BuildingConstruction）应把蓝图里的材料退回库存。
+        /// </summary>
+        public event Action<bool> OnBlueprintClosed;
+
+        /// <summary>当前是否处于放置模式（场上有蓝图）。落位后仍为 true，所以相机不会退出建造视角。</summary>
         public bool IsPlacing => currentBlueprint != null;
+
+        /// <summary>当前相位。没有蓝图时恒为 Placing。</summary>
+        public BuildingPhase Phase => currentBlueprint == null ? BuildingPhase.Placing : phase;
+
+        /// <summary>蓝图是否已落位冻结、正在等玩家填料。</summary>
+        public bool IsFilling => currentBlueprint != null && phase == BuildingPhase.Filling;
+
+        /// <summary>
+        /// 蓝图落位的世界坐标。**实体建筑就生成在这个点上**，
+        /// 而不是"蓝图销毁前恰好所在的 transform"。将来接入地图方格时，
+        /// 吸附与占用登记只需要认这一个值。
+        /// </summary>
+        public Vector3 AnchoredPosition => anchoredPosition;
 
         /// <summary>当前选中的建筑数据，没有则为 null。</summary>
         public BuildingData SelectedBuilding => selectedBuilding;
@@ -142,6 +184,8 @@ namespace Yujian.Building
 
             currentBlueprint = blueprint;
             selectedBuilding = data;
+            phase = BuildingPhase.Placing;
+            hasAnchor = false;
             blueprint.Initialize(data);
             SetMiningSuppressed(true);
 
@@ -149,46 +193,103 @@ namespace Yujian.Building
             {
                 Debug.Log($"[BuildingManager] 已选中「{data.BuildingName}」（{data.BuildingType.ToChineseName()}），" +
                           $"占地 {data.Footprint.x}×{data.Footprint.y}，蓝图出现在 {defaultSpawnPosition}。" +
-                          $"所需材料 {data.GetRequirementText()} —— 阶段 3 不消耗材料，零原料也可放置。" +
-                          "移动鼠标调整位置，点击确认放置。");
+                          $"所需材料 {data.GetRequirementText()}。" +
+                          "移动鼠标调整位置，点击地面落位，然后在材料面板里把材料拖到蓝图上。");
             }
         }
 
         /// <summary>
         /// 取消当前选择：销毁蓝图、退出放置模式、恢复挖矿。
-        /// 阶段 3 的取消不涉及任何材料退回——因为阶段 3 根本没扣过材料。
+        /// 会先广播 OnBlueprintClosed(false)，BuildingConstruction 借此把蓝图里已放入的材料退回库存——
+        /// 否则取消一次就凭空吞掉玩家的料。
         /// </summary>
         public void CancelSelection()
         {
             bool hadSelection = selectedBuilding != null || currentBlueprint != null;
+
+            CloseBlueprint(false);
+
+            selectedBuilding = null;
+            phase = BuildingPhase.Placing;
+            hasAnchor = false;
+            SetMiningSuppressed(false);
+
+            if (hadSelection && logBuildingFlow)
+            {
+                Debug.Log("[BuildingManager] 已取消当前建筑蓝图，蓝图里已放入的材料已退回库存。");
+            }
+        }
+
+        /// <summary>
+        /// 关闭当前蓝图：先广播 OnBlueprintClosed 让订阅方处理材料，再销毁蓝图物体。
+        /// 所有销毁蓝图的路径都必须走这里，否则材料结算会被漏掉。
+        /// </summary>
+        private void CloseBlueprint(bool built)
+        {
+            OnBlueprintClosed?.Invoke(built);
 
             if (currentBlueprint != null)
             {
                 Destroy(currentBlueprint.gameObject);
                 currentBlueprint = null;
             }
-
-            selectedBuilding = null;
-            SetMiningSuppressed(false);
-
-            if (hadSelection && logBuildingFlow)
-            {
-                Debug.Log("[BuildingManager] 已取消当前建筑蓝图，未消耗也未退回任何材料（阶段 3 不结算材料）。");
-            }
         }
 
         /// <summary>
-        /// 在指定世界坐标放置当前选中的建筑：销毁蓝图 → 生成实体建筑 → 退出放置模式。
-        /// 坐标的有效性由 BuildingPlacement 判定，这里只做"有没有蓝图可放"的前置检查，
-        /// 以及"建筑预制体存在吗"这类只有本类才知道的检查。
+        /// 把当前蓝图落位到指定世界坐标：蓝图停在这里不再跟鼠标，进入 Filling 相位等玩家填料。
+        ///
+        /// 阶段 4 起「点地面」不再等于「建出来」——中间多了填料与确认两步。
+        /// 这么拆也是为了将来接入地图方格：「选格落位」与「建造」本来就是两件事。
+        /// 坐标的有效性由 BuildingPlacement 判定，这里只做前置检查。
         /// </summary>
-        /// <param name="position">放置点的世界坐标（地面上的点）。</param>
-        /// <returns>是否放置成功。</returns>
-        public bool PlaceBuilding(Vector3 position)
+        /// <param name="position">落位点的世界坐标（地面上的点）。</param>
+        /// <returns>是否落位成功。</returns>
+        public bool AnchorBlueprint(Vector3 position)
         {
             if (selectedBuilding == null || currentBlueprint == null)
             {
-                Debug.LogWarning("[BuildingManager] 当前没有待放置的蓝图，PlaceBuilding 被忽略。", this);
+                Debug.LogWarning("[BuildingManager] 当前没有待落位的蓝图，AnchorBlueprint 被忽略。", this);
+                return false;
+            }
+
+            if (phase == BuildingPhase.Filling)
+            {
+                // 幂等：已经落位了就别再挪它，免得玩家拖材料时手抖点到地面把蓝图挪走
+                return true;
+            }
+
+            anchoredPosition = position;
+            hasAnchor = true;
+            phase = BuildingPhase.Filling;
+            currentBlueprint.transform.position = position;
+
+            if (logBuildingFlow)
+            {
+                Debug.Log($"[BuildingManager] 蓝图已落位在 {position}，" +
+                          $"所需材料 {selectedBuilding.GetRequirementText()}。" +
+                          "现在把材料拖到蓝图上，凑齐后点「确认建造」。");
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 在落位点生成实体建筑，并把每块材料的颜色刷到对应的楼层上。
+        /// 材料够不够由 BuildingConstruction 判定，本类不重复校验。
+        /// </summary>
+        /// <param name="layerColors">自下而上的楼层颜色，长度 = 放进去的材料块数。</param>
+        /// <returns>是否建造成功。</returns>
+        public bool BuildAtAnchor(IReadOnlyList<MaterialColor> layerColors)
+        {
+            if (selectedBuilding == null || currentBlueprint == null)
+            {
+                Debug.LogWarning("[BuildingManager] 当前没有待建造的蓝图，BuildAtAnchor 被忽略。", this);
+                return false;
+            }
+
+            if (phase != BuildingPhase.Filling || !hasAnchor)
+            {
+                Debug.LogWarning("[BuildingManager] 蓝图还没有落位，不能建造。请先点击地面把蓝图放下。", this);
                 return false;
             }
 
@@ -196,17 +297,19 @@ namespace Yujian.Building
 
             if (data.BuildingPrefab == null)
             {
-                Debug.LogError($"[BuildingManager] 建筑「{data.BuildingName}」没有配置建筑 Prefab，无法放置。" +
-                               "蓝图保持不动，可以取消后重新选择。", this);
+                Debug.LogError($"[BuildingManager] 建筑「{data.BuildingName}」没有配置建筑 Prefab，无法建造。" +
+                               "蓝图保持不动，材料还在里面，可以取消后重新选择。", this);
                 return false;
             }
 
             GameObject instance = Instantiate(
-                data.BuildingPrefab, position, Quaternion.identity, buildingRoot);
+                data.BuildingPrefab, anchoredPosition, Quaternion.identity, buildingRoot);
 
             instance.name = data.BuildingName;
             ApplyBuildingLayer(instance);
             placedBuildings.Add(instance);
+
+            ApplyLayerColors(instance, layerColors);
 
             if (instance.GetComponentInChildren<Collider>() == null)
             {
@@ -216,16 +319,38 @@ namespace Yujian.Building
 
             if (logBuildingFlow)
             {
-                Debug.Log($"[BuildingManager] 已在 {position} 放置「{data.BuildingName}」，" +
-                          $"当前场上共 {placedBuildings.Count} 座建筑。未消耗任何材料（阶段 4 才扣料）。");
+                Debug.Log($"[BuildingManager] 已在 {anchoredPosition} 建成「{data.BuildingName}」，" +
+                          $"共 {layerColors?.Count ?? 0} 层，当前场上共 {placedBuildings.Count} 座建筑。");
             }
 
-            Destroy(currentBlueprint.gameObject);
-            currentBlueprint = null;
+            // 先广播：材料已被消耗，BuildingConstruction 收到后清空历史，此后不能再通过蓝图撤回
+            CloseBlueprint(true);
             selectedBuilding = null;
+            phase = BuildingPhase.Placing;
+            hasAnchor = false;
             SetMiningSuppressed(false);
 
             return true;
+        }
+
+        /// <summary>
+        /// 把材料颜色刷到建筑的楼层上。
+        /// 预制体上没挂 BuildingLayerStack 时明确报错，不静默——否则建筑会以预制体原样出现，
+        /// 玩家看不出"颜色没生效"和"这块料本来就是这颜色"的区别。
+        /// </summary>
+        private void ApplyLayerColors(GameObject instance, IReadOnlyList<MaterialColor> layerColors)
+        {
+            BuildingLayerStack stack = instance.GetComponent<BuildingLayerStack>();
+
+            if (stack == null)
+            {
+                Debug.LogError($"[BuildingManager] 建筑预制体「{instance.name}」的根物体上没有 BuildingLayerStack 组件，" +
+                               "楼层不会显示任何颜色。\n" +
+                               "请运行菜单「屿见/配置建造系统（阶段 4）」重建建筑预制体。", instance);
+                return;
+            }
+
+            stack.Apply(layerColors);
         }
 
         /// <summary>
@@ -301,7 +426,7 @@ namespace Yujian.Building
             }
 
             // 不在这里立刻恢复：本方法可能是从 Player/Attack 的一次 performed 回调里被调用的
-            // （BuildingPlacement 确认放置 → PlaceBuilding → 这里）。当场重新启用会让 MiningInput
+            // （BuildingPlacement 确认落位 → AnchorBlueprint → 这里）。当场重新启用会让 MiningInput
             // 在同一次回调派发过程中重新订阅该动作，"同一次点击会不会再挖一次矿"取决于 Input System
             // 内部的派发快照实现——这条我无法在本地实证，所以统一延到本帧末尾恢复，
             // 让"确认放置的那一次点击"在时序上不可能同时触发挖矿。

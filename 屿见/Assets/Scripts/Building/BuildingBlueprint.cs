@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Yujian.Building
@@ -31,6 +32,11 @@ namespace Yujian.Building
 
         [SerializeField] private Color invalidTint = new Color(0.85f, 0.25f, 0.22f, 0.45f);
 
+        [Header("材料楼层")]
+        [Tooltip("蓝图上显示「已放入材料」的楼层组件。留空则蓝图只显示整体绿/红，看不到放了哪些颜色的料。" +
+                 "由菜单「屿见/配置建造系统（阶段 4）」自动接线")]
+        [SerializeField] private BuildingLayerStack materialLayers;
+
         [Header("调试")]
         [Tooltip("是否在 Console 打印状态切换日志。跟随鼠标时会频繁切换，正式游玩建议关闭")]
         [SerializeField] private bool logStateChanges = false;
@@ -56,6 +62,12 @@ namespace Yujian.Building
 
         /// <summary>占地尺寸（X = 宽，Y = 深）。数据缺失时返回零，调用方应视为不可放置。</summary>
         public Vector2 Footprint => data != null ? data.Footprint : Vector2.zero;
+
+        /// <summary>
+        /// 蓝图上显示已放入材料的楼层组件，可能为 null。
+        /// BuildingConstruction 通过它把玩家放进去的材料按颜色画出来。
+        /// </summary>
+        public BuildingLayerStack MaterialLayers => materialLayers;
 
         /// <summary>
         /// 由 BuildingManager 在实例化后立即调用，把蓝图与它的建筑数据绑定起来。
@@ -95,6 +107,36 @@ namespace Yujian.Building
         }
 
         /// <summary>
+        /// 收集「该被 Valid/Invalid 材质整体覆盖」的 Renderer，**排除材料楼层**。
+        ///
+        /// 材料楼层那几层的颜色是 BuildingConstruction 按玩家放入的材料逐层刷的，
+        /// 被这里的绿/红整体覆盖掉，玩家就看不出自己放了红砖还是蓝砖——
+        /// 而阶段 4 的验收点恰恰是「蓝图显示三块材料」。
+        /// </summary>
+        private Renderer[] CollectStateRenderers()
+        {
+            Renderer[] all = GetComponentsInChildren<Renderer>(true);
+
+            if (materialLayers == null)
+            {
+                return all;
+            }
+
+            Transform layerRoot = materialLayers.LayerRoot;
+            List<Renderer> result = new List<Renderer>(all.Length);
+
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null && !all[i].transform.IsChildOf(layerRoot))
+                {
+                    result.Add(all[i]);
+                }
+            }
+
+            return result.ToArray();
+        }
+
+        /// <summary>
         /// 缓存所有 Renderer，并强制关掉蓝图身上的一切 Collider。
         ///
         /// 关 Collider 是必须的：蓝图经常是直接复制建筑预制体做出来的，而建筑预制体带着 Collider。
@@ -109,7 +151,7 @@ namespace Yujian.Building
             }
 
             cached = true;
-            renderers = GetComponentsInChildren<Renderer>(true);
+            renderers = CollectStateRenderers();
             propertyBlock = new MaterialPropertyBlock();
 
             Collider[] colliders = GetComponentsInChildren<Collider>(true);

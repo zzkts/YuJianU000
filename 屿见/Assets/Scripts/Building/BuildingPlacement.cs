@@ -9,7 +9,10 @@ namespace Yujian.Building
     /// 放置控制器。职责：把"鼠标屏幕坐标"变成"蓝图的世界坐标"，并判断那里能不能放。
     ///
     /// 每帧：指针位置 → 屏幕坐标 → 射线 → 地面交点 → 移动蓝图 → Physics.CheckBox 重叠检测 → 蓝图变色。
-    /// 点击：判定通过后调用 BuildingManager.PlaceBuilding()，自己不生成建筑。
+    /// 点击：判定通过后调用 BuildingManager.AnchorBlueprint()，自己既不生成建筑也不记账。
+    ///
+    /// 阶段 4 新增：蓝图落位（Filling 相位）之后本类完全让开——不再移动蓝图、不再响应确认点击，
+    /// 建造改由材料面板上的「确认建造」按钮触发。
     ///
     /// 本类单向依赖 BuildingManager，BuildingManager 不知道本类存在。
     /// </summary>
@@ -157,6 +160,13 @@ namespace Yujian.Building
                 return;
             }
 
+            // 蓝图一旦落位就不再跟鼠标。让开这一步是必须的：
+            // 玩家要从材料面板往外拖，鼠标会长时间停在面板上，蓝图跟过去就会被面板整个盖住
+            if (buildingManager.Phase == BuildingPhase.Filling)
+            {
+                return;
+            }
+
             BuildingBlueprint blueprint = buildingManager.CurrentBlueprint;
 
             if (blueprint == null)
@@ -184,6 +194,12 @@ namespace Yujian.Building
             if (buildingManager == null || !buildingManager.IsPlacing)
             {
                 // 没在放置模式时，这次点击归 MiningInput 管，这里直接放行
+                return;
+            }
+
+            // 已落位的蓝图不该再被点击挪动；建造由材料面板的「确认建造」按钮触发
+            if (buildingManager.Phase == BuildingPhase.Filling)
+            {
                 return;
             }
 
@@ -225,10 +241,10 @@ namespace Yujian.Building
 
             if (logPlacementFlow)
             {
-                Debug.Log($"[BuildingPlacement] 在 {point} 确认放置。");
+                Debug.Log($"[BuildingPlacement] 在 {point} 确认落位。");
             }
 
-            buildingManager.PlaceBuilding(point);
+            buildingManager.AnchorBlueprint(point);
         }
 
         /// <summary>
@@ -306,14 +322,28 @@ namespace Yujian.Building
         /// </summary>
         private bool TryGetGroundPoint(Vector2 screenPosition, out Vector3 point)
         {
+            return TryGetGroundPoint(viewCamera, groundHeight, screenPosition, out point);
+        }
+
+        /// <summary>
+        /// 上面那个方法的静态版本，供 BuildingConstruction 判断"材料被拖到蓝图上了没"。
+        /// 抽出来是为了让两处用的是同一套换算，不至于一处改了另一处忘改。
+        /// </summary>
+        /// <param name="camera">用于发射射线的相机，为空时返回 false。</param>
+        /// <param name="groundHeight">地面高度。</param>
+        /// <param name="screenPosition">屏幕坐标。</param>
+        /// <param name="point">地面上的交点。</param>
+        public static bool TryGetGroundPoint(
+            Camera camera, float groundHeight, Vector2 screenPosition, out Vector3 point)
+        {
             point = default;
 
-            if (viewCamera == null)
+            if (camera == null)
             {
                 return false;
             }
 
-            Ray ray = viewCamera.ScreenPointToRay(screenPosition);
+            Ray ray = camera.ScreenPointToRay(screenPosition);
             Plane groundPlane = new Plane(Vector3.up, new Vector3(0f, groundHeight, 0f));
 
             if (!groundPlane.Raycast(ray, out float enter))

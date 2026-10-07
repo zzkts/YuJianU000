@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Yujian.Shop
@@ -40,6 +41,9 @@ namespace Yujian.Shop
         [Tooltip("该原料在世界中的预制体。阶段 2 只做购买与库存，预制体暂不实例化，留给阶段 3 建筑系统")]
         [SerializeField] private GameObject prefab;
 
+        /// <summary>allowedColors 留空时，AllowedColors 返回的单元素兜底数组，惰性创建并复用。</summary>
+        private MaterialColor[] singleColorFallback;
+
         /// <summary>显示名称。</summary>
         public string MaterialName => materialName;
 
@@ -57,6 +61,32 @@ namespace Yujian.Shop
 
         /// <summary>世界预制体，可能为 null。</summary>
         public GameObject Prefab => prefab;
+
+        /// <summary>
+        /// 该原料允许的全部颜色，按资产里的顺序返回，**可能含重复值**。
+        /// allowedColors 留空时返回只含默认颜色的单元素列表（与 SupportsColor 的约定一致）。
+        ///
+        /// 给阶段 4 的材料面板用：面板要列出「红砖 / 蓝砖 / 绿砖」三个条目，
+        /// 其中数量为 0 的条目也必须列出来，否则「原料不足，请购买」永远触发不到。
+        /// 单元素兜底数组会缓存，避免每次访问都分配。
+        /// </summary>
+        public IReadOnlyList<MaterialColor> AllowedColors
+        {
+            get
+            {
+                if (allowedColors != null && allowedColors.Length > 0)
+                {
+                    return allowedColors;
+                }
+
+                if (singleColorFallback == null)
+                {
+                    singleColorFallback = new[] { defaultColor };
+                }
+
+                return singleColorFallback;
+            }
+        }
 
         /// <summary>
         /// 该原料能否被买成指定颜色。
