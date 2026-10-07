@@ -14,7 +14,8 @@ namespace Yujian.UI
     /// 不碰库存、不碰蓝图——那些是 BuildingConstruction 的事。
     /// </summary>
     [RequireComponent(typeof(RectTransform))]
-    public class MaterialDragItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
+    public class MaterialDragItem : MonoBehaviour,
+        IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerClickHandler, IPointerDownHandler
     {
         [Header("显示（留空会自动在本物体及子物体里找）")]
         [Tooltip("底图。拖拽时残影会照抄它的 sprite")]
@@ -27,12 +28,25 @@ namespace Yujian.UI
         [Tooltip("拖拽残影的边长（像素）")]
         [SerializeField] private float ghostSize = 90f;
 
+        [Header("文案")]
+        [Tooltip("没拖动、只是点了一下条目时的提示。" +
+                 "条目是靠拖拽填料的，不说清楚玩家只会以为界面坏了")]
+        [SerializeField] private string clickHint = "请把材料拖到蓝图上";
+
         private BuildingMaterialPanel panel;
         private MaterialData material;
         private MaterialColor color;
 
         private RectTransform ghost;
         private bool dragAllowed;
+
+        /// <summary>
+        /// 这一次按下有没有真的拖起来过。用来压掉拖拽结束后的那次「点击」——
+        /// 本类同时实现了拖拽与点击，而「拖完松手会不会再补一次 OnPointerClick」
+        /// 取决于 EventSystem 输入模块内部对 eligibleForClick 的处理（见 OnPointerClick 注释），
+        /// 我不在本地实证，所以干脆自己记一笔，两种情况都不会误报。
+        /// </summary>
+        private bool draggedThisPress;
 
         /// <summary>本条目代表的原料。</summary>
         public MaterialData Material => material;
@@ -41,6 +55,22 @@ namespace Yujian.UI
         public MaterialColor Color => color;
 
         private void Awake()
+        {
+            ResolveReferences();
+        }
+
+        /// <summary>
+        /// 解析 Background / Label 引用。
+        ///
+        /// ⚠ Initialize 里也必须调一次，不能只靠 Awake：
+        /// 条目是 BuildingMaterialPanel 在 ItemContainer 还**隐藏着**的时候克隆出来的
+        /// （面板要等蓝图落位才显示），那一刻条目不在激活层级里，
+        /// Unity 不会立刻调用 Awake——要等面板显示的瞬间才补上。
+        /// 而 Initialize 在那之前就执行了。少了这一次解析，background / label 都是 null，
+        /// 颜色和数量就刷不上去，条目会永远保持模板原样：
+        /// 白底 + 模板上那句占位文字「Button」，玩家根本认不出这是哪块料。
+        /// </summary>
+        private void ResolveReferences()
         {
             if (background == null)
             {
@@ -66,6 +96,10 @@ namespace Yujian.UI
             panel = owner;
             material = materialData;
             color = materialColor;
+
+            // 条目克隆出来的时候还不在激活层级里，Awake 此刻尚未执行，
+            // 引用必须在用之前再解析一次（原因见 ResolveReferences 的注释）
+            ResolveReferences();
 
             if (background != null)
             {
@@ -124,9 +158,16 @@ namespace Yujian.UI
             }
         }
 
+        /// <summary>每次按下都清掉上一次的拖拽标记，否则上一次的拖拽会吃掉这一次的点击提示。</summary>
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            draggedThisPress = false;
+        }
+
         public void OnBeginDrag(PointerEventData eventData)
         {
             dragAllowed = false;
+            draggedThisPress = true;
 
             if (panel == null)
             {
@@ -161,6 +202,30 @@ namespace Yujian.UI
 
             dragAllowed = false;
             panel.DropAt(eventData.position, material, color);
+        }
+
+        /// <summary>
+        /// 只点了一下、没有拖动的情况。
+        /// 条目本身没有点击功能（填料靠拖拽），但一声不吭会让玩家以为界面坏了，
+        /// 所以这里把「现在为什么拖不动」或「该怎么操作」写在面板的状态行上。
+        /// 复用 CanDrag 的判定，提示与实际拖拽时的提示完全一致，不会出现两套说法。
+        /// </summary>
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            if (draggedThisPress)
+            {
+                // 这次按下拖过——刚才的提示（放入成功 / 请把材料拖到蓝图上）已经给过了，不要覆盖
+                draggedThisPress = false;
+                return;
+            }
+
+            if (panel == null)
+            {
+                return;
+            }
+
+            bool canDrag = panel.CanDrag(material, color, out string reason);
+            panel.ShowStatus(canDrag ? clickHint : reason, false);
         }
 
         private void CreateGhost(PointerEventData eventData)

@@ -32,6 +32,23 @@ namespace Yujian.EditorTools
         private const string ExistingPanelName = "BuildingPanel";
         private const string MaterialPanelName = "材料面板";
 
+        /// <summary>
+        /// 材料面板的尺寸与贴边距离。面板贴在**屏幕底部居中**，隐藏时整体往下挪出屏幕。
+        /// 为什么不贴右下角：BuildingPanel（风琴博物馆 / 取消蓝图 / 退出建造）没有任何脚本控制显隐，
+        /// 一直占着右下角 x∈[1570,1890]、y∈[30,290]；材料面板是 Canvas 最后一个子物体（最上层），
+        /// 摆过去会把它整个盖住，那几个按钮就点不到了。底部居中两边都躲开：
+        /// 左边商店面板到 x=540，右边建筑面板从 x=1570 起。
+        /// </summary>
+        private const float PanelWidth = 380f;
+        private const float PanelHeight = 560f;
+        private const float PanelBottomMargin = 30f;
+
+        /// <summary>隐藏位置相对显示位置的下移量：面板高度 + 下边距 + 20 余量，保证完全滑出屏幕。</summary>
+        private const float PanelHiddenOffsetY = -(PanelHeight + PanelBottomMargin + 20f);
+
+        /// <summary>滑一趟的秒数。</summary>
+        private const float PanelSlideDuration = 0.22f;
+
         /// <summary>预制体里预置几层当样板。BuildingLayerStack 会在运行时按实际材料数克隆到够用。</summary>
         private const int SampleLayerCount = 3;
 
@@ -127,7 +144,8 @@ namespace Yujian.EditorTools
                       $"  · {BuildingPrefabPath}：根物体加 BoxCollider + BuildingLayerStack，子物体「{LayerNodeName}」下 {SampleLayerCount} 层样板\n" +
                       $"  · {BlueprintPrefabPath}：加「{LayerNodeName}」节点并接到 BuildingBlueprint.Material Layers\n" +
                       $"  · {SystemObjectName}：新增 BuildingConstruction\n" +
-                      $"  · Canvas/{MaterialPanelName}：标题 / 进度 / 条目容器 / 条目模板 / 状态行 / 撤回 / 确认建造\n" +
+                      $"  · Canvas/{MaterialPanelName}：贴底部居中，标题 / 进度 / 条目容器 / 条目模板 / 状态行 / 撤回 / 确认建造，" +
+                      $"SlidingPanel 从屏幕底部滑入滑出（{PanelSlideDuration} 秒）\n" +
                       "请按 Ctrl+S 保存场景。");
         }
 
@@ -385,15 +403,17 @@ namespace Yujian.EditorTools
             {
                 panel = new GameObject(MaterialPanelName, typeof(RectTransform));
                 Undo.RegisterCreatedObjectUndo(panel, "创建 " + MaterialPanelName);
-
-                RectTransform rect = panel.GetComponent<RectTransform>();
-                rect.SetParent(canvas.transform, false);
-                rect.anchorMin = new Vector2(1f, 1f);
-                rect.anchorMax = new Vector2(1f, 1f);
-                rect.pivot = new Vector2(1f, 1f);
-                rect.anchoredPosition = new Vector2(-30f, -30f);
-                rect.sizeDelta = new Vector2(380f, 560f);
+                panel.GetComponent<RectTransform>().SetParent(canvas.transform, false);
             }
+
+            // 面板贴屏幕底部居中。每次运行都重设一遍：早先的版本把它摆在右上角，
+            // 重跑向导要能把它挪下来（从底部滑入的前提就是它本来就住在底部）
+            RectTransform panelRect = panel.GetComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 0f);
+            panelRect.anchorMax = new Vector2(0.5f, 0f);
+            panelRect.pivot = new Vector2(0.5f, 0f);
+            panelRect.anchoredPosition = new Vector2(0f, PanelBottomMargin);
+            panelRect.sizeDelta = new Vector2(PanelWidth, PanelHeight);
 
             // 每次运行都清空重建，避免越堆越多
             for (int i = panel.transform.childCount - 1; i >= 0; i--)
@@ -478,6 +498,19 @@ namespace Yujian.EditorTools
             confirmRect.anchoredPosition = new Vector2(0f, 14f);
             confirmRect.sizeDelta = new Vector2(-24f, 56f);
 
+            // ---------- 滑入过渡 ----------
+            // 面板固定在底部居中，隐藏时由 SlidingPanel 把整个 Content 往下挪到屏幕外。
+            // 于是「进入蓝图模式 = 从底部滑上来，退出 = 滑回去」，
+            // BuildingMaterialPanel 只负责在蓝图在场时调 Show / Hide。
+
+            SlidingPanel slidePanel = EnsureComponent<SlidingPanel>(panel);
+            SerializedObject slideSo = new SerializedObject(slidePanel);
+            SetObject(slideSo, "target", contentRect);
+            SetFloat(slideSo, "hiddenOffsetY", PanelHiddenOffsetY);
+            SetFloat(slideSo, "duration", PanelSlideDuration);
+            SetBool(slideSo, "startHidden", true);
+            slideSo.ApplyModifiedPropertiesWithoutUndo();
+
             // ---------- 接线 ----------
 
             SerializedObject so = new SerializedObject(panelComponent);
@@ -485,6 +518,7 @@ namespace Yujian.EditorTools
             SetObject(so, "buildingManager", manager);
             SetObject(so, "inventory", inventory);
             SetObject(so, "panelRoot", content);
+            SetObject(so, "slide", slidePanel);
             SetObject(so, "titleText", titleText);
             SetObject(so, "progressText", progressText);
             SetObject(so, "statusText", statusText);
@@ -535,6 +569,15 @@ namespace Yujian.EditorTools
         {
             GameObject clone = Object.Instantiate(templateButton.gameObject, parent, false);
             clone.name = name;
+
+            // 场景里现成的按钮多半是「隐藏的样板」——商店的 ButtonTemplate、两个 ItemTemplate 的根
+            // 都是 activeSelf = false，只用来克隆。而 Instantiate 复制的是 **activeSelf**，
+            // 不是 activeInHierarchy：不在这里显式打开，克隆出来的按钮就是 **关闭** 的。
+            // 它照样出现在场景里、矩形也完全正确，却不渲染、也收不到点击，
+            // 而且不会有任何报错 —— 2026-10-07 用户的「没有确认建造的按钮」就是这个。
+            // 注意 ItemTemplate 那条路不受影响：条目由面板在运行时 SetActive(true)，
+            // 只有这两个按钮没人替它们打开。
+            clone.SetActive(true);
 
             Text text = clone.GetComponentInChildren<Text>(true);
 
@@ -613,6 +656,16 @@ namespace Yujian.EditorTools
             if (property != null)
             {
                 property.floatValue = value;
+            }
+        }
+
+        private static void SetBool(SerializedObject so, string fieldName, bool value)
+        {
+            SerializedProperty property = so.FindProperty(fieldName);
+
+            if (property != null)
+            {
+                property.boolValue = value;
             }
         }
 

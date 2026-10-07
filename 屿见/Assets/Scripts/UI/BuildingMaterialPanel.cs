@@ -19,6 +19,9 @@ namespace Yujian.UI
     /// 将来换成「原木 ×5 + 石头 ×2」的建筑，本类一行都不用改。
     ///
     /// 本类只读库存、只转发点击，不修改任何数值。
+    ///
+    /// 显隐：蓝图在场期间（跟随鼠标 + 已落位填料）面板一直挂着，蓝图一关就收起来。
+    /// 滑入滑出交给 SlidingPanel，本类只说「该显示 / 该收起」。
     /// </summary>
     public class BuildingMaterialPanel : MonoBehaviour
     {
@@ -33,8 +36,12 @@ namespace Yujian.UI
         [SerializeField] private MaterialInventory inventory;
 
         [Header("界面")]
-        [Tooltip("整个面板的根物体。非填料阶段会被隐藏")]
+        [Tooltip("面板内容根物体。没有滑入过渡时用它瞬间显隐")]
         [SerializeField] private GameObject panelRoot;
+
+        [Tooltip("滑入 / 滑出过渡。面板在蓝图模式时从屏幕底部滑出来，退出蓝图模式时滑回去。" +
+                 "留空则退回「瞬间显示 / 隐藏」")]
+        [SerializeField] private SlidingPanel slide;
 
         [Tooltip("显示建筑名")]
         [SerializeField] private Text titleText;
@@ -121,6 +128,18 @@ namespace Yujian.UI
                 }
             }
 
+            if (slide == null)
+            {
+                // 这条几乎总是同一个原因：阶段 4 的向导没重跑（或者跑完没按 Ctrl+S 存场景）。
+                // 场景里既没有 SlidingPanel 组件，面板也还停在早先摆的位置（旧布局是屏幕右上角），
+                // 于是「按钮明明在场景里、却怎么都在屏幕底部找不到它」。
+                // 把两个后果都点名，别让人再去猜（规则 5：不许静默失败）
+                Debug.LogWarning("[BuildingMaterialPanel] Sliding Panel 未配置。两个后果：" +
+                                 "① 面板瞬间显隐，不会从屏幕底部滑入；" +
+                                 "② 面板仍停在场景里摆的旧位置（早先那一版是屏幕右上角），不是底部居中。" +
+                                 "请跑菜单「屿见/配置建造系统（阶段 4）」并 Ctrl+S 保存场景。", this);
+            }
+
             WireButtons();
         }
 
@@ -162,11 +181,31 @@ namespace Yujian.UI
 
         private void Update()
         {
-            bool visible = buildingManager != null && buildingManager.IsFilling;
+            // 蓝图在场（跟随鼠标 + 已落位填料）就算「蓝图模式」，面板一直挂着；
+            // 蓝图一关（建成 / 撤回 / 取消）就收回去。
+            // 用 IsPlacing 而不是 IsFilling：点一下建筑按钮就该看到这座建筑要什么料。
+            bool visible = buildingManager != null && buildingManager.IsPlacing;
 
-            if (panelRoot != null && panelRoot.activeSelf != visible)
+            if (slide != null)
+            {
+                if (slide.IsShown != visible)
+                {
+                    slide.SetShown(visible);
+
+                    if (visible)
+                    {
+                        OnPanelRevealed();
+                    }
+                }
+            }
+            else if (panelRoot != null && panelRoot.activeSelf != visible)
             {
                 panelRoot.SetActive(visible);
+
+                if (visible)
+                {
+                    OnPanelRevealed();
+                }
             }
 
             // 选中项换了就重建条目。这里只做一次引用比较，不每帧重算需求
@@ -240,14 +279,53 @@ namespace Yujian.UI
 
             wired = true;
 
-            if (undoButton != null && construction != null)
+            if (construction == null)
+            {
+                // 这两个按钮的监听全靠这里挂。引用缺一个就变成「点了毫无反应」的死按钮，
+                // 而且不会有任何报错——必须当场说清楚（规则 5）
+                Debug.LogError("[BuildingMaterialPanel] Building Construction 未配置，" +
+                               "「撤回」「确认建造」点了不会有任何反应。" +
+                               "请重跑菜单「屿见/配置建造系统（阶段 4）」。", this);
+            }
+
+            if (undoButton == null)
+            {
+                Debug.LogError("[BuildingMaterialPanel] Undo Button 未配置，「撤回」点了不会有任何反应。", this);
+            }
+            else if (construction != null)
             {
                 undoButton.onClick.AddListener(HandleUndoClicked);
             }
 
-            if (confirmButton != null && construction != null)
+            if (confirmButton == null)
+            {
+                Debug.LogError("[BuildingMaterialPanel] Confirm Button 未配置，「确认建造」点了不会有任何反应。", this);
+            }
+            else if (construction != null)
             {
                 confirmButton.onClick.AddListener(HandleConfirmClicked);
+            }
+
+            // 引用在、连线也在、矩形也对，却「看不见也点不到」—— 那就只剩一种可能：
+            // 按钮自己在场景里就是关闭的，而且没有任何代码会打开它。
+            WarnIfInactive(undoButton, "撤回");
+            WarnIfInactive(confirmButton, "确认建造");
+        }
+
+        /// <summary>
+        /// 按钮自身在场景里被摆成关闭（activeSelf = false）时点出来。
+        /// 这类故障不报错、不影响任何别的代码，只是按钮永远不出现——是最难查的一种静默失败（规则 5）。
+        /// 判的是 activeSelf 而不是 activeInHierarchy：面板平时整个是关的（SlidingPanel 会停用 Content），
+        /// 那一刻 activeInHierarchy 本来就该是 false，判它只会天天误报。
+        /// </summary>
+        private void WarnIfInactive(Button button, string label)
+        {
+            if (button != null && !button.gameObject.activeSelf)
+            {
+                Debug.LogError($"[BuildingMaterialPanel]「{label}」按钮在场景里是关闭的" +
+                               "（Inspector 里名字左边的勾没打上），面板显示时它也不会出现、更收不到点击。" +
+                               "多半是向导从隐藏的按钮样品上克隆时漏了激活——请重跑菜单「屿见/配置建造系统（阶段 4）」。",
+                               button);
             }
         }
 
@@ -317,13 +395,32 @@ namespace Yujian.UI
             RefreshConfirmButton();
         }
 
+        /// <summary>
+        /// 面板刚显示出来时补一次刷新。
+        /// 条目是在面板**隐藏**的时候克隆出来的（选中建筑那一刻容器还没激活），
+        /// 那时它们不在激活层级里，数量就停在初始化时的 0。
+        /// 露头时统一刷一次，面板一出现就是「红色小砖 ×3」而不是 ×0。
+        /// </summary>
+        private void OnPanelRevealed()
+        {
+            RefreshAll();
+        }
+
         /// <summary>按建筑的需求重建条目列表。</summary>
         private void RebuildItems(BuildingData data)
         {
             lastBuiltBuilding = data;
             ClearItems();
 
-            if (data == null || itemTemplate == null || itemContainer == null)
+            if (itemContainer == null)
+            {
+                Debug.LogError("[BuildingMaterialPanel] Item Container 未配置，面板里不会出现任何材料条目，" +
+                               "材料也就没法拖进蓝图。请指定一个条目容器。", this);
+                return;
+            }
+
+            // itemTemplate 缺失在 Awake 里已经报过一次了，这里不重复刷屏
+            if (data == null || itemTemplate == null)
             {
                 return;
             }
@@ -457,8 +554,12 @@ namespace Yujian.UI
                 return;
             }
 
-            bool ready = construction.IsSatisfied;
-            confirmButton.interactable = ready;
+            // 刻意**不**在材料不齐时把按钮设成 interactable = false。
+            // 灰掉的按钮点下去连一句提示都不会有，玩家只会觉得「按钮坏了」；
+            // 而 BuildingConstruction.ConfirmBuild() 里那句「材料还不够：小砖 0/3」
+            // 也就永远跑不到。这里让按钮始终可点，点了由它把原因写在状态行上
+            // ——规则 5：不许静默失败。
+            // 按钮的可点性完全交给 Inspector（规则 3），本类不再插手。
 
             Text label = confirmButton.GetComponentInChildren<Text>(true);
 
