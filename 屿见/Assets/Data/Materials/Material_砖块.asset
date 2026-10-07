@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b47d7be46e5fba24281240cb7c748c09, type: 3}
+  m_Name: "Material_\u7816\u5757"
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Shop.MaterialData
+  materialName: "\u5C0F\u7816"
+  materialType: 0
+  price: 2
+  damageMultiplierBonus: 0.1
+  defaultColor: 0
+  allowedColors: 000000000100000002000000
+  prefab: {fileID: 0}
