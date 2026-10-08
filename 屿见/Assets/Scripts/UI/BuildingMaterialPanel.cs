@@ -554,12 +554,16 @@ namespace Yujian.UI
                 return;
             }
 
-            // 刻意**不**在材料不齐时把按钮设成 interactable = false。
-            // 灰掉的按钮点下去连一句提示都不会有，玩家只会觉得「按钮坏了」；
-            // 而 BuildingConstruction.ConfirmBuild() 里那句「材料还不够：小砖 0/3」
-            // 也就永远跑不到。这里让按钮始终可点，点了由它把原因写在状态行上
-            // ——规则 5：不许静默失败。
-            // 按钮的可点性完全交给 Inspector（规则 3），本类不再插手。
+            // 材料齐了「确认建造」才可点，没齐就灰掉（阶段 6 用户拍板，推翻阶段 4 的决策 28）。
+            //
+            // 为什么改：需求七要求「不可放置则 √ 灰掉」。蓝图落位之后几何上必然可放置
+            // （决策 17/18：只有合法落点才能 anchor），落位之前那个 √ 根本不显示，
+            // 所以「不可放置」只有「材料还没配齐」这一种解释。
+            //
+            // 代价与补偿：BuildingConstruction.ConfirmBuild() 里那句
+            // 「材料还不够：小砖 0/3」从此走不到（那句代码保留不删，将来别的调用方还会用到）。
+            // 「还差几个」的信息由 ProgressText 一直显示着（形如「材料：小砖 2/3」），不会丢。
+            confirmButton.interactable = construction.IsSatisfied;
 
             Text label = confirmButton.GetComponentInChildren<Text>(true);
 

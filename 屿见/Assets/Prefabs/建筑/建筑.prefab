@@ -45,6 +45,8 @@ GameObject:
   - component: {fileID: 6448667319257365700}
   - component: {fileID: 2933315982056622063}
   - component: {fileID: 6762321032377021767}
+  - component: {fileID: 770729541424473324}
+  - component: {fileID: 576338386755885690}
   m_Layer: 0
   m_Name: "\u5EFA\u7B51"
   m_TagString: Untagged
@@ -107,6 +109,67 @@ MonoBehaviour:
   layerAlpha: 1
   fallbackColor: {r: 0.78, g: 0.76, b: 0.7, a: 1}
   logLayerChanges: 0
+--- !u!114 &770729541424473324
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5479955157972750790}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bb39c1e425de5fd42aca1e9aee9988b2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Building.Effects.OrganMuseumAutoAttack
+  attackInterval: 1
+  oreLayers:
+    serializedVersion: 2
+    m_Bits: 64
+  attackOrigin: {fileID: 0}
+  grantRewardOnKill: 1
+  drawAttackLine: 1
+  attackLineColor: {r: 1, g: 0.85, b: 0.3, a: 1}
+  attackLineDuration: 0.15
+  logAttackFlow: 1
+--- !u!114 &576338386755885690
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5479955157972750790}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87046acc78e99bc45a197964d1f16e74, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Building.BuildingSpawnPop
+  fromScale: 0.8
+  duration: 0.25
+  curve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  logPop: 0
 --- !u!1 &5879303489309696738
 GameObject:
   m_ObjectHideFlags: 0

@@ -246,6 +246,13 @@ namespace Yujian.EditorTools
             GameObject clone = Object.Instantiate(templateButton.gameObject, panel, false);
             clone.name = "Button_" + label;
 
+            // 模板是商店面板里那个**隐藏**的 ButtonTemplate（m_IsActive: 0），克隆体会带着关闭状态。
+            // 漏掉这一行的话：面板本身照样显示（它没有背景图），但里面一块空白、一个字都没有，
+            // 而且 Console 一句报错都不给 —— 阶段 6 实测就是撞在这上面
+            // （「建筑模块点开后没有蓝图选项」＝ 风琴博物馆 / 取消蓝图 / 退出建造 三个按钮全是关的）。
+            // 本行是那个缺陷的源头：不补上，每重跑一次本命令就会重新把它造出来（踩坑 5）。
+            clone.SetActive(true);
+
             RectTransform rect = clone.GetComponent<RectTransform>();
 
             if (rect != null)
