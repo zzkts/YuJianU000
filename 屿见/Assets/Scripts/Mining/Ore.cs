@@ -49,6 +49,16 @@ namespace Yujian.Mining
         [Tooltip("是否在 Console 打印受击与击碎日志，阶段 1 验收依赖该项")]
         [SerializeField] private bool logMiningFlow = true;
 
+        [Header("刷新")]
+        [Tooltip("所有矿石都被击碎后，再等多少秒一起刷新。设为 0 则保持原来的直接销毁。")]
+        [SerializeField] private float respawnDelay = 6f;
+
+        [Tooltip("刷新时随机换一种矿石，需要物体上挂了 OreTypeTag")]
+        [SerializeField] private bool randomizeTypeOnRespawn = true;
+
+        [Tooltip("刷新时从零放大到正常大小的时长（秒）")]
+        [SerializeField] private float respawnPopDuration = 0.35f;
+
         private float currentHealth;
         private Coroutine hitRoutine;
         private Vector3 baseScale;
@@ -152,8 +162,7 @@ namespace Yujian.Mining
         }
 
         /// <summary>
-        /// 生命值归零。
-        /// 当前阶段直接销毁；未来的掉落物、死亡动画、矿石刷新都接在 Destroy 之前。
+        /// 生命值归零。默认原地延时刷新；respawnDelay 设为 0 时保持直接销毁。
         /// </summary>
         private void Die()
         {
@@ -171,8 +180,102 @@ namespace Yujian.Mining
             CulturalFragmentDropper dropper = GetComponent<CulturalFragmentDropper>();
             if (dropper != null) dropper.Roll();
 
-            // 未来接入点：Respawn 写在这一行之前
-            Destroy(gameObject);
+            if (respawnDelay <= 0f)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
+            StartCoroutine(RespawnRoutine());
+        }
+
+        /// <summary>
+        /// 隐藏矿石，等待一段时间后恢复血量并重新出现。
+        /// 隐藏期间 IsAlive 为 false，MiningInput 打不到，建筑自动攻击也会跳过。
+        /// </summary>
+        private IEnumerator RespawnRoutine()
+        {
+            SetOreVisible(false);
+
+            // 等场上其他矿石也被击碎，避免这块刚碎就单独长回来
+            while (AnyOtherOreAlive())
+            {
+                yield return new WaitForSeconds(0.2f);
+            }
+
+            yield return new WaitForSeconds(respawnDelay);
+
+            currentHealth = maxHealth;
+
+            OreTypeTag typeTag = GetComponent<OreTypeTag>();
+            if (randomizeTypeOnRespawn && typeTag != null)
+            {
+                typeTag.RandomizeType();
+            }
+
+            SetOreVisible(true);
+            yield return RespawnPopRoutine();
+
+            if (logMiningFlow)
+            {
+                Debug.Log($"[Ore] {name} 已刷新，生命值 {currentHealth}");
+            }
+        }
+
+        /// <summary>场上是否还有别的存活矿石。用来把刷新做成“一波清完再整批重生”。</summary>
+        private bool AnyOtherOreAlive()
+        {
+#if UNITY_2023_1_OR_NEWER
+            Ore[] ores = Object.FindObjectsByType<Ore>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+#else
+            Ore[] ores = Object.FindObjectsOfType<Ore>();
+#endif
+
+            for (int i = 0; i < ores.Length; i++)
+            {
+                if (ores[i] != this && ores[i].IsAlive)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void SetOreVisible(bool visible)
+        {
+            Collider[] colliders = GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                colliders[i].enabled = visible;
+            }
+
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                renderers[i].enabled = visible;
+            }
+        }
+
+        private IEnumerator RespawnPopRoutine()
+        {
+            if (respawnPopDuration <= 0f)
+            {
+                Visual.localScale = baseScale;
+                yield break;
+            }
+
+            Transform visual = Visual;
+            float elapsed = 0f;
+            while (elapsed < respawnPopDuration)
+            {
+                elapsed += Time.deltaTime;
+                float k = Mathf.Clamp01(elapsed / respawnPopDuration);
+                visual.localScale = Vector3.Lerp(Vector3.zero, baseScale, k * k);
+                yield return null;
+            }
+
+            visual.localScale = baseScale;
         }
 
         /// <summary>

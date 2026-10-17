@@ -32,6 +32,20 @@ namespace Yujian.Mining
             routine = StartCoroutine(FlashRoutine());
         }
 
+        /// <summary>矿石换种类后重新记录底色，避免闪光结束把颜色还原成旧种类。</summary>
+        public void RefreshBaseColors()
+        {
+            if (routine != null)
+            {
+                StopCoroutine(routine);
+                routine = null;
+            }
+
+            renderers = null;
+            baseColors = null;
+            CacheBaseColors();
+        }
+
         private void CacheBaseColors()
         {
             if (renderers != null && renderers.Length > 0) return;

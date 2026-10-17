@@ -22,6 +22,24 @@ namespace Yujian.Mining
             tintByType = tint;
         }
 
+        /// <summary>刷新时随机换一种矿石，尽量不和当前种类重复。</summary>
+        public void RandomizeType()
+        {
+            System.Array values = System.Enum.GetValues(typeof(OreType));
+            if (values.Length <= 1) return;
+
+            OreType newType = type;
+            for (int attempt = 0; attempt < 8 && newType == type; attempt++)
+            {
+                newType = (OreType)values.GetValue(Random.Range(0, values.Length));
+            }
+
+            Configure(newType, tintByType);
+            ApplyTint();
+
+            Debug.Log("[OreTypeTag] 矿石刷新为 " + OreTypeInfo.DisplayName(newType), this);
+        }
+
         private void Awake()
         {
             if (!tintByType) return;
@@ -42,6 +60,10 @@ namespace Yujian.Mining
                 material.color = color;
                 if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
             }
+
+            // 换色后让受击闪白重新记录底色，否则闪完会还原成旧颜色
+            OreHitFlash flash = GetComponent<OreHitFlash>();
+            if (flash != null) flash.RefreshBaseColors();
         }
     }
 }

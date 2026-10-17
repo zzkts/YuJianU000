@@ -2193,6 +2193,10 @@ GameObject:
   - component: {fileID: 419357370}
   - component: {fileID: 419357369}
   - component: {fileID: 419357368}
+  - component: {fileID: 419357374}
+  - component: {fileID: 419357373}
+  - component: {fileID: 419357372}
+  - component: {fileID: 419357371}
   m_Layer: 6
   m_Name: Ore_05
   m_TagString: Untagged
@@ -2223,6 +2227,9 @@ MonoBehaviour:
   damagePopupOffset: {x: 0, y: 1.2, z: 0}
   damagePopupRandomRange: {x: 0.4, y: 0.2, z: 0.4}
   logMiningFlow: 1
+  respawnDelay: 6
+  randomizeTypeOnRespawn: 1
+  respawnPopDuration: 0.35
 --- !u!65 &419357369
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -2260,6 +2267,66 @@ Transform:
   - {fileID: 2023046736}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &419357371
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 419357367}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3916477baf98ed241af27e9e74a6c4b0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.CulturalFragmentDropper
+  dropChance: 0.08
+  rareOreAlwaysDrop: 1
+  popupColor: {r: 1, g: 0.84, b: 0.35, a: 1}
+  popupHeight: 1.6
+--- !u!114 &419357372
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 419357367}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5ce1b82b77e89844cb1d84789bf9a19a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreShatter
+  pieceCount: 10
+  force: 2.5
+  pieceLifetime: 1.2
+  pieceSizeRange: {x: 0.08, y: 0.2}
+--- !u!114 &419357373
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 419357367}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1e613b889c1624843a400db524304ddf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreHitFlash
+  flashColor: {r: 1, g: 1, b: 1, a: 1}
+  flashDuration: 0.08
+--- !u!114 &419357374
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 419357367}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83c5baa1039ebe3479649deb1b9e93eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreTypeTag
+  type: 0
+  tintByType: 1
 --- !u!1 &427395063
 GameObject:
   m_ObjectHideFlags: 0
@@ -3747,6 +3814,10 @@ GameObject:
   - component: {fileID: 909015445}
   - component: {fileID: 909015444}
   - component: {fileID: 909015443}
+  - component: {fileID: 909015449}
+  - component: {fileID: 909015448}
+  - component: {fileID: 909015447}
+  - component: {fileID: 909015446}
   m_Layer: 6
   m_Name: Ore_01
   m_TagString: Untagged
@@ -3777,6 +3848,9 @@ MonoBehaviour:
   damagePopupOffset: {x: 0, y: 1.2, z: 0}
   damagePopupRandomRange: {x: 0.4, y: 0.2, z: 0.4}
   logMiningFlow: 1
+  respawnDelay: 6
+  randomizeTypeOnRespawn: 1
+  respawnPopDuration: 0.35
 --- !u!65 &909015444
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -3814,6 +3888,66 @@ Transform:
   - {fileID: 363450258}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &909015446
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 909015442}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3916477baf98ed241af27e9e74a6c4b0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.CulturalFragmentDropper
+  dropChance: 0.08
+  rareOreAlwaysDrop: 1
+  popupColor: {r: 1, g: 0.84, b: 0.35, a: 1}
+  popupHeight: 1.6
+--- !u!114 &909015447
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 909015442}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5ce1b82b77e89844cb1d84789bf9a19a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreShatter
+  pieceCount: 10
+  force: 2.5
+  pieceLifetime: 1.2
+  pieceSizeRange: {x: 0.08, y: 0.2}
+--- !u!114 &909015448
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 909015442}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1e613b889c1624843a400db524304ddf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreHitFlash
+  flashColor: {r: 1, g: 1, b: 1, a: 1}
+  flashDuration: 0.08
+--- !u!114 &909015449
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 909015442}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83c5baa1039ebe3479649deb1b9e93eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreTypeTag
+  type: 0
+  tintByType: 1
 --- !u!1 &939468463
 GameObject:
   m_ObjectHideFlags: 0
@@ -4271,6 +4405,10 @@ GameObject:
   - component: {fileID: 1118842128}
   - component: {fileID: 1118842127}
   - component: {fileID: 1118842126}
+  - component: {fileID: 1118842132}
+  - component: {fileID: 1118842131}
+  - component: {fileID: 1118842130}
+  - component: {fileID: 1118842129}
   m_Layer: 6
   m_Name: Ore_03
   m_TagString: Untagged
@@ -4301,6 +4439,9 @@ MonoBehaviour:
   damagePopupOffset: {x: 0, y: 1.2, z: 0}
   damagePopupRandomRange: {x: 0.4, y: 0.2, z: 0.4}
   logMiningFlow: 1
+  respawnDelay: 6
+  randomizeTypeOnRespawn: 1
+  respawnPopDuration: 0.35
 --- !u!65 &1118842127
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -4338,6 +4479,66 @@ Transform:
   - {fileID: 319161427}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1118842129
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1118842125}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3916477baf98ed241af27e9e74a6c4b0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.CulturalFragmentDropper
+  dropChance: 0.08
+  rareOreAlwaysDrop: 1
+  popupColor: {r: 1, g: 0.84, b: 0.35, a: 1}
+  popupHeight: 1.6
+--- !u!114 &1118842130
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1118842125}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5ce1b82b77e89844cb1d84789bf9a19a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreShatter
+  pieceCount: 10
+  force: 2.5
+  pieceLifetime: 1.2
+  pieceSizeRange: {x: 0.08, y: 0.2}
+--- !u!114 &1118842131
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1118842125}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1e613b889c1624843a400db524304ddf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreHitFlash
+  flashColor: {r: 1, g: 1, b: 1, a: 1}
+  flashDuration: 0.08
+--- !u!114 &1118842132
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1118842125}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83c5baa1039ebe3479649deb1b9e93eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreTypeTag
+  type: 2
+  tintByType: 1
 --- !u!1 &1145392231
 GameObject:
   m_ObjectHideFlags: 0
@@ -6770,6 +6971,10 @@ GameObject:
   - component: {fileID: 2060627753}
   - component: {fileID: 2060627752}
   - component: {fileID: 2060627751}
+  - component: {fileID: 2060627757}
+  - component: {fileID: 2060627756}
+  - component: {fileID: 2060627755}
+  - component: {fileID: 2060627754}
   m_Layer: 6
   m_Name: Ore_04
   m_TagString: Untagged
@@ -6800,6 +7005,9 @@ MonoBehaviour:
   damagePopupOffset: {x: 0, y: 1.2, z: 0}
   damagePopupRandomRange: {x: 0.4, y: 0.2, z: 0.4}
   logMiningFlow: 1
+  respawnDelay: 6
+  randomizeTypeOnRespawn: 1
+  respawnPopDuration: 0.35
 --- !u!65 &2060627752
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -6837,6 +7045,66 @@ Transform:
   - {fileID: 766806359}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2060627754
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2060627750}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3916477baf98ed241af27e9e74a6c4b0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.CulturalFragmentDropper
+  dropChance: 0.08
+  rareOreAlwaysDrop: 1
+  popupColor: {r: 1, g: 0.84, b: 0.35, a: 1}
+  popupHeight: 1.6
+--- !u!114 &2060627755
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2060627750}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5ce1b82b77e89844cb1d84789bf9a19a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreShatter
+  pieceCount: 10
+  force: 2.5
+  pieceLifetime: 1.2
+  pieceSizeRange: {x: 0.08, y: 0.2}
+--- !u!114 &2060627756
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2060627750}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1e613b889c1624843a400db524304ddf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreHitFlash
+  flashColor: {r: 1, g: 1, b: 1, a: 1}
+  flashDuration: 0.08
+--- !u!114 &2060627757
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2060627750}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83c5baa1039ebe3479649deb1b9e93eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreTypeTag
+  type: 3
+  tintByType: 1
 --- !u!1 &2093097611
 GameObject:
   m_ObjectHideFlags: 0
@@ -6848,6 +7116,10 @@ GameObject:
   - component: {fileID: 2093097614}
   - component: {fileID: 2093097613}
   - component: {fileID: 2093097612}
+  - component: {fileID: 2093097618}
+  - component: {fileID: 2093097617}
+  - component: {fileID: 2093097616}
+  - component: {fileID: 2093097615}
   m_Layer: 6
   m_Name: Ore_02
   m_TagString: Untagged
@@ -6878,6 +7150,9 @@ MonoBehaviour:
   damagePopupOffset: {x: 0, y: 1.2, z: 0}
   damagePopupRandomRange: {x: 0.4, y: 0.2, z: 0.4}
   logMiningFlow: 1
+  respawnDelay: 6
+  randomizeTypeOnRespawn: 1
+  respawnPopDuration: 0.35
 --- !u!65 &2093097613
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -6915,6 +7190,66 @@ Transform:
   - {fileID: 1966471805}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2093097615
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2093097611}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3916477baf98ed241af27e9e74a6c4b0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.CulturalFragmentDropper
+  dropChance: 0.08
+  rareOreAlwaysDrop: 1
+  popupColor: {r: 1, g: 0.84, b: 0.35, a: 1}
+  popupHeight: 1.6
+--- !u!114 &2093097616
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2093097611}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5ce1b82b77e89844cb1d84789bf9a19a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreShatter
+  pieceCount: 10
+  force: 2.5
+  pieceLifetime: 1.2
+  pieceSizeRange: {x: 0.08, y: 0.2}
+--- !u!114 &2093097617
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2093097611}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1e613b889c1624843a400db524304ddf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreHitFlash
+  flashColor: {r: 1, g: 1, b: 1, a: 1}
+  flashDuration: 0.08
+--- !u!114 &2093097618
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2093097611}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83c5baa1039ebe3479649deb1b9e93eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreTypeTag
+  type: 1
+  tintByType: 1
 --- !u!1 &2098154911
 GameObject:
   m_ObjectHideFlags: 0
