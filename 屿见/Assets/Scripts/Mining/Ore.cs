@@ -134,6 +134,9 @@ namespace Yujian.Mining
             SpawnDamagePopup(damage);
             PlayHitFeedback();
 
+            OreHitFlash hitFlash = GetComponent<OreHitFlash>();
+            if (hitFlash != null) hitFlash.Play();
+
             if (logMiningFlow)
             {
                 Debug.Log($"[Ore] {name} 受到 {damage} 点伤害，剩余 {currentHealth}");
@@ -161,7 +164,14 @@ namespace Yujian.Mining
                 Debug.Log($"[Ore] {name} 已击碎，奖励 {reward} 金币由 MiningInput 发放");
             }
 
-            // 未来接入点：掉落物、死亡动画、Respawn 都写在这一行之前
+            // 击碎表现：碎片与彩蛋都独立于矿石本体，可以在 Destroy 前触发
+            OreShatter shatter = GetComponent<OreShatter>();
+            if (shatter != null) shatter.Burst();
+
+            CulturalFragmentDropper dropper = GetComponent<CulturalFragmentDropper>();
+            if (dropper != null) dropper.Roll();
+
+            // 未来接入点：Respawn 写在这一行之前
             Destroy(gameObject);
         }
 
