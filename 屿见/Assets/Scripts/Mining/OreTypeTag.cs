@@ -22,6 +22,16 @@ namespace Yujian.Mining
             tintByType = tint;
         }
 
+        /// <summary>
+        /// 保持当前的染色设置，切换矿石种类并立即重新上色。
+        /// 供外部生成器（OreSpawner）在生成下一块矿石时调用。
+        /// </summary>
+        public void SetType(OreType newType)
+        {
+            Configure(newType, tintByType);
+            ApplyTint();
+        }
+
         /// <summary>刷新时随机换一种矿石，尽量不和当前种类重复。</summary>
         public void RandomizeType()
         {

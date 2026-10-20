@@ -38,6 +38,9 @@ namespace Yujian.Building
                  "否则同一次左键点击会同时触发「放置建筑」和「挖矿」")]
         [SerializeField] private MiningInput miningInput;
 
+        [Tooltip("建筑网格。落位时记录占地矩形，建成时登记占用，移除时释放。留空会报错")]
+        [SerializeField] private BuildingGrid grid;
+
         [Header("图层")]
         [Tooltip("建筑所在图层，重叠检测只查这些层。请只勾 Building。" +
                  "整个工程只在这一处配置建筑层，BuildingPlacement 会读这里")]
@@ -70,6 +73,7 @@ namespace Yujian.Building
 
         private BuildingPhase phase = BuildingPhase.Placing;
         private Vector3 anchoredPosition;
+        private RectInt anchoredFootprintRect;
         private bool hasAnchor;
 
         private bool miningSuppressed;
@@ -93,11 +97,16 @@ namespace Yujian.Building
         public bool IsFilling => currentBlueprint != null && phase == BuildingPhase.Filling;
 
         /// <summary>
-        /// 蓝图落位的世界坐标。**实体建筑就生成在这个点上**，
-        /// 而不是"蓝图销毁前恰好所在的 transform"。将来接入地图方格时，
-        /// 吸附与占用登记只需要认这一个值。
+        /// 蓝图落位的世界坐标（已吸附到格点）。**实体建筑就生成在这个点上**，
+        /// 而不是"蓝图销毁前恰好所在的 transform"。
         /// </summary>
         public Vector3 AnchoredPosition => anchoredPosition;
+
+        /// <summary>
+        /// 蓝图落位时占用的格子矩形（x 对应世界 X，y 对应世界 Z）。
+        /// 建成时按这个矩形登记占用，拆除时按 ownerId 释放。
+        /// </summary>
+        public RectInt AnchoredFootprintRect => anchoredFootprintRect;
 
         /// <summary>当前选中的建筑数据，没有则为 null。</summary>
         public BuildingData SelectedBuilding => selectedBuilding;
@@ -124,6 +133,12 @@ namespace Yujian.Building
                 Debug.LogError("[BuildingManager] Building Layers 没有勾选任何图层，重叠检测会永远查不到建筑。" +
                                "请到 Project Settings → Tags and Layers 新建一个 Building 层（索引 7 起有空位），" +
                                "勾到这里，并把建筑预制体也放到该层。", this);
+            }
+
+            if (grid == null)
+            {
+                Debug.LogError("[BuildingManager] BuildingGrid 未配置，蓝图无法落位，建筑也无法登记占用。" +
+                               "请重新运行菜单「屿见/配置建筑网格与建造相机（阶段 7）」。", this);
             }
         }
 
@@ -162,15 +177,32 @@ namespace Yujian.Building
                 return;
             }
 
+            if (grid == null)
+            {
+                Debug.LogError("[BuildingManager] BuildingGrid 未配置，无法按格数换算占地并缩放蓝图。" +
+                               "请重新运行菜单「屿见/配置建筑网格与建造相机（阶段 7）」。", this);
+                return;
+            }
+
+            if (!data.HasValidFootprint)
+            {
+                Debug.LogError($"[BuildingManager] 建筑「{data.BuildingName}」的占地格数 {data.FootprintCells} 含非正数，" +
+                               "无法放置。请在 BuildingData 资产里把两个方向的格数都设成正整数。", this);
+                return;
+            }
+
             if (currentBlueprint != null)
             {
                 CancelSelection();
             }
 
+            Vector2 worldFootprint = grid.CellsToWorldFootprint(data.FootprintCells);
+
             GameObject blueprintObject = Instantiate(
                 data.BlueprintPrefab, defaultSpawnPosition, Quaternion.identity, blueprintRoot);
 
             blueprintObject.name = $"[蓝图] {data.BuildingName}";
+            ApplyFootprintScale(blueprintObject, worldFootprint);
 
             BuildingBlueprint blueprint = blueprintObject.GetComponent<BuildingBlueprint>();
 
@@ -186,13 +218,14 @@ namespace Yujian.Building
             selectedBuilding = data;
             phase = BuildingPhase.Placing;
             hasAnchor = false;
-            blueprint.Initialize(data);
+            blueprint.Initialize(data, worldFootprint);
             SetMiningSuppressed(true);
 
             if (logBuildingFlow)
             {
                 Debug.Log($"[BuildingManager] 已选中「{data.BuildingName}」（{data.BuildingType.ToChineseName()}），" +
-                          $"占地 {data.Footprint.x}×{data.Footprint.y}，蓝图出现在 {defaultSpawnPosition}。" +
+                          $"占地 {data.FootprintCells.x}×{data.FootprintCells.y} 格" +
+                          $"（世界尺寸 {worldFootprint.x}×{worldFootprint.y}），蓝图出现在 {defaultSpawnPosition}。" +
                           $"所需材料 {data.GetRequirementText()}。" +
                           "移动鼠标调整位置，点击地面落位，然后在材料面板里把材料拖到蓝图上。");
             }
@@ -212,6 +245,7 @@ namespace Yujian.Building
             selectedBuilding = null;
             phase = BuildingPhase.Placing;
             hasAnchor = false;
+            anchoredFootprintRect = default;
             SetMiningSuppressed(false);
 
             if (hadSelection && logBuildingFlow)
@@ -236,15 +270,18 @@ namespace Yujian.Building
         }
 
         /// <summary>
-        /// 把当前蓝图落位到指定世界坐标：蓝图停在这里不再跟鼠标，进入 Filling 相位等玩家填料。
+        /// 把当前蓝图落位到吸附后的格点上：蓝图停在这里不再跟鼠标，进入 Filling 相位等玩家填料。
         ///
         /// 阶段 4 起「点地面」不再等于「建出来」——中间多了填料与确认两步。
-        /// 这么拆也是为了将来接入地图方格：「选格落位」与「建造」本来就是两件事。
-        /// 坐标的有效性由 BuildingPlacement 判定，这里只做前置检查。
+        /// 阶段 7 起落位的权威值是「吸附中心 + 占地格子矩形」，
+        /// 建造与拆除都只认这两个值，不再从蓝图 transform 反推。
+        ///
+        /// 坐标与格子的有效性由 BuildingPlacement 判定，这里只做前置检查。
         /// </summary>
-        /// <param name="position">落位点的世界坐标（地面上的点）。</param>
+        /// <param name="snappedCenter">吸附后的建筑中心世界坐标。</param>
+        /// <param name="footprintRect">该建筑占用的格子矩形。</param>
         /// <returns>是否落位成功。</returns>
-        public bool AnchorBlueprint(Vector3 position)
+        public bool AnchorBlueprint(Vector3 snappedCenter, RectInt footprintRect)
         {
             if (selectedBuilding == null || currentBlueprint == null)
             {
@@ -258,14 +295,32 @@ namespace Yujian.Building
                 return true;
             }
 
-            anchoredPosition = position;
+            if (grid == null)
+            {
+                Debug.LogError("[BuildingManager] BuildingGrid 未配置，蓝图不能落位。" +
+                               "请重新运行菜单「屿见/配置建筑网格与建造相机（阶段 7）」。", this);
+                return false;
+            }
+
+            Vector2Int expectedCells = selectedBuilding.FootprintCells;
+
+            if (footprintRect.width != expectedCells.x || footprintRect.height != expectedCells.y)
+            {
+                Debug.LogError($"[BuildingManager] 落位矩形 {footprintRect} 与「{selectedBuilding.BuildingName}」" +
+                               $"的占地格数 {expectedCells} 不一致，已拒绝落位。" +
+                               "这通常意味着调用方没有使用 BuildingGrid.TryGetSnappedPose 的结果。", this);
+                return false;
+            }
+
+            anchoredPosition = snappedCenter;
+            anchoredFootprintRect = footprintRect;
             hasAnchor = true;
             phase = BuildingPhase.Filling;
-            currentBlueprint.transform.position = position;
+            currentBlueprint.transform.position = snappedCenter;
 
             if (logBuildingFlow)
             {
-                Debug.Log($"[BuildingManager] 蓝图已落位在 {position}，" +
+                Debug.Log($"[BuildingManager] 蓝图已落位在 {snappedCenter}，占地格子 {footprintRect}，" +
                           $"所需材料 {selectedBuilding.GetRequirementText()}。" +
                           "现在把材料拖到蓝图上，凑齐后点「确认建造」。");
             }
@@ -302,11 +357,39 @@ namespace Yujian.Building
                 return false;
             }
 
+            if (grid == null)
+            {
+                Debug.LogError("[BuildingManager] BuildingGrid 未配置，无法登记占地，建造已取消。" +
+                               "蓝图与材料保持不动。", this);
+                return false;
+            }
+
+            // 落位与建造之间可能隔了很久（玩家慢慢填料），这里再确认一次格子仍然可用
+            if (!grid.CanPlace(anchoredFootprintRect, out GridPlacementFailure failure))
+            {
+                Debug.LogWarning($"[BuildingManager] 落位格 {anchoredFootprintRect} 当前不可用：" +
+                                 $"{failure.ToChineseName()}。建造已取消，蓝图与材料保持不动。", this);
+                return false;
+            }
+
             GameObject instance = Instantiate(
                 data.BuildingPrefab, anchoredPosition, Quaternion.identity, buildingRoot);
 
             instance.name = data.BuildingName;
+            ApplyFootprintScale(instance, grid.CellsToWorldFootprint(data.FootprintCells));
             ApplyBuildingLayer(instance);
+
+            // 先占格再造楼：登记失败就立刻销毁实例，避免出现“看得见但网格里没记录”的建筑
+            int ownerId = instance.GetInstanceID();
+
+            if (!grid.Occupy(anchoredFootprintRect, ownerId))
+            {
+                Debug.LogError($"[BuildingManager] 建筑「{data.BuildingName}」的占地登记失败，已撤销本次建造。" +
+                               "蓝图与材料保持不动。", instance);
+                Destroy(instance);
+                return false;
+            }
+
             placedBuildings.Add(instance);
 
             ApplyLayerColors(instance, layerColors);
@@ -328,9 +411,109 @@ namespace Yujian.Building
             selectedBuilding = null;
             phase = BuildingPhase.Placing;
             hasAnchor = false;
+            anchoredFootprintRect = default;
             SetMiningSuppressed(false);
 
             return true;
+        }
+
+        /// <summary>
+        /// 按占地世界尺寸缩放预制体实例：让它的渲染包围盒在 X/Z 上正好等于 <paramref name="worldFootprint"/>。
+        ///
+        /// 为什么不能直接拿 <c>transform.localScale</c> 当基准：
+        /// <c>BuildingSpawnPop</c> 在 Instantiate 时的 OnEnable 里就把根节点缩到了 0.8 倍，
+        /// 此时 <c>Renderer.bounds</c> 量到的是「弹出中的大小」。所以先读它记住的原始缩放
+        /// （<c>BaseScale</c>）反推出自然尺寸，再算最终缩放，并同步更新 BaseScale，
+        /// 否则弹出结束后建筑会跳回未按占地缩放的尺寸。
+        ///
+        /// 高度（Y）保持原样：占地只约束平面尺寸，建筑该多高由美术决定。
+        /// 目前两条调用路径都用 Quaternion.identity 生成，所以世界 AABB 的 X/Z 就是占地轴；
+        /// 若将来允许旋转根节点，这里需要改成按局部包围盒计算。
+        /// </summary>
+        private static void ApplyFootprintScale(GameObject target, Vector2 worldFootprint)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            if (worldFootprint.x <= 0f || worldFootprint.y <= 0f)
+            {
+                Debug.LogError($"[BuildingManager] 「{target.name}」的占地世界尺寸 {worldFootprint} 无效，" +
+                               "已跳过自动缩放。请检查 BuildingData.FootprintCells。", target);
+                return;
+            }
+
+            Renderer[] renderers = target.GetComponentsInChildren<Renderer>(true);
+            bool hasBounds = false;
+            Bounds bounds = default;
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+
+                // 粒子/拖尾/线段是表现件，包围盒随特效变化，不能代表建筑本体尺寸
+                if (renderer == null ||
+                    renderer is ParticleSystemRenderer ||
+                    renderer is TrailRenderer ||
+                    renderer is LineRenderer)
+                {
+                    continue;
+                }
+
+                if (!hasBounds)
+                {
+                    bounds = renderer.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
+            }
+
+            if (!hasBounds || bounds.size.x <= 0f || bounds.size.z <= 0f)
+            {
+                Debug.LogWarning($"[BuildingManager] 「{target.name}」上找不到可测量尺寸的 Renderer，" +
+                                 "已跳过按占地自动缩放，建筑外观可能与占地格数不符。", target);
+                return;
+            }
+
+            // Instantiate 时 BuildingSpawnPop 可能已经把根节点缩到 fromScale 倍，
+            // 所以要用它记住的原始缩放反推自然尺寸，而不是用当前 localScale。
+            Vector3 applied = target.transform.localScale;
+            BuildingSpawnPop pop = target.GetComponent<BuildingSpawnPop>();
+            Vector3 reference = pop != null ? pop.BaseScale : applied;
+
+            if (Mathf.Approximately(applied.x, 0f) || Mathf.Approximately(applied.z, 0f))
+            {
+                Debug.LogWarning($"[BuildingManager] 「{target.name}」的 localScale X/Z 为 0，无法换算自然尺寸，" +
+                                 "已跳过按占地自动缩放。", target);
+                return;
+            }
+
+            Vector2 naturalSize = new Vector2(
+                bounds.size.x * reference.x / applied.x,
+                bounds.size.z * reference.z / applied.z);
+
+            if (naturalSize.x <= 0f || naturalSize.y <= 0f)
+            {
+                Debug.LogWarning($"[BuildingManager] 「{target.name}」的自然尺寸 {naturalSize} 无效，" +
+                                 "已跳过按占地自动缩放。", target);
+                return;
+            }
+
+            Vector3 newScale = new Vector3(
+                reference.x * (worldFootprint.x / naturalSize.x),
+                reference.y,
+                reference.z * (worldFootprint.y / naturalSize.y));
+
+            target.transform.localScale = newScale;
+
+            if (pop != null)
+            {
+                pop.SetBaseScale(newScale);
+            }
         }
 
         /// <summary>
@@ -373,9 +556,17 @@ namespace Yujian.Building
                 return false;
             }
 
+            // 释放占格。找不到记录只警告、不阻止移除：旧建筑或外部生成的建筑也应该能被拆掉
+            if (grid != null && !grid.Release(building.GetInstanceID()))
+            {
+                Debug.LogWarning($"[BuildingManager] 「{building.name}」没有网格占用记录" +
+                                 "（可能是旧建筑或外部生成），仍然移除。", this);
+            }
+
             if (logBuildingFlow)
             {
-                Debug.Log($"[BuildingManager] 已移除建筑「{building.name}」，当前场上共 {placedBuildings.Count} 座。");
+                Debug.Log($"[BuildingManager] 已移除建筑「{building.name}」，当前占地已释放，" +
+                          $"场上共 {placedBuildings.Count} 座。");
             }
 
             Destroy(building);
@@ -431,7 +622,18 @@ namespace Yujian.Building
             // 内部的派发快照实现——这条我无法在本地实证，所以统一延到本帧末尾恢复，
             // 让"确认放置的那一次点击"在时序上不可能同时触发挖矿。
             miningSuppressed = false;
-            miningRestorePending = true;
+
+            // 只有“屏蔽时它本来是开着的”才需要由本类打开。
+            //
+            // 反例（阶段 7 实测撞到）：玩家在建筑区开着蓝图，直接点底部「挖矿」切走。
+            // GameAreaController 会先把 MiningInput 关掉（那是区域门关的，不是本类），
+            // 随后 AreaCameraDirector 退出建造视角 → CancelSelection → 走到这里。
+            // 若照旧记下 pending = true 并在 LateUpdate 里恢复成“屏蔽前”的 false，
+            // 就会把刚切回挖矿区、已被区域门重新打开的 MiningInput 又关掉，
+            // 表现是回来以后怎么点都挖不了矿，且 Console 一句都不报。
+            //
+            // 屏蔽前本来就是关的 → 本类没有关过它 → 释放时也不要替别的系统写值。
+            miningRestorePending = miningEnabledBeforeSuppression;
         }
 
         private void LateUpdate()

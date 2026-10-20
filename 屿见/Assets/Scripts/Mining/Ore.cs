@@ -59,8 +59,23 @@ namespace Yujian.Mining
         [Tooltip("刷新时从零放大到正常大小的时长（秒）")]
         [SerializeField] private float respawnPopDuration = 0.35f;
 
+        [Tooltip("由外部生成器（OreSpawner）接管刷新。为 true 时死亡不再自毁、不再自动刷新，" +
+                 "只隐藏并广播 OnDied，由生成器调用 ApplyDefinition 生成下一块")]
+        [SerializeField] private bool externalSpawnControl = false;
+
+        [Header("生成表现")]
+        [Tooltip("生成时从零放大到峰值的时长（秒）")]
+        [SerializeField] private float spawnGrowDuration = 0.25f;
+
+        [Tooltip("生成时从峰值缩回正常大小的时长（秒）")]
+        [SerializeField] private float spawnShrinkDuration = 0.15f;
+
+        [Tooltip("生成时放大到的峰值倍数（相对正常大小）")]
+        [SerializeField] private float spawnPeakScale = 1.15f;
+
         private float currentHealth;
         private Coroutine hitRoutine;
+        private Coroutine spawnRoutine;
         private Vector3 baseScale;
         private Quaternion baseRotation;
 
@@ -75,6 +90,12 @@ namespace Yujian.Mining
 
         /// <summary>是否存活。存活时才接受伤害。</summary>
         public bool IsAlive => currentHealth > 0f;
+
+        /// <summary>是否已交给外部生成器接管生成与刷新。</summary>
+        public bool UsesExternalSpawnControl => externalSpawnControl;
+
+        /// <summary>矿石被击碎时广播（参数为自身）。外部生成器用它接续生成下一块。</summary>
+        public event System.Action<Ore> OnDied;
 
         /// <summary>参与表现的实际节点。</summary>
         private Transform Visual => visualRoot != null ? visualRoot : transform;
@@ -162,7 +183,103 @@ namespace Yujian.Mining
         }
 
         /// <summary>
+        /// 用一条矿石定义重新配置本矿石并让它出现。只由外部生成器（OreSpawner）调用。
+        /// 会重置生命值、奖励、种类与姿态，并播放"放大后缩小"的生成表现。
+        /// </summary>
+        /// <param name="type">矿石种类，会同步给 OreTypeTag 并重新上色。</param>
+        /// <param name="newMaxHealth">新的最大生命值，必须为正数。</param>
+        /// <param name="newReward">新的击碎奖励，不能为负。</param>
+        public void ApplyDefinition(OreType type, float newMaxHealth, int newReward)
+        {
+            if (newMaxHealth <= 0f)
+            {
+                Debug.LogWarning($"[Ore] 生成的矿石生命值配置为非正数({newMaxHealth})，已按 1 处理。", this);
+                newMaxHealth = 1f;
+            }
+
+            if (newReward < 0)
+            {
+                Debug.LogWarning($"[Ore] 生成的矿石奖励配置为负值({newReward})，已按 0 处理。", this);
+                newReward = 0;
+            }
+
+            // 停掉上一次受击 / 生成表现，避免两个协程同时改 scale
+            if (hitRoutine != null)
+            {
+                StopCoroutine(hitRoutine);
+                hitRoutine = null;
+            }
+
+            if (spawnRoutine != null)
+            {
+                StopCoroutine(spawnRoutine);
+                spawnRoutine = null;
+            }
+
+            maxHealth = newMaxHealth;
+            currentHealth = maxHealth;
+            reward = newReward;
+
+            OreTypeTag typeTag = GetComponent<OreTypeTag>();
+            if (typeTag != null)
+            {
+                typeTag.SetType(type);
+            }
+            else
+            {
+                Debug.LogWarning("[Ore] 缺少 OreTypeTag，生成的矿石无法切换种类与颜色。", this);
+            }
+
+            Transform visual = Visual;
+            visual.localRotation = baseRotation;
+            visual.localScale = baseScale;
+
+            SetOreVisible(true);
+
+            if (isActiveAndEnabled && spawnGrowDuration + spawnShrinkDuration > 0f)
+            {
+                // 先生成在零尺寸，避免生成动画开始前闪一帧正常大小
+                visual.localScale = Vector3.zero;
+                spawnRoutine = StartCoroutine(SpawnPopRoutine());
+            }
+        }
+
+        /// <summary>
+        /// 生成表现：从零平滑放大到峰值，再缩回正常大小。
+        /// </summary>
+        private IEnumerator SpawnPopRoutine()
+        {
+            Transform visual = Visual;
+
+            float growDuration = Mathf.Max(0f, spawnGrowDuration);
+            float shrinkDuration = Mathf.Max(0f, spawnShrinkDuration);
+            Vector3 peakScale = baseScale * Mathf.Max(1f, spawnPeakScale);
+
+            float elapsed = 0f;
+            while (elapsed < growDuration)
+            {
+                elapsed += Time.deltaTime;
+                float k = growDuration <= 0f ? 1f : Mathf.Clamp01(elapsed / growDuration);
+                visual.localScale = Vector3.Lerp(Vector3.zero, peakScale, k);
+                yield return null;
+            }
+
+            elapsed = 0f;
+            while (elapsed < shrinkDuration)
+            {
+                elapsed += Time.deltaTime;
+                float k = shrinkDuration <= 0f ? 1f : Mathf.Clamp01(elapsed / shrinkDuration);
+                visual.localScale = Vector3.Lerp(peakScale, baseScale, k);
+                yield return null;
+            }
+
+            visual.localScale = baseScale;
+            spawnRoutine = null;
+        }
+
+        /// <summary>
         /// 生命值归零。默认原地延时刷新；respawnDelay 设为 0 时保持直接销毁。
+        /// 开启 externalSpawnControl 时只隐藏并广播 OnDied，由外部生成器接续。
         /// </summary>
         private void Die()
         {
@@ -179,6 +296,24 @@ namespace Yujian.Mining
 
             CulturalFragmentDropper dropper = GetComponent<CulturalFragmentDropper>();
             if (dropper != null) dropper.Roll();
+
+            if (externalSpawnControl)
+            {
+                SetOreVisible(false);
+
+                if (OnDied == null)
+                {
+                    Debug.LogError("[Ore] 已开启外部生成控制，但没有任何生成器订阅 OnDied，" +
+                                   "这块矿石会一直隐藏。请检查 OreSpawner 是否已接线。", this);
+                }
+            }
+
+            OnDied?.Invoke(this);
+
+            if (externalSpawnControl)
+            {
+                return;
+            }
 
             if (respawnDelay <= 0f)
             {

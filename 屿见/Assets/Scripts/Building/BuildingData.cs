@@ -89,9 +89,9 @@ namespace Yujian.Building
         [SerializeField] private GameObject blueprintPrefab;
 
         [Header("占地")]
-        [Tooltip("占地尺寸。X = 宽（世界 X 轴），Y = 深（世界 Z 轴），单位与场景一致。" +
-                 "只用于放置时的重叠检测，不改变预制体本身大小")]
-        [SerializeField] private Vector2 footprint = new Vector2(4f, 4f);
+        [Tooltip("占地格数。X = 沿世界 X 轴的格数，Y = 沿世界 Z 轴的格数。" +
+                 "世界尺寸 = 格数 × BuildingGrid 的单格边长；建筑与蓝图会按该尺寸自动缩放外观")]
+        [SerializeField] private Vector2Int footprintCells = new Vector2Int(2, 2);
 
         [Header("所需材料（阶段 3 只记录，不消耗）")]
         [Tooltip("建造该建筑需要的原料清单。阶段 3 完全不读取这张表——" +
@@ -110,15 +110,15 @@ namespace Yujian.Building
         /// <summary>蓝图预制体，可能为 null。</summary>
         public GameObject BlueprintPrefab => blueprintPrefab;
 
-        /// <summary>占地尺寸：X = 宽，Y = 深。</summary>
-        public Vector2 Footprint => footprint;
+        /// <summary>占地格数：X = 沿世界 X 轴的格数，Y = 沿世界 Z 轴的格数。</summary>
+        public Vector2Int FootprintCells => footprintCells;
 
         /// <summary>所需材料清单，只读。阶段 3 不消费它。</summary>
         public IReadOnlyList<BuildingMaterialRequirement> RequiredMaterials =>
             requiredMaterials ?? System.Array.Empty<BuildingMaterialRequirement>();
 
-        /// <summary>占地面积是否可用（两个方向都为正）。</summary>
-        public bool HasValidFootprint => footprint.x > 0f && footprint.y > 0f;
+        /// <summary>占地面积是否可用（两个方向都为正格数）。</summary>
+        public bool HasValidFootprint => footprintCells.x > 0 && footprintCells.y > 0;
 
         /// <summary>所需材料的可读描述，例如 "小砖 ×3"。目前用于日志与将来的建造 UI。</summary>
         public string GetRequirementText()
@@ -159,8 +159,8 @@ namespace Yujian.Building
 
             if (!HasValidFootprint)
             {
-                Debug.LogWarning($"[BuildingData] 资产「{name}」的占地尺寸 {footprint} 含非正数，" +
-                                 "重叠检测会一律判定为「不可放置」。请把宽和深都设成正数。", this);
+                Debug.LogWarning($"[BuildingData] 资产「{name}」的占地格数 {footprintCells} 含非正数，" +
+                                 "重叠检测会一律判定为「不可放置」。请把两个方向的格数都设成正整数。", this);
             }
 
             if (buildingPrefab == null)
