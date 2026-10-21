@@ -44,9 +44,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dae394f2ce34cf84ea356de7d4003fa5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.DamagePopup
-  textMesh: {fileID: 0}
-  characterSize: 0.5
-  textColor: {r: 1, g: 0.85, b: 0.3, a: 1}
-  faceCamera: 1
+  styleTable: {fileID: 11400000, guid: d8fb46cbf7377f34ab19a9df39f08f8a, type: 2}
+  targetCanvas: {fileID: 0}
   lifetime: 0.8
   riseDistance: 0.8
+  logStyleFallback: 1

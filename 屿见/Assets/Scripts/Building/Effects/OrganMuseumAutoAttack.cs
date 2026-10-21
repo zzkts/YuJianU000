@@ -177,7 +177,7 @@ namespace Yujian.Building.Effects
             int reward = target.Reward;
             Vector3 targetPosition = target.transform.position;
 
-            bool destroyed = target.TakeDamage(damage);
+            bool destroyed = target.TakeDamage(damage, DamageSource.Building);
 
             if (drawAttackLine)
             {

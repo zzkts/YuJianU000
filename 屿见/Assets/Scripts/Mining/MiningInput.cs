@@ -191,7 +191,7 @@ namespace Yujian.Mining
                 return;
             }
 
-            bool destroyed = ore.TakeDamage(damage);
+            bool destroyed = ore.TakeDamage(damage, DamageSource.Player);
 
             if (!destroyed)
             {
