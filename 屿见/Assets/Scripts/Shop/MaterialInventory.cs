@@ -100,6 +100,61 @@ namespace Yujian.Shop
         }
 
         /// <summary>
+        /// 读档用：清空当前库存，按给定的 (原料, 颜色, 数量) 快照整体重建，最后只广播一次变化。
+        ///
+        /// 为什么不循环调用 <see cref="AddMaterial"/>：那样每加一格都会打一条日志、广播一次事件，
+        /// 读档时 UI 会被刷新十几次，日志也会被刷满。读档是“整体替换”，不是“逐笔入账”。
+        /// 快照里的空格位（原料为空 / 数量非正）会被跳过并明确报错，不静默吞掉。
+        /// </summary>
+        /// <param name="snapshot">库存快照，可为 null（等价于清空）。</param>
+        public void RestoreStacks(IReadOnlyList<MaterialStack> snapshot)
+        {
+            stacks.Clear();
+
+            if (snapshot != null)
+            {
+                for (int i = 0; i < snapshot.Count; i++)
+                {
+                    MaterialStack incoming = snapshot[i];
+
+                    if (incoming.Material == null)
+                    {
+                        Debug.LogError($"[MaterialInventory] 存档里的库存第 {i} 项原料为空，已跳过。", this);
+                        continue;
+                    }
+
+                    if (incoming.Count <= 0)
+                    {
+                        Debug.LogWarning($"[MaterialInventory] 存档里的「{incoming.Material.MaterialName}」数量为 " +
+                                         $"{incoming.Count}，已跳过。", this);
+                        continue;
+                    }
+
+                    int index = IndexOf(incoming.Material, incoming.Color);
+
+                    if (index < 0)
+                    {
+                        stacks.Add(new MaterialStack(incoming.Material, incoming.Color, incoming.Count));
+                    }
+                    else
+                    {
+                        // 坏存档里可能出现重复格位，合并而不是留下两条同键记录
+                        MaterialStack existing = stacks[index];
+                        existing.SetCount(existing.Count + incoming.Count);
+                        stacks[index] = existing;
+                    }
+                }
+            }
+
+            OnInventoryChanged?.Invoke();
+
+            if (logInventoryChanges)
+            {
+                Debug.Log($"[MaterialInventory] 已从存档恢复 {stacks.Count} 格、共 {GetTotalCount()} 个原料。", this);
+            }
+        }
+
+        /// <summary>
         /// 扣除原料。数量不足时返回 false，且不扣除任何原料。
         /// 阶段 3 的建筑消耗走这里。
         /// </summary>

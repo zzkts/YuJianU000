@@ -16,10 +16,10 @@ MonoBehaviour:
   - source: 1
     typeName: Type_1
     color: {r: 0.25, g: 0.55, b: 1, a: 1}
-    fontSize: 16
+    fontSize: 48
     bold: 0
   - source: 0
     typeName: Type_2
     color: {r: 1, g: 0.85, b: 0.3, a: 1}
-    fontSize: 18
+    fontSize: 48
     bold: 1

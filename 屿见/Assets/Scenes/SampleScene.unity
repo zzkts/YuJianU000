@@ -3716,9 +3716,9 @@ MonoBehaviour:
   hitRotationMin: -20
   hitRotationMax: 20
   damagePopupPrefab: {fileID: 1467007269}
-  damagePopupOffset: {x: 0, y: 1.2, z: 0}
+  damagePopupOffset: {x: 0, y: 0, z: 0}
   damagePopupRandomRange: {x: 0.4, y: 0.2, z: 0.4}
-  logMiningFlow: 1
+  logMiningFlow: 0
   respawnDelay: 0
   randomizeTypeOnRespawn: 0
   respawnPopDuration: 0.35
@@ -6727,6 +6727,86 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2037839255
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2037839259}
+  - component: {fileID: 2037839258}
+  - component: {fileID: 2037839257}
+  - component: {fileID: 2037839256}
+  m_Layer: 0
+  m_Name: SaveSystem
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2037839256
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2037839255}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 55fe12ef68961854ba17dc2f6f29f673, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Save.InventorySaveParticipant
+  inventory: {fileID: 573473446}
+  catalog: {fileID: 11400000, guid: 9d7597a77db4bfe4889eccb58d75381f, type: 2}
+--- !u!114 &2037839257
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2037839255}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 82a70a7dfac35d741819284c533fa0cc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Save.CurrencySaveParticipant
+  currency: {fileID: 573473444}
+--- !u!114 &2037839258
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2037839255}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f638d4ebd1c1fc6419d883c922e3a60d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Save.SaveSystem
+  participants:
+  - {fileID: 2037839257}
+  - {fileID: 2037839256}
+  loadOnStart: 1
+  saveOnQuit: 1
+  saveOnFocusLost: 0
+  logSaveFlow: 1
+--- !u!4 &2037839259
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2037839255}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2098154911
 GameObject:
   m_ObjectHideFlags: 0
@@ -7232,3 +7312,4 @@ SceneRoots:
   - {fileID: 1851669749}
   - {fileID: 1347120860}
   - {fileID: 850255510}
+  - {fileID: 2037839259}

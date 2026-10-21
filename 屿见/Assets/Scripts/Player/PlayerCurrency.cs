@@ -51,6 +51,25 @@ namespace Yujian.Player
         }
 
         /// <summary>
+        /// 读档用：直接把金币恢复成存档里的值，并广播一次变化。
+        /// 不走 AddMoney / TrySpendMoney——它们只接受正数增量，无法表达“把余额改成 X”。
+        /// 负数按 0 处理并明确警告，避免坏存档把金币变成负数。
+        /// </summary>
+        /// <param name="amount">存档里的金币数量。</param>
+        public void RestoreMoney(int amount)
+        {
+            int clamped = Mathf.Max(0, amount);
+
+            if (clamped != amount)
+            {
+                Debug.LogWarning($"[PlayerCurrency] 存档里的金币为 {amount}，已按 0 恢复。", this);
+            }
+
+            currentMoney = clamped;
+            OnMoneyChanged?.Invoke(currentMoney);
+        }
+
+        /// <summary>
         /// 尝试消耗金币。余额不足时返回 false，且不扣除任何金币。
         /// </summary>
         /// <param name="amount">消耗量，必须为正数。</param>
