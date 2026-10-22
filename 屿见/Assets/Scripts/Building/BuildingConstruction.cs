@@ -397,6 +397,28 @@ namespace Yujian.Building
             return built;
         }
 
+        /// <summary>
+        /// 读档前丢弃当前蓝图与其中已放入的材料，**不退款**。
+        ///
+        /// 手动读档时场景里可能正停着一个填了一半的蓝图；这些材料属于「即将被丢弃的当前状态」，
+        /// 不能退给玩家，否则会和存档里的 blueprintRefund 叠加成双倍。
+        /// 先清空历史再取消蓝图，OnBlueprintClosed(false) 触发的退款就是空操作。
+        /// </summary>
+        public void DiscardCurrentBlueprintWithoutRefund()
+        {
+            bool hadMaterials = placementHistory.Count > 0;
+            placementHistory.Clear();
+
+            if (buildingManager != null)
+            {
+                buildingManager.CancelSelection();
+            }
+            else if (hadMaterials)
+            {
+                OnConstructionChanged?.Invoke();
+            }
+        }
+
         // ---------------- 查询 ----------------
 
         /// <summary>蓝图里已放入的某类材料数量（不分颜色）。</summary>

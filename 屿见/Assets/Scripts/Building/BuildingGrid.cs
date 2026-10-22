@@ -345,6 +345,20 @@ namespace Yujian.Building
         }
 
         /// <summary>
+        /// 一个格子矩形的中心（世界坐标）。供读档恢复建筑时从 RectInt 反推生成点，
+        /// 与 <see cref="TryGetSnappedPose"/> 的 snappedCenter 公式一致。
+        /// </summary>
+        public Vector3 CellRectCenter(RectInt rect)
+        {
+            Vector3 min = CellMinCorner(new Vector2Int(rect.xMin, rect.yMin));
+
+            return min + new Vector3(
+                rect.width * cellSize * 0.5f,
+                0f,
+                rect.height * cellSize * 0.5f);
+        }
+
+        /// <summary>
         /// 占地世界尺寸 → 需要占用的格数。
         /// 用 ceil 并减去一个极小量，避免 4.0000001 / 2 被算成 3 格。
         /// 尺寸含非正数时返回零，由 CanPlace 判为占地非法。

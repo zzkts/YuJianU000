@@ -98,6 +98,11 @@ namespace Yujian.Building
                  "即使玩家一个原料都没有也允许放置。材料检查与扣除是阶段 4 的事")]
         [SerializeField] private BuildingMaterialRequirement[] requiredMaterials = new BuildingMaterialRequirement[0];
 
+        [Header("存档")]
+        [Tooltip("跨存档稳定 ID。由菜单「屿见/配置存档系统」按资产 GUID 自动生成，不要手改。" +
+                 "改掉它会让旧存档里的该建筑无法被识别")]
+        [SerializeField] private string saveId = "";
+
         /// <summary>显示名称。</summary>
         public string BuildingName => buildingName;
 
@@ -116,6 +121,9 @@ namespace Yujian.Building
         /// <summary>所需材料清单，只读。阶段 3 不消费它。</summary>
         public IReadOnlyList<BuildingMaterialRequirement> RequiredMaterials =>
             requiredMaterials ?? System.Array.Empty<BuildingMaterialRequirement>();
+
+        /// <summary>跨存档稳定 ID。可能为空——为空时存档会明确报错并跳过该建筑。</summary>
+        public string SaveId => saveId;
 
         /// <summary>占地面积是否可用（两个方向都为正格数）。</summary>
         public bool HasValidFootprint => footprintCells.x > 0 && footprintCells.y > 0;
@@ -171,6 +179,13 @@ namespace Yujian.Building
             if (blueprintPrefab == null)
             {
                 Debug.LogWarning($"[BuildingData] 资产「{name}」没有配置蓝图 Prefab，该建筑无法被选中。", this);
+            }
+
+            if (string.IsNullOrWhiteSpace(saveId))
+            {
+                // 不拦着资产使用，但存档时这座建筑会被跳过。规则 5：不静默失败
+                Debug.LogWarning($"[BuildingData] 资产「{name}」没有 Save Id，存档时会跳过它。" +
+                                 "请运行菜单「屿见/配置存档系统」自动生成。", this);
             }
 
             if (requiredMaterials == null)

@@ -87,6 +87,12 @@ namespace Yujian.Building
         /// </summary>
         public event Action<bool> OnBlueprintClosed;
 
+        /// <summary>
+        /// 一座已放置建筑被移除后触发（列表与占格都已释放，实体在本帧末销毁）。
+        /// 读档前的批量清场也会触发，订阅方需要自行区分「玩家拆除」与「系统清场」。
+        /// </summary>
+        public event Action<GameObject> OnBuildingRemoved;
+
         /// <summary>当前是否处于放置模式（场上有蓝图）。落位后仍为 true，所以相机不会退出建造视角。</summary>
         public bool IsPlacing => currentBlueprint != null;
 
@@ -393,6 +399,7 @@ namespace Yujian.Building
             placedBuildings.Add(instance);
 
             ApplyLayerColors(instance, layerColors);
+            AttachPlacedBuildingInfo(instance, data, anchoredFootprintRect, layerColors);
 
             if (instance.GetComponentInChildren<Collider>() == null)
             {
@@ -415,6 +422,140 @@ namespace Yujian.Building
             SetMiningSuppressed(false);
 
             return true;
+        }
+
+        /// <summary>
+        /// 读档恢复：在指定格子矩形上直接生成一座已建成的建筑，并登记占地。
+        ///
+        /// 与 <see cref="BuildAtAnchor"/> 的区别：不经过蓝图、不触发 OnBlueprintClosed，
+        /// 也不需要 selectedBuilding。生成后由调用方统一重算玩家等级。
+        /// </summary>
+        /// <param name="data">建筑静态数据。</param>
+        /// <param name="rect">存档里的占地格子矩形。</param>
+        /// <param name="layerColors">自下而上的楼层颜色。</param>
+        /// <param name="error">失败原因，供存档参与者写日志。</param>
+        public bool RestoreBuilding(
+            BuildingData data, RectInt rect, IReadOnlyList<MaterialColor> layerColors, out string error)
+        {
+            error = null;
+
+            if (data == null)
+            {
+                error = "BuildingData 为空。";
+                return false;
+            }
+
+            if (data.BuildingPrefab == null)
+            {
+                error = $"建筑「{data.BuildingName}」没有配置建筑 Prefab。";
+                return false;
+            }
+
+            if (!data.HasValidFootprint)
+            {
+                error = $"建筑「{data.BuildingName}」的占地格数 {data.FootprintCells} 非法。";
+                return false;
+            }
+
+            if (grid == null)
+            {
+                error = "BuildingGrid 未配置。";
+                return false;
+            }
+
+            Vector2Int expectedCells = data.FootprintCells;
+
+            if (rect.width != expectedCells.x || rect.height != expectedCells.y)
+            {
+                error = $"存档占格 {rect.width}×{rect.height} 与建筑「{data.BuildingName}」" +
+                        $"配置的 {expectedCells.x}×{expectedCells.y} 不一致。";
+                return false;
+            }
+
+            if (!grid.CanPlace(rect, out GridPlacementFailure failure))
+            {
+                error = $"占地格子 {rect} 当前不可用：{failure.ToChineseName()}。";
+                return false;
+            }
+
+            Vector3 position = grid.CellRectCenter(rect);
+            GameObject instance = Instantiate(
+                data.BuildingPrefab, position, Quaternion.identity, buildingRoot);
+
+            instance.name = data.BuildingName;
+            ApplyFootprintScale(instance, grid.CellsToWorldFootprint(expectedCells));
+            ApplyBuildingLayer(instance);
+
+            int ownerId = instance.GetInstanceID();
+
+            if (!grid.Occupy(rect, ownerId))
+            {
+                Destroy(instance);
+                error = $"占地格子 {rect} 登记失败。";
+                return false;
+            }
+
+            placedBuildings.Add(instance);
+            ApplyLayerColors(instance, layerColors);
+            AttachPlacedBuildingInfo(instance, data, rect, layerColors);
+
+            if (instance.GetComponentInChildren<Collider>() == null)
+            {
+                Debug.LogWarning($"[BuildingManager] 恢复的建筑「{instance.name}」身上没有任何 Collider。" +
+                                 "别的建筑检测不到它，会允许与它重叠放置。请给建筑预制体加一个 Collider。", instance);
+            }
+
+            if (logBuildingFlow)
+            {
+                Debug.Log($"[BuildingManager] 已恢复建筑「{data.BuildingName}」于 {position}，" +
+                          $"占地 {rect}，共 {layerColors?.Count ?? 0} 层，" +
+                          $"当前场上共 {placedBuildings.Count} 座。");
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 移除全部已放置建筑并释放占地。读档前清场 / 重置存档时使用。
+        /// 走 <see cref="RemoveBuilding"/> 统一释放占用，不直接 Destroy。
+        /// </summary>
+        /// <returns>实际移除的建筑数。</returns>
+        public int ClearPlacedBuildings()
+        {
+            int removed = 0;
+
+            for (int i = placedBuildings.Count - 1; i >= 0; i--)
+            {
+                GameObject building = placedBuildings[i];
+
+                if (building == null)
+                {
+                    placedBuildings.RemoveAt(i);
+                    continue;
+                }
+
+                if (RemoveBuilding(building))
+                {
+                    removed++;
+                }
+            }
+
+            placedBuildings.Clear();
+            return removed;
+        }
+
+        /// <summary>把「属于哪座建筑、占哪几格、每层什么颜色」写到实例上，供存档参与者读取。</summary>
+        private static void AttachPlacedBuildingInfo(
+            GameObject instance, BuildingData data, RectInt rect, IReadOnlyList<MaterialColor> layerColors)
+        {
+            PlacedBuildingInfo info = instance.GetComponent<PlacedBuildingInfo>();
+
+            if (info == null)
+            {
+                info = instance.AddComponent<PlacedBuildingInfo>();
+            }
+
+            info.Initialize(data, rect, layerColors);
         }
 
         /// <summary>
@@ -568,6 +709,9 @@ namespace Yujian.Building
                 Debug.Log($"[BuildingManager] 已移除建筑「{building.name}」，当前占地已释放，" +
                           $"场上共 {placedBuildings.Count} 座。");
             }
+
+            // 广播放在 Destroy 之前：此时列表与占格都已经更新，订阅方立刻存档也不会写进旧状态
+            OnBuildingRemoved?.Invoke(building);
 
             Destroy(building);
             return true;

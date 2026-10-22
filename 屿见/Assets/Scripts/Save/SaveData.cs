@@ -15,10 +15,24 @@ namespace Yujian.Save
     [Serializable]
     public class SaveData
     {
-        /// <summary>当前存档结构版本。字段含义变化或新增迁移步骤时 +1。</summary>
-        public const int CurrentVersion = 1;
+        /// <summary>
+        /// 当前存档结构版本。字段含义变化或新增迁移步骤时 +1。
+        /// v2 起文件带 <see cref="checksum"/>，读取时校验完整性。
+        /// </summary>
+        public const int CurrentVersion = 2;
 
-        public int version = CurrentVersion;
+        /// <summary>
+        /// 存档结构版本。**默认 0 表示未知**，不能默认成 CurrentVersion——
+        /// JsonUtility 对 JSON 里不存在的字段会保留字段初始值，
+        /// 若这里默认当前版本，旧文件缺失 version 时会被误判成最新版并跳过迁移。
+        /// </summary>
+        public int version = 0;
+
+        /// <summary>
+        /// 存档内容校验和（FNV-1a 64 位，十六进制）。v2 起必填。
+        /// 计算时先把本字段清空，再对整个 JSON 求值，见 SaveIntegrity。
+        /// </summary>
+        public string checksum = string.Empty;
 
         /// <summary>保存时间（UTC ticks）。只用于日志与“最后游玩时间”，不参与玩法。</summary>
         public long savedAtUtc;
@@ -29,7 +43,7 @@ namespace Yujian.Save
         /// <summary>材料库存：每条是 (原料 ID, 颜色, 数量)。</summary>
         public List<MaterialSave> materials = new List<MaterialSave>();
 
-        /// <summary>已放置建筑。第 1 步只定义结构，第 2 步开始写入。</summary>
+        /// <summary>已放置建筑。由 BuildingSaveParticipant 写入 / 恢复。</summary>
         public List<BuildingSave> buildings = new List<BuildingSave>();
 
         /// <summary>矿石生成进度。第 1 步只定义结构，第 3 步开始写入。</summary>
@@ -40,7 +54,7 @@ namespace Yujian.Save
 
         /// <summary>
         /// 保存瞬间蓝图里已经放入的材料。读档时退回库存，避免退出游戏吞材料。
-        /// 第 1 步只定义结构，第 3 步开始写入。
+        /// 由 BlueprintSaveParticipant 写入 / 退款。
         /// </summary>
         public List<MaterialSave> blueprintRefund = new List<MaterialSave>();
 
@@ -105,10 +119,6 @@ namespace Yujian.Save
                 }
             }
 
-            if (version <= 0)
-            {
-                version = CurrentVersion;
-            }
         }
     }
 

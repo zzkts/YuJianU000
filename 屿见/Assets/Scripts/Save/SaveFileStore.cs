@@ -5,15 +5,28 @@ using UnityEngine;
 
 namespace Yujian.Save
 {
+    /// <summary>本次读到的存档来自哪一代文件。</summary>
+    public enum SaveFileSource
+    {
+        Primary = 0,
+        Backup = 1,
+        OlderBackup = 2,
+    }
+
     /// <summary>
     /// 存档文件读写。只负责“把一段文本安全地放到磁盘 / 从磁盘拿回来”，
     /// 不解析 JSON、不知道任何游戏系统。
     ///
     /// 写入顺序：
     ///   1. 先写 save.json.tmp；
-    ///   2. 用 File.Replace 原子替换 save.json，并把旧文件留成 save.json.bak；
-    ///   3. Replace 不可用时退化为“复制到 .bak → 覆盖 save.json”。
-    /// 读取顺序：先读 save.json，失败再读 save.json.bak。
+    ///   2. 把上一代 .bak 轮换成 .bak2（保留两代备份）；
+    ///   3. 用 File.Replace 原子替换 save.json，并把旧文件留成 save.json.bak；
+    ///   4. Replace 不可用时退化为“复制到 .bak → 删除主文件 → 移动临时文件”。
+    /// 读取顺序：save.json → save.json.bak → save.json.bak2。
+    ///
+    /// 两代备份的意义：如果某次保存写进了「语法合法但内容错误」的数据，
+    /// 第一次坏档后 .bak 还是好的；下一次保存会把坏档挤到 .bak，
+    /// 但 .bak2 仍保留再上一代的好档。
     ///
     /// PC 单机默认路径：Application.persistentDataPath（%USERPROFILE%\AppData\LocalLow\...）。
     /// </summary>
@@ -22,6 +35,7 @@ namespace Yujian.Save
         private const string SaveFileName = "save.json";
         private const string TempFileName = "save.json.tmp";
         private const string BackupFileName = "save.json.bak";
+        private const string OlderBackupFileName = "save.json.bak2";
 
         /// <summary>存档所在目录。</summary>
         public string Directory { get; }
@@ -29,11 +43,15 @@ namespace Yujian.Save
         /// <summary>主存档路径。</summary>
         public string SavePath => Path.Combine(Directory, SaveFileName);
 
-        /// <summary>备份路径。</summary>
+        /// <summary>上一代备份路径。</summary>
         public string BackupPath => Path.Combine(Directory, BackupFileName);
 
-        /// <summary>主存档或备份是否存在。</summary>
-        public bool HasAnySave => File.Exists(SavePath) || File.Exists(BackupPath);
+        /// <summary>上上代备份路径。</summary>
+        public string OlderBackupPath => Path.Combine(Directory, OlderBackupFileName);
+
+        /// <summary>主存档或任意一代备份是否存在。</summary>
+        public bool HasAnySave =>
+            File.Exists(SavePath) || File.Exists(BackupPath) || File.Exists(OlderBackupPath);
 
         public SaveFileStore(string directory = null)
         {
@@ -42,32 +60,29 @@ namespace Yujian.Save
                 : directory;
         }
 
-        /// <summary>
-        /// 读取存档文本。主存档失败时自动尝试备份。
-        /// </summary>
-        /// <param name="json">读到的文本。</param>
-        /// <param name="fromBackup">是否来自备份。</param>
-        /// <param name="error">两个文件都失败时的具体原因。</param>
-        public bool TryRead(out string json, out bool fromBackup, out string error)
+        /// <summary>取某一代存档文件的路径。</summary>
+        public string GetPath(SaveFileSource source)
         {
-            if (TryReadFile(SavePath, out json, out string primaryError))
+            switch (source)
             {
-                fromBackup = false;
-                error = null;
-                return true;
+                case SaveFileSource.Primary:
+                    return SavePath;
+                case SaveFileSource.Backup:
+                    return BackupPath;
+                case SaveFileSource.OlderBackup:
+                    return OlderBackupPath;
+                default:
+                    return SavePath;
             }
+        }
 
-            if (TryReadFile(BackupPath, out json, out string backupError))
-            {
-                fromBackup = true;
-                error = null;
-                Debug.LogWarning($"[SaveFileStore] 主存档不可用（{primaryError}），已改用备份：{BackupPath}");
-                return true;
-            }
-
-            fromBackup = false;
-            error = $"主存档：{primaryError}；备份：{backupError}";
-            return false;
+        /// <summary>
+        /// 读取指定的一代存档文本。是否回退由 SaveSystem 决定——
+        /// 它需要先解析内容，才知道这份文件是「不存在」还是「存在但损坏」。
+        /// </summary>
+        public bool TryReadSource(SaveFileSource source, out string json, out string error)
+        {
+            return TryReadFile(GetPath(source), out json, out error);
         }
 
         /// <summary>
@@ -87,6 +102,8 @@ namespace Yujian.Save
             {
                 System.IO.Directory.CreateDirectory(Directory);
                 File.WriteAllText(tempPath, json, new UTF8Encoding(false));
+
+                RotateBackups();
 
                 if (File.Exists(SavePath))
                 {
@@ -134,13 +151,37 @@ namespace Yujian.Save
             }
         }
 
-        /// <summary>删除主存档、备份与临时文件。用于“新游戏”。</summary>
+        /// <summary>
+        /// 把当前 .bak 轮换成 .bak2，为本次写入腾出 .bak。
+        /// 轮换失败只警告、不阻止保存：最坏情况是少保留一代备份。
+        /// </summary>
+        private void RotateBackups()
+        {
+            if (!File.Exists(BackupPath))
+            {
+                return;
+            }
+
+            try
+            {
+                File.Copy(BackupPath, OlderBackupPath, true);
+                File.Delete(BackupPath);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[SaveFileStore] 轮换备份失败（{exception.Message}），" +
+                                 "本次保存仍会继续，但更早的备份可能被覆盖。");
+            }
+        }
+
+        /// <summary>删除主存档、两代备份与临时文件。用于“新游戏” / 重置存档。</summary>
         public bool TryDelete(out string error)
         {
             try
             {
                 DeleteIfExists(SavePath);
                 DeleteIfExists(BackupPath);
+                DeleteIfExists(OlderBackupPath);
                 DeleteIfExists(Path.Combine(Directory, TempFileName));
                 error = null;
                 return true;
