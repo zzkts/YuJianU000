@@ -93,7 +93,7 @@ namespace Yujian.UI
             else
             {
                 Debug.LogError("[ShopUI] 条目模板未配置，商店不会显示任何原料。" +
-                               "请重跑菜单「屿见/配置原料商店（阶段 2 重构）」。", this);
+                               "请重跑菜单「屿见/商店/配置原料商店（阶段 2 重构）」。", this);
             }
 
             BuildItems();
@@ -194,7 +194,7 @@ namespace Yujian.UI
             if (warnedMissingSprites.Add(color))
             {
                 Debug.LogWarning($"[ShopUI] 颜色「{color.ToChineseName()}」没有配色块贴图，已退化成纯色块显示。" +
-                                 "跑一次菜单「屿见/配置原料商店（阶段 2 重构）」可以自动生成占位贴图。", this);
+                                 "跑一次菜单「屿见/商店/配置原料商店（阶段 2 重构）」可以自动生成占位贴图。", this);
             }
 
             return null;
@@ -264,7 +264,7 @@ namespace Yujian.UI
                 if (item == null)
                 {
                     Debug.LogWarning($"[ShopUI] 条目模板上没有 ShopItemUI 组件，已自动补上。" +
-                                     "请重跑菜单「屿见/配置原料商店（阶段 2 重构）」把引用接好。", this);
+                                     "请重跑菜单「屿见/商店/配置原料商店（阶段 2 重构）」把引用接好。", this);
                     item = clone.gameObject.AddComponent<ShopItemUI>();
                 }
 

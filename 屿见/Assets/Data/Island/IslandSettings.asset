@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 84b1b6c6f3a72764f8a6202683973097, type: 3}
+  m_Name: IslandSettings
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Island.IslandSettingsAsset
+  settings:
+    center: {x: 10.21735, y: 0, z: -9.49205}
+    halfSizeX: 52
+    halfSizeZ: 52
+    cornerRadius: 14
+    beachWidth: 9
+    coastWidth: 18
+    waterLevel: -1.4
+    seabedDepth: -4
+    gridSize: 2
+    seed: 20261017
+    coastNoiseLarge: 4
+    coastNoiseSmall: 1.5
+    hillCenter: {x: 0, y: 61.5}
+    hillRadius: 10
+    hillHeight: 14

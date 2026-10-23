@@ -41,6 +41,11 @@ namespace Yujian.Shop
         [Tooltip("该原料在世界中的预制体。阶段 2 只做购买与库存，预制体暂不实例化，留给阶段 3 建筑系统")]
         [SerializeField] private GameObject prefab;
 
+        [Header("存档")]
+        [Tooltip("跨存档稳定 ID。由菜单「屿见/通用模块/配置存档系统」按资产 GUID 自动生成，不要手改。" +
+                 "改掉它会让旧存档里的该原料无法被识别")]
+        [SerializeField] private string saveId = "";
+
         /// <summary>allowedColors 留空时，AllowedColors 返回的单元素兜底数组，惰性创建并复用。</summary>
         private MaterialColor[] singleColorFallback;
 
@@ -61,6 +66,9 @@ namespace Yujian.Shop
 
         /// <summary>世界预制体，可能为 null。</summary>
         public GameObject Prefab => prefab;
+
+        /// <summary>跨存档稳定 ID。可能为空——为空时存档会明确报错并跳过该原料。</summary>
+        public string SaveId => saveId;
 
         /// <summary>
         /// 该原料允许的全部颜色，按资产里的顺序返回，**可能含重复值**。
@@ -142,6 +150,13 @@ namespace Yujian.Shop
             {
                 Debug.LogWarning($"[MaterialData] 资产「{name}」的默认颜色 {defaultColor} 不在允许颜色列表内，" +
                                  "这会导致默认颜色的购买被拒绝。", this);
+            }
+
+            if (string.IsNullOrWhiteSpace(saveId))
+            {
+                // 不拦着资产使用，但存档时这条原料会被跳过。规则 5：不静默失败
+                Debug.LogWarning($"[MaterialData] 资产「{name}」没有 Save Id，存档时会跳过它。" +
+                                 "请运行菜单「屿见/通用模块/配置存档系统」自动生成。", this);
             }
         }
     }

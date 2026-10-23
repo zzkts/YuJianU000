@@ -11,7 +11,10 @@ namespace Yujian.UI
     /// 相机与面板由订阅了区域事件的系统各自负责。本类不持有任何状态，
     /// 和阶段 3 的 <c>BuildingUI</c> 是同一种角色（见 开发进度.md 第五节）。
     ///
-    /// 按钮的 OnClick 由编辑器向导「屿见/配置 MVP 整合（阶段 6）」接成持久监听
+    /// 唯一的附加规则：**再次点击当前系统的按钮**不是「无操作」，而是退出该系统、
+    /// 进入观察模式（<see cref="GameAreaController.EnterObservationMode"/>）。
+    ///
+    /// 按钮的 OnClick 由编辑器向导「屿见/整合/配置 MVP 整合（阶段 6）」接成持久监听
     /// （决策 15 的老做法：接线在场景里看得见、改得动）。
     /// 三个 Show* 方法就是给 UnityEvent 用的，所以必须是 public 且无参数。
     /// </summary>
@@ -46,7 +49,7 @@ namespace Yujian.UI
             else
             {
                 Debug.LogError("[BottomNavUI] GameAreaController 未配置，底部导航点了不会有任何反应。" +
-                               "请重新运行菜单「屿见/配置 MVP 整合（阶段 6）」。", this);
+                               "请重新运行菜单「屿见/整合/配置 MVP 整合（阶段 6）」。", this);
             }
 
             WarnIfMissingButton(miningButton, "挖矿");
@@ -93,6 +96,20 @@ namespace Yujian.UI
             {
                 Debug.LogError($"[BottomNavUI] 点了「{area.ToChineseName()}」但 GameAreaController 没配，" +
                                "区域不会切换。", this);
+                return;
+            }
+
+            if (areas.CurrentArea == area)
+            {
+                // 再点一次已经在的系统 = 退出它，落到观察模式。
+                // 这里必须由导航判断，不能交给 SetArea：SetArea 对「切到当前区域」
+                // 是刻意忽略的（避免重复点按钮重置相机），语义不同。
+                if (logNavFlow)
+                {
+                    Debug.Log($"[BottomNavUI] 再次点击「{area.ToChineseName()}」，退出该系统，进入观察模式");
+                }
+
+                areas.EnterObservationMode();
                 return;
             }
 
@@ -146,7 +163,7 @@ namespace Yujian.UI
             if (button == null)
             {
                 Debug.LogError($"[BottomNavUI] 「{label}」按钮未配置，这个按钮不会被高亮。" +
-                               "请重新运行菜单「屿见/配置 MVP 整合（阶段 6）」。", this);
+                               "请重新运行菜单「屿见/整合/配置 MVP 整合（阶段 6）」。", this);
             }
         }
     }

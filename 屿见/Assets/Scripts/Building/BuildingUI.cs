@@ -1,4 +1,5 @@
 using UnityEngine;
+using Yujian.Core;
 
 namespace Yujian.Building
 {
@@ -17,8 +18,11 @@ namespace Yujian.Building
         [Tooltip("建筑系统入口")]
         [SerializeField] private BuildingManager buildingManager;
 
-        [Tooltip("相机调度。点「退出建造」时用它把镜头移回常规机位；留空则只取消蓝图，镜头不动")]
+        [Tooltip("相机调度。区域引用缺失时的兜底：用它把镜头移回常规机位")]
         [SerializeField] private BuildingCameraDirector cameraDirector;
+
+        [Tooltip("区域状态。点「退出建造」时切到观察模式；留空会报错并退化为只退出相机")]
+        [SerializeField] private GameAreaController areas;
 
         [Tooltip("可供玩家建造的建筑清单。顺序与 UI 按钮传进来的下标一一对应")]
         [SerializeField] private BuildingData[] availableBuildings = new BuildingData[0];
@@ -70,12 +74,28 @@ namespace Yujian.Building
             buildingManager.CancelSelection();
         }
 
-        /// <summary>退出建造模式：取消蓝图，并把镜头移回常规机位。</summary>
+        /// <summary>
+        /// 退出建造模式：退出建筑系统，落到观察模式。
+        ///
+        /// 优先走区域切换，而不是只调 cameraDirector.ExitBuildMode()：
+        /// 后者只动相机，底部导航仍会高亮「建筑」、建筑面板仍会被区域系统当成打开状态。
+        /// 区域切到 Observation 后，AreaCameraDirector 会负责退出建造视角并取消未放置蓝图。
+        /// </summary>
         public void ExitBuildMode()
         {
+            if (areas != null)
+            {
+                areas.EnterObservationMode();
+                return;
+            }
+
+            Debug.LogError("[BuildingUI] GameAreaController 未配置：「退出建造」只会退出相机，" +
+                           "底部导航仍会停在建筑区。请重新运行菜单「屿见/场景/配置观察模式系统」" +
+                           "把 GameAreaSystem 接上。", this);
+
             if (cameraDirector != null)
             {
-                // cameraDirector 内部会顺手取消还没放置的蓝图，这里不要重复取消
+                // 兜底：cameraDirector 内部会顺手取消还没放置的蓝图，这里不要重复取消
                 cameraDirector.ExitBuildMode();
                 return;
             }

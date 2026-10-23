@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using Yujian.Core;
 
 namespace Yujian.Building
 {
@@ -24,6 +24,12 @@ namespace Yujian.Building
 
         [Tooltip("用于屏幕坐标转射线的相机。留空则用 MainCamera")]
         [SerializeField] private Camera viewCamera;
+
+        [Tooltip("建筑网格。蓝图吸附、可建区域与占用判定都来自它。留空会报错，并且一律拒绝放置")]
+        [SerializeField] private BuildingGrid grid;
+
+        [Tooltip("网格可视化。蓝图移动时显示当前占地格。留空仍可放置，但没有格线与高亮")]
+        [SerializeField] private BuildingGridVisualizer gridVisualizer;
 
         [Tooltip("确认放置的输入动作。复用工程的 Assets/InputSystem_Actions.inputactions，" +
                  "选 Player/Attack（已绑定鼠标左键、触摸点击、手柄），不要新建输入资产。" +
@@ -53,11 +59,14 @@ namespace Yujian.Building
         [SerializeField] private bool logBlockedPlacements = true;
 
         /// <summary>UI 射线结果的复用缓冲，避免每次点击都分配新 List。</summary>
-        private readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
+
+        /// <summary>建筑碰撞体查询的复用缓冲，避免蓝图跟随鼠标时每帧分配数组。</summary>
+        private readonly Collider[] overlapBuffer = new Collider[128];
 
         private bool warnedAboutMissingEventSystem;
         private bool warnedAboutMissingBuildingLayers;
         private bool warnedAboutBadFootprint;
+        private bool warnedAboutMissingGrid;
 
         private void Awake()
         {
@@ -81,6 +90,18 @@ namespace Yujian.Building
             {
                 Debug.LogError("[BuildingPlacement] Confirm Action 未配置。请把 Assets/InputSystem_Actions.inputactions " +
                                "拖入该字段，并在弹出的动作列表中选中 Player/Attack。", this);
+            }
+
+            if (grid == null)
+            {
+                Debug.LogError("[BuildingPlacement] BuildingGrid 未配置，任何位置都会被判为不可放置。" +
+                               "请重新运行菜单「屿见/建筑/配置建筑网格与建造相机（阶段 7）」。", this);
+            }
+
+            if (gridVisualizer == null)
+            {
+                Debug.LogWarning("[BuildingPlacement] BuildingGridVisualizer 未配置，" +
+                                 "蓝图仍会吸附并变绿/红，但看不到格线与占地高亮。", this);
             }
 
             if (overlapBoxHeight <= 0f)
@@ -157,6 +178,7 @@ namespace Yujian.Building
             // 没有蓝图时不占用任何资源：不读指针、不发射线、不做物理查询
             if (buildingManager == null || !buildingManager.IsPlacing)
             {
+                HideGridPreview();
                 return;
             }
 
@@ -164,6 +186,7 @@ namespace Yujian.Building
             // 玩家要从材料面板往外拖，鼠标会长时间停在面板上，蓝图跟过去就会被面板整个盖住
             if (buildingManager.Phase == BuildingPhase.Filling)
             {
+                HideGridPreview();
                 return;
             }
 
@@ -171,6 +194,7 @@ namespace Yujian.Building
 
             if (blueprint == null)
             {
+                HideGridPreview();
                 return;
             }
 
@@ -185,8 +209,37 @@ namespace Yujian.Building
                 return;
             }
 
-            blueprint.transform.position = point;
-            blueprint.SetState(IsPlacementValid(point, blueprint) ? BlueprintState.Valid : BlueprintState.Invalid);
+            if (grid == null ||
+                !grid.TryGetSnappedPose(point, blueprint.Footprint, out Vector3 snappedCenter, out RectInt cellRect))
+            {
+                // 指针在网格外：蓝图上一次的位置保留，只把它标红，避免视觉上突然消失
+                blueprint.SetState(BlueprintState.Invalid);
+                HideGridPreview();
+                return;
+            }
+
+            // 先吸附再赋值。吸附后的位置才是蓝图与实体建筑共同的权威坐标
+            blueprint.transform.position = snappedCenter;
+
+            bool valid = IsPlacementValid(snappedCenter, cellRect, blueprint, out string reason);
+            blueprint.SetState(valid ? BlueprintState.Valid : BlueprintState.Invalid);
+
+            if (gridVisualizer != null)
+            {
+                gridVisualizer.ShowPreview(cellRect, valid);
+            }
+
+            // 这里不打印 reason：指针每帧移动，失败是常态，打印会刷屏。
+            // 点击时会在 OnConfirmPerformed 里把具体原因打出来。
+        }
+
+        /// <summary>隐藏占地高亮。visualizer 未配置时是空操作。</summary>
+        private void HideGridPreview()
+        {
+            if (gridVisualizer != null)
+            {
+                gridVisualizer.HidePreview();
+            }
         }
 
         private void OnConfirmPerformed(InputAction.CallbackContext context)
@@ -228,12 +281,24 @@ namespace Yujian.Building
                 return;
             }
 
-            if (!IsPlacementValid(point, blueprint))
+            if (grid == null ||
+                !grid.TryGetSnappedPose(point, blueprint.Footprint, out Vector3 snappedCenter, out RectInt cellRect))
             {
                 if (logBlockedPlacements)
                 {
-                    Debug.LogWarning($"[BuildingPlacement] {point} 处不可放置（与已有建筑重叠，或占地/图层配置无效），" +
-                                     "本次点击被忽略。蓝图保持跟随鼠标。");
+                    Debug.LogWarning("[BuildingPlacement] 点击位置在建筑网格之外，本次点击被忽略。" +
+                                     "蓝图保持跟随鼠标。");
+                }
+
+                return;
+            }
+
+            if (!IsPlacementValid(snappedCenter, cellRect, blueprint, out string reason))
+            {
+                if (logBlockedPlacements)
+                {
+                    Debug.LogWarning($"[BuildingPlacement] 格子 {cellRect} 处不可放置：{reason}。" +
+                                     "本次点击被忽略，蓝图保持跟随鼠标。");
                 }
 
                 return;
@@ -241,19 +306,52 @@ namespace Yujian.Building
 
             if (logPlacementFlow)
             {
-                Debug.Log($"[BuildingPlacement] 在 {point} 确认落位。");
+                Debug.Log($"[BuildingPlacement] 在 {snappedCenter} 确认落位，占地格子 {cellRect}。");
             }
 
-            buildingManager.AnchorBlueprint(point);
+            buildingManager.AnchorBlueprint(snappedCenter, cellRect);
         }
 
         /// <summary>
-        /// 判断指定位置能否放置该蓝图。
-        /// 用 Physics.CheckBox 而不是 OverlapBox：这里只需要一个"有没有"的布尔值，
-        /// CheckBox 不分配数组、语义最直接。
+        /// 判断吸附后的位置能否放置该蓝图。这是“这里能不能放”的唯一入口。
+        ///
+        /// 判定顺序：
+        ///   1. 网格（BuildingGrid.CanPlace）：越界 / 已占用 / 不在可建台地上；
+        ///   2. 建筑图层与占地尺寸配置是否有效；
+        ///   3. Physics.CheckBox 兜底：发现没有经过网格登记的 Building 层碰撞体。
+        ///
+        /// 网格是建筑之间占用的权威判定；Physics 只负责兜住“场景里本来就有、但没走
+        /// BuildAtAnchor 的碰撞体”，两者都通过才算可放。
         /// </summary>
-        private bool IsPlacementValid(Vector3 point, BuildingBlueprint blueprint)
+        private bool IsPlacementValid(
+            Vector3 snappedCenter, RectInt cellRect, BuildingBlueprint blueprint, out string reason)
         {
+            reason = null;
+
+            if (buildingManager == null)
+            {
+                reason = "BuildingManager 未配置";
+                return false;
+            }
+
+            if (grid == null)
+            {
+                if (!warnedAboutMissingGrid)
+                {
+                    warnedAboutMissingGrid = true;
+                    Debug.LogError("[BuildingPlacement] BuildingGrid 未配置，一律判定为不可放置。", this);
+                }
+
+                reason = "BuildingGrid 未配置";
+                return false;
+            }
+
+            if (!grid.CanPlace(cellRect, out GridPlacementFailure failure))
+            {
+                reason = failure.ToChineseName();
+                return false;
+            }
+
             LayerMask buildingLayers = buildingManager.BuildingLayers;
 
             if (buildingLayers.value == 0)
@@ -265,6 +363,7 @@ namespace Yujian.Building
                                    "一律判定为不可放置。请在 BuildingManager 上勾选 Building 层。", this);
                 }
 
+                reason = "建筑图层未配置";
                 return false;
             }
 
@@ -279,6 +378,7 @@ namespace Yujian.Building
                                    "含非正数，一律判定为不可放置。请检查 BuildingData 里的 Footprint。", this);
                 }
 
+                reason = "占地尺寸非法";
                 return false;
             }
 
@@ -287,14 +387,73 @@ namespace Yujian.Building
                 overlapBoxHeight * 0.5f,
                 footprint.y * 0.5f);
 
-            // 检测盒从地面(点)向上延伸到 overlapBoxHeight 高度。
+            // 检测盒从吸附后的地面点向上延伸到 overlapBoxHeight 高度。
             // 不用以点为中心：那样盒子会有一半埋在地下，对"建筑只向上长"的情况没有额外收益
-            Vector3 center = point + Vector3.up * (overlapBoxHeight * 0.5f);
+            Vector3 center = snappedCenter + Vector3.up * (overlapBoxHeight * 0.5f);
 
-            bool blocked = Physics.CheckBox(
-                center, halfExtents, Quaternion.identity, buildingLayers, QueryTriggerInteraction.Ignore);
+            if (IsBlockedByUnregisteredCollider(center, halfExtents, buildingLayers))
+            {
+                reason = "与已有建筑碰撞体重叠";
+                return false;
+            }
 
-            return !blocked;
+            return true;
+        }
+
+        /// <summary>
+        /// Physics 兜底：只拦「没有经过 BuildingGrid 登记」的 Building 层碰撞体。
+        ///
+        /// 必须排除已登记的建筑，否则刚好贴边的两块地会被判成重叠：
+        /// PhysX 的 contactOffset 会让两个只接触、没有真正穿插的盒子也命中查询，
+        /// 2×2 建筑的碰撞体正好是 4×4，紧挨着放时面贴面，就会表现为「必须空出一整格」。
+        /// 已登记建筑之间的占用关系由 BuildingGrid.CanPlace 精确到格判定，不需要 Physics 再管。
+        /// </summary>
+        private bool IsBlockedByUnregisteredCollider(
+            Vector3 center, Vector3 halfExtents, LayerMask buildingLayers)
+        {
+            int count = Physics.OverlapBoxNonAlloc(
+                center, halfExtents, overlapBuffer, Quaternion.identity, buildingLayers,
+                QueryTriggerInteraction.Ignore);
+
+            for (int i = 0; i < count; i++)
+            {
+                Collider hit = overlapBuffer[i];
+
+                if (hit == null || IsRegisteredBuilding(hit))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            // 缓冲装满时可能还有没取到的碰撞体，保守地按不可放置处理
+            return count >= overlapBuffer.Length;
+        }
+
+        /// <summary>该碰撞体是否属于一座已经登记到网格里的建筑。</summary>
+        private bool IsRegisteredBuilding(Collider collider)
+        {
+            IReadOnlyList<GameObject> placed = buildingManager.PlacedBuildings;
+
+            for (int i = 0; i < placed.Count; i++)
+            {
+                GameObject building = placed[i];
+
+                if (building == null)
+                {
+                    continue;
+                }
+
+                Transform target = collider.transform;
+
+                if (target == building.transform || target.IsChildOf(building.transform))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -357,10 +516,7 @@ namespace Yujian.Building
         }
 
         /// <summary>
-        /// 判断指定屏幕坐标是否落在 UI 上。
-        /// 与 MiningInput 用的是同一套做法：EventSystem.RaycastAll 按坐标判定，
-        /// 而不是 EventSystem.IsPointerOverGameObject()——后者只认当前鼠标位置，触屏要额外传 fingerId，
-        /// 且结果受 EventSystem 与调用方的执行顺序影响。
+        /// 判断指定屏幕坐标是否落在 UI 上。实现统一在 <see cref="PointerOverUI"/>。
         /// </summary>
         private bool IsPointerOverUI(Vector2 screenPosition)
         {
@@ -369,29 +525,7 @@ namespace Yujian.Building
                 return false;
             }
 
-            EventSystem eventSystem = EventSystem.current;
-
-            if (eventSystem == null)
-            {
-                if (!warnedAboutMissingEventSystem)
-                {
-                    warnedAboutMissingEventSystem = true;
-                    Debug.LogWarning("[BuildingPlacement] 场景中没有 EventSystem，无法判断点击是否落在 UI 上；" +
-                                     "后续点击一律不做 UI 屏蔽。", this);
-                }
-
-                return false;
-            }
-
-            PointerEventData eventData = new PointerEventData(eventSystem)
-            {
-                position = screenPosition,
-            };
-
-            uiRaycastResults.Clear();
-            eventSystem.RaycastAll(eventData, uiRaycastResults);
-
-            return uiRaycastResults.Count > 0;
+            return PointerOverUI.IsOver(screenPosition, this, ref warnedAboutMissingEventSystem);
         }
     }
 }

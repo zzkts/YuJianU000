@@ -1,545 +1,484 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using Yujian.Building;
+using Yujian.Player;
 
 namespace Yujian.Mining
 {
     /// <summary>
-    /// 单一矿位的矿石生成器。
+    /// 矿石生成器：管理场上唯一一块矿石的生成顺序。
     ///
-    /// 规则（对应策划文档）：
-    ///   1. 场上只有一个固定矿位，始终复用同一块 Ore；
-    ///   2. 当前等级有多个矿石组，按权重随机挑一个还有剩余次数的组；
-    ///   3. 当前矿石血量归零后，下一帧立刻在同一位置生成下一块；
-    ///   4. 当前等级所有组都挖完，自动切到下一等级；
-    ///   5. 角色等级由建筑数量决定，建筑等级表可把等级跳得更高。
+    /// 职责：
+    ///   1. 根据玩家等级选择"当前矿石等级"；
+    ///   2. 从该等级的矿石组里随机抽组、组内按权重抽条目；
+    ///   3. 矿石被击碎后，在固定位置生成下一块；
+    ///   4. 当前等级所有组的所有条目都抽过后，解锁下一等级组。
     ///
-    /// 所有数值都在 OreDefinition / OreLevelData / OreSpawnTable /
-    /// BuildingLevelTable 资产里，以及本组件的 Inspector 里调。
+    /// 不负责：伤害、金币、受击表现、点击输入。
+    /// 进度只存在于运行时，不做存档——本轮要求里没有存档。
     /// </summary>
     public class OreSpawner : MonoBehaviour
     {
         [Header("依赖")]
-        [Tooltip("场景里唯一保留的矿石。推荐直接拖 Ore_01")]
+        [Tooltip("场上唯一一块矿石。生成器直接复用这个对象，不实例化新对象")]
         [SerializeField] private Ore ore;
 
-        [Tooltip("矿石等级表：每一级有哪些矿石组、各出现几次、权重多少")]
-        [SerializeField] private OreSpawnTable spawnTable;
+        [Tooltip("玩家等级，提供建筑数换算出的当前等级")]
+        [SerializeField] private PlayerLevel playerLevel;
 
-        [Tooltip("建筑数量等级表：建筑总数达到多少座时，用哪一级矿石")]
-        [SerializeField] private BuildingLevelTable buildingLevelTable;
+        [Tooltip("矿石等级表：等级 → 该等级的矿石组")]
+        [SerializeField] private OreLevelTable levelTable;
 
-        [Tooltip("场景里的 BuildingManager。留空时会在运行时自动查找")]
-        [SerializeField] private BuildingManager buildingManager;
+        [Header("节奏")]
+        [Tooltip("上一块矿石击碎后，隔多久生成下一块（秒）。0 表示下一帧立刻生成")]
+        [SerializeField] private float spawnDelay = 0.2f;
 
-        [Tooltip("固定生成位置。留空时使用矿石自己的位置")]
-        [SerializeField] private Transform anchor;
-
-        [Header("生成节奏")]
-        [Tooltip("矿石击碎后等多久生成下一块。0 = 下一帧立刻生成")]
-        [SerializeField, Min(0f)] private float nextSpawnDelay = 0f;
-
-        [Tooltip("多久检查一次建筑数量，单位秒")]
-        [SerializeField, Min(0.05f)] private float buildingLevelCheckInterval = 0.5f;
-
-        [Tooltip("进入 Play 时是否立刻生成第一块")]
-        [SerializeField] private bool spawnOnStart = true;
-
-        [Tooltip("是否在 Console 打印生成、升级和剩余次数日志")]
+        [Header("调试")]
+        [Tooltip("是否在 Console 打印生成与等级切换日志")]
         [SerializeField] private bool logSpawnFlow = true;
 
-        [Header("出场果冻")]
-        [Tooltip("整段出场动画的时长（秒）")]
-        [SerializeField, Min(0.01f)] private float spawnDuration = 0.45f;
+        /// <summary>等级 → 已抽过的条目。同一等级内不会重复抽同一条目。</summary>
+        private readonly Dictionary<int, HashSet<OreEntry>> drawnEntriesByTier =
+            new Dictionary<int, HashSet<OreEntry>>();
 
-        [Tooltip("前多少比例的时间用来放大，剩下的时间回落。0.65 = 前 65% 放大")]
-        [SerializeField, Range(0.1f, 0.95f)] private float spawnRisePortion = 0.65f;
-
-        [Tooltip("出场时的起始缩放，相对原始大小")]
-        [SerializeField, Min(0.01f)] private float spawnStartScale = 0.18f;
-
-        [Tooltip("放大到的峰值，1.12 = 比原始大小大 12%")]
-        [SerializeField, Min(1f)] private float spawnOvershoot = 1.12f;
-
-        private readonly List<int> remainingCounts = new List<int>();
-
-        private int currentLevelIndex;
-        private int lastTotalCount = -1;
-        private float buildingCheckTimer;
-        private bool waitingForNextSpawn;
+        private int currentTier;
         private bool initialized;
-        private Ore subscribedOre;
+        private Coroutine respawnRoutine;
 
-        public Ore CurrentOre => ore;
-
-        public int CurrentTotalBuildingCount { get; private set; }
-
-        public int CurrentNormalBuildingCount { get; private set; }
-
-        public int CurrentSpecialBuildingCount { get; private set; }
-
-        private OreLevelData CurrentLevel =>
-            spawnTable != null ? spawnTable.GetLevelByIndex(currentLevelIndex) : null;
-
-        public int CurrentOreLevelNumber =>
-            CurrentLevel != null ? CurrentLevel.Level : 1;
-
-        public int RemainingInCurrentLevel
-        {
-            get
-            {
-                int total = 0;
-                for (int i = 0; i < remainingCounts.Count; i++)
-                {
-                    total += Mathf.Max(0, remainingCounts[i]);
-                }
-
-                return total;
-            }
-        }
-
-        private void Awake()
-        {
-            if (ore == null)
-            {
-                ore = GetComponentInChildren<Ore>(true);
-            }
-
-            if (anchor == null && ore != null)
-            {
-                anchor = ore.transform;
-            }
-
-            if (buildingManager == null)
-            {
-                buildingManager = FindFirstObjectByType<BuildingManager>(FindObjectsInactive.Include);
-            }
-        }
+        /// <summary>当前使用的矿石等级。</summary>
+        public int CurrentTier => currentTier;
 
         private void OnEnable()
         {
-            SubscribeToOre();
+            if (ore != null)
+            {
+                ore.OnDied += HandleOreDied;
+            }
+
+            if (playerLevel != null)
+            {
+                playerLevel.OnLevelChanged += HandleLevelChanged;
+            }
         }
 
         private void OnDisable()
         {
-            UnsubscribeFromOre();
-            waitingForNextSpawn = false;
+            if (ore != null)
+            {
+                ore.OnDied -= HandleOreDied;
+            }
+
+            if (playerLevel != null)
+            {
+                playerLevel.OnLevelChanged -= HandleLevelChanged;
+            }
         }
 
         private void Start()
         {
-            SubscribeToOre();
-
-            if (!ValidateSetup())
+            if (!ValidateDependencies())
             {
-                enabled = false;
                 return;
             }
 
-            if (anchor == null)
-            {
-                anchor = ore.transform;
-            }
-
-            int totalCount;
-            int normalCount;
-            int specialCount;
-            currentLevelIndex = GetBuildingLevelIndex(out totalCount, out normalCount, out specialCount);
-            lastTotalCount = totalCount;
-            CurrentTotalBuildingCount = totalCount;
-            CurrentNormalBuildingCount = normalCount;
-            CurrentSpecialBuildingCount = specialCount;
-
-            InitializeLevel(currentLevelIndex);
+            currentTier = ResolveTier(Mathf.Max(1, playerLevel != null ? playerLevel.CurrentLevel : 1));
             initialized = true;
 
             if (logSpawnFlow)
             {
-                Debug.Log($"[OreSpawner] 初始化完成：建筑总数 {totalCount} 座（普通 {normalCount}、特殊 {specialCount}），" +
-                          $"使用矿石第 {CurrentOreLevelNumber} 级，本等级共 {RemainingInCurrentLevel} 块。", this);
+                Debug.Log($"[OreSpawner] 初始化完成，起始矿石等级 {currentTier}");
             }
 
-            if (spawnOnStart)
-            {
-                SpawnNext();
-            }
+            SpawnNextOre();
         }
 
-        private void Update()
-        {
-            if (!initialized)
-            {
-                return;
-            }
-
-            buildingCheckTimer += Time.deltaTime;
-            if (buildingCheckTimer < buildingLevelCheckInterval)
-            {
-                return;
-            }
-
-            buildingCheckTimer = 0f;
-            RefreshBuildingLevel();
-        }
-
-        /// <summary>编辑器向导调用，把场景引用一次性接好。</summary>
-        public void ConfigureForSetup(Ore newOre, OreSpawnTable table,
-            BuildingLevelTable buildingTable, BuildingManager manager, Transform newAnchor)
-        {
-            ore = newOre;
-            spawnTable = table;
-            buildingLevelTable = buildingTable;
-            buildingManager = manager;
-            anchor = newAnchor;
-        }
-
-        private bool ValidateSetup()
+        /// <summary>
+        /// 检查依赖。返回 false 时整套生成逻辑不启动，避免出现"矿石消失但没人再生成"的半死状态。
+        /// </summary>
+        private bool ValidateDependencies()
         {
             if (ore == null)
             {
-                Debug.LogError("[OreSpawner] 没有指定 Ore。请把 Ore_01 拖到 Ore 字段。", this);
+                Debug.LogError("[OreSpawner] Ore 未配置，无法生成矿石。", this);
                 return false;
             }
 
-            if (spawnTable == null || spawnTable.LevelCount == 0)
+            if (levelTable == null)
             {
-                Debug.LogError("[OreSpawner] 没有指定矿石生成表，或表里没有任何等级。", this);
+                Debug.LogError("[OreSpawner] OreLevelTable 未配置，无法选择矿石组。", this);
                 return false;
             }
 
-            if (buildingLevelTable == null)
+            if (levelTable.Levels == null || levelTable.Levels.Count == 0)
             {
-                Debug.LogWarning("[OreSpawner] 没有指定建筑等级表，将永远使用第 1 级矿石。", this);
+                Debug.LogError("[OreSpawner] OreLevelTable 是空表，没有任何等级配置。", this);
+                return false;
             }
 
-            if (!ore.gameObject.activeInHierarchy)
+            if (!ore.UsesExternalSpawnControl)
             {
-                Debug.LogError("[OreSpawner] 指定的 Ore 是关闭状态，矿石不会出现。请把它激活。", this);
+                Debug.LogError("[OreSpawner] 目标 Ore 没有开启 externalSpawnControl，" +
+                               "它自己的整批刷新会和本生成器冲突。生成逻辑已停用，" +
+                               "请重跑配置向导或手动勾选该选项。", this);
                 return false;
+            }
+
+            if (playerLevel == null)
+            {
+                Debug.LogWarning("[OreSpawner] PlayerLevel 未配置，将固定使用 1 级矿石组。", this);
             }
 
             return true;
         }
 
-        private void SubscribeToOre()
+        private void HandleOreDied(Ore deadOre)
         {
-            if (ore == subscribedOre)
+            if (!initialized || deadOre != ore)
             {
                 return;
             }
 
-            UnsubscribeFromOre();
-            subscribedOre = ore;
-
-            if (subscribedOre != null)
+            if (respawnRoutine != null)
             {
-                subscribedOre.Died += OnOreDied;
+                StopCoroutine(respawnRoutine);
             }
+
+            respawnRoutine = StartCoroutine(RespawnAfterDelay());
         }
 
-        private void UnsubscribeFromOre()
+        private IEnumerator RespawnAfterDelay()
         {
-            if (subscribedOre != null)
+            if (spawnDelay > 0f)
             {
-                subscribedOre.Died -= OnOreDied;
-                subscribedOre = null;
+                yield return new WaitForSeconds(spawnDelay);
             }
+            else
+            {
+                // 至少等一帧，避免在 Ore.TakeDamage 的调用栈里同步重生成
+                yield return null;
+            }
+
+            respawnRoutine = null;
+            SpawnNextOre();
         }
 
-        private void OnOreDied(Ore deadOre)
+        /// <summary>
+        /// 抽取并生成下一块矿石。抽不到任何条目时矿石保持隐藏，并打印明确错误。
+        /// </summary>
+        private void SpawnNextOre()
         {
-            if (deadOre != ore || waitingForNextSpawn)
+            OreGroup group;
+            OreEntry entry = SelectNextEntry(out group);
+
+            if (entry == null)
             {
+                Debug.LogError("[OreSpawner] 没有可生成的矿石条目，矿石保持隐藏。" +
+                               "请检查矿石等级表与各矿石组的数据。", this);
                 return;
             }
 
-            waitingForNextSpawn = true;
-            StartCoroutine(SpawnNextAfterDelay());
-        }
-
-        private IEnumerator SpawnNextAfterDelay()
-        {
-            if (nextSpawnDelay > 0f)
-            {
-                yield return new WaitForSeconds(nextSpawnDelay);
-            }
-
-            // 至少等一帧：让 MiningInput / 自动攻击先读取完本次奖励
-            yield return null;
-
-            SpawnNext();
-            waitingForNextSpawn = false;
-        }
-
-        private void SpawnNext()
-        {
-            if (!initialized || ore == null || spawnTable == null)
-            {
-                return;
-            }
-
-            if (RemainingInCurrentLevel <= 0)
-            {
-                if (!TryAdvanceLevel())
-                {
-                    ResetCurrentLevelCounts();
-                }
-            }
-
-            int groupIndex = PickGroupIndex();
-            if (groupIndex < 0)
-            {
-                ResetCurrentLevelCounts();
-                groupIndex = PickGroupIndex();
-            }
-
-            if (groupIndex < 0)
-            {
-                Debug.LogError("[OreSpawner] 当前等级没有任何可生成的矿石组，请检查生成表。", this);
-                return;
-            }
-
-            OreLevelData level = CurrentLevel;
-            OreGroup group = level.Groups[groupIndex];
-
-            if (group == null || group.Ore == null)
-            {
-                Debug.LogError($"[OreSpawner] 第 {level.Level} 级的第 {groupIndex} 个矿石组没有指定 OreDefinition。", this);
-                return;
-            }
-
-            remainingCounts[groupIndex] = Mathf.Max(0, remainingCounts[groupIndex] - 1);
-
-            Vector3 spawnPosition = anchor != null ? anchor.position : ore.transform.position;
-            ore.transform.position = spawnPosition;
-            ore.ApplyDefinition(group.Ore);
-            ore.PlaySpawnJelly(spawnStartScale, spawnOvershoot, spawnDuration, spawnRisePortion);
+            ore.ApplyDefinition(entry.Type, entry.MaxHealth, entry.Reward);
 
             if (logSpawnFlow)
             {
-                Debug.Log($"[OreSpawner] 生成「{group.Ore.DisplayName}」" +
-                          $"（第 {level.Level} 级，{OreTypeInfo.DisplayName(group.Ore.Type)}），" +
-                          $"本等级还剩 {RemainingInCurrentLevel} 块。", this);
+                Debug.Log($"[OreSpawner] 等级 {currentTier} / 组「{group.name}」生成" +
+                          $"「{OreTypeInfo.DisplayName(entry.Type)}」（HP {entry.MaxHealth}，奖励 {entry.Reward}）");
             }
         }
 
-        private int PickGroupIndex()
+        /// <summary>
+        /// 从当前等级的未挖完组里抽一条矿石定义。
+        /// 当前等级挖完后自动切到下一等级；已是最高等级时重置该等级的抽取记录并循环。
+        /// </summary>
+        private OreEntry SelectNextEntry(out OreGroup selectedGroup)
         {
-            OreLevelData level = CurrentLevel;
-            if (level == null || level.Groups == null || level.Groups.Count == 0)
+            selectedGroup = null;
+
+            // guard 只是防御配置异常导致的死循环，正常情况下最多循环"等级数量 + 1"次
+            for (int guard = 0; guard < 64; guard++)
             {
-                return -1;
+                int resolvedTier = ResolveTier(currentTier);
+                if (resolvedTier != currentTier)
+                {
+                    currentTier = resolvedTier;
+                }
+
+                OreLevelDefinition definition;
+                if (!levelTable.TryGetLevel(currentTier, out definition))
+                {
+                    Debug.LogError($"[OreSpawner] 等级表里找不到可用的等级（请求 {currentTier}）。", this);
+                    return null;
+                }
+
+                HashSet<OreEntry> drawn = GetDrawnSet(currentTier);
+                List<OreGroup> candidates = CollectAvailableGroups(definition, drawn);
+
+                if (candidates.Count == 0)
+                {
+                    int nextTier = FindNextConfiguredTier(currentTier);
+
+                    if (nextTier > currentTier)
+                    {
+                        if (logSpawnFlow)
+                        {
+                            Debug.Log($"[OreSpawner] 等级 {currentTier} 的矿石组已全部挖完，切换到等级 {nextTier}");
+                        }
+
+                        currentTier = nextTier;
+                        continue;
+                    }
+
+                    if (!HasAnySelectableEntry(definition))
+                    {
+                        Debug.LogError($"[OreSpawner] 等级 {currentTier} 的矿石组没有任何可抽取条目" +
+                                       "（权重与生命值都必须大于 0）。", this);
+                        return null;
+                    }
+
+                    if (logSpawnFlow)
+                    {
+                        Debug.LogWarning($"[OreSpawner] 已是最高等级 {currentTier}，所有组都挖完了，" +
+                                         "重置本等级的抽取记录后继续循环。", this);
+                    }
+
+                    drawn.Clear();
+                    continue;
+                }
+
+                selectedGroup = candidates[Random.Range(0, candidates.Count)];
+                OreEntry entry = PickWeightedEntry(selectedGroup, drawn);
+
+                if (entry == null)
+                {
+                    // 候选组是按"还有未抽条目"筛的，正常不会走到这里；继续找下一组以防数据被运行时改坏
+                    continue;
+                }
+
+                drawn.Add(entry);
+                return entry;
             }
 
-            float totalWeight = 0f;
-            for (int i = 0; i < level.Groups.Count; i++)
+            Debug.LogError("[OreSpawner] 抽取矿石条目时超过最大循环次数，请检查矿石组配置。", this);
+            return null;
+        }
+
+        /// <summary>收集当前等级下所有"还有未抽条目"的组。</summary>
+        private static List<OreGroup> CollectAvailableGroups(OreLevelDefinition definition, HashSet<OreEntry> drawn)
+        {
+            List<OreGroup> candidates = new List<OreGroup>();
+
+            if (definition.Groups == null)
             {
-                if (remainingCounts[i] <= 0)
+                return candidates;
+            }
+
+            for (int i = 0; i < definition.Groups.Count; i++)
+            {
+                OreGroup group = definition.Groups[i];
+
+                if (group == null || !HasUndrawnSelectableEntry(group, drawn))
                 {
                     continue;
                 }
 
-                OreGroup group = level.Groups[i];
-                if (group == null || group.Ore == null)
-                {
-                    continue;
-                }
+                candidates.Add(group);
+            }
 
-                totalWeight += group.Weight;
+            return candidates;
+        }
+
+        private static bool HasUndrawnSelectableEntry(OreGroup group, HashSet<OreEntry> drawn)
+        {
+            if (group.Entries == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < group.Entries.Count; i++)
+            {
+                OreEntry entry = group.Entries[i];
+
+                if (entry != null && entry.IsSelectable && !drawn.Contains(entry))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool HasAnySelectableEntry(OreLevelDefinition definition)
+        {
+            if (definition.Groups == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < definition.Groups.Count; i++)
+            {
+                OreGroup group = definition.Groups[i];
+
+                if (group != null && group.HasSelectableEntry)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>在组内按权重抽一条还没抽过的矿石定义。</summary>
+        private static OreEntry PickWeightedEntry(OreGroup group, HashSet<OreEntry> drawn)
+        {
+            float totalWeight = 0f;
+
+            for (int i = 0; i < group.Entries.Count; i++)
+            {
+                OreEntry entry = group.Entries[i];
+
+                if (entry != null && entry.IsSelectable && !drawn.Contains(entry))
+                {
+                    totalWeight += entry.Weight;
+                }
             }
 
             if (totalWeight <= 0f)
             {
-                return FirstRemainingIndex(level);
+                return null;
             }
 
             float roll = Random.value * totalWeight;
-            for (int i = 0; i < level.Groups.Count; i++)
+            OreEntry last = null;
+
+            for (int i = 0; i < group.Entries.Count; i++)
             {
-                if (remainingCounts[i] <= 0)
+                OreEntry entry = group.Entries[i];
+
+                if (entry == null || !entry.IsSelectable || drawn.Contains(entry))
                 {
                     continue;
                 }
 
-                OreGroup group = level.Groups[i];
-                if (group == null || group.Ore == null || group.Weight <= 0f)
-                {
-                    continue;
-                }
+                last = entry;
+                roll -= entry.Weight;
 
-                roll -= group.Weight;
                 if (roll <= 0f)
                 {
-                    return i;
+                    return entry;
                 }
             }
 
-            return FirstRemainingIndex(level);
+            // 浮点误差导致没在循环里选中时，返回最后一条，保证一定有结果
+            return last;
         }
 
-        private int FirstRemainingIndex(OreLevelData level)
+        private HashSet<OreEntry> GetDrawnSet(int tier)
         {
-            for (int i = 0; i < remainingCounts.Count; i++)
+            HashSet<OreEntry> drawn;
+
+            if (!drawnEntriesByTier.TryGetValue(tier, out drawn))
             {
-                if (remainingCounts[i] > 0 && level.Groups[i] != null && level.Groups[i].Ore != null)
+                drawn = new HashSet<OreEntry>();
+                drawnEntriesByTier.Add(tier, drawn);
+            }
+
+            return drawn;
+        }
+
+        /// <summary>
+        /// 把请求等级映射到表里实际配置的等级：优先取不超过请求值的最高等级，否则取最低等级。
+        /// 这样等级表可以有空档（例如只配 1、3、6），也不会因为查不到而卡死。
+        /// </summary>
+        private int ResolveTier(int requestedLevel)
+        {
+            if (levelTable == null || levelTable.Levels == null || levelTable.Levels.Count == 0)
+            {
+                return Mathf.Max(1, requestedLevel);
+            }
+
+            int bestBelow = int.MinValue;
+            int lowest = int.MaxValue;
+
+            for (int i = 0; i < levelTable.Levels.Count; i++)
+            {
+                OreLevelDefinition definition = levelTable.Levels[i];
+
+                if (definition == null)
                 {
-                    return i;
+                    continue;
+                }
+
+                int level = definition.Level;
+
+                if (level <= requestedLevel && level > bestBelow)
+                {
+                    bestBelow = level;
+                }
+
+                if (level < lowest)
+                {
+                    lowest = level;
                 }
             }
 
-            return -1;
+            if (bestBelow != int.MinValue)
+            {
+                return bestBelow;
+            }
+
+            if (lowest != int.MaxValue)
+            {
+                return lowest;
+            }
+
+            return Mathf.Max(1, requestedLevel);
         }
 
-        private void InitializeLevel(int levelIndex)
+        /// <summary>找下一个配置过的、比当前更高的等级；没有则返回当前等级。</summary>
+        private int FindNextConfiguredTier(int currentLevel)
         {
-            currentLevelIndex = Mathf.Clamp(levelIndex, 0, Mathf.Max(0, spawnTable.LevelCount - 1));
-            remainingCounts.Clear();
+            int next = int.MaxValue;
 
-            OreLevelData level = CurrentLevel;
-            if (level == null || level.Groups == null)
+            for (int i = 0; i < levelTable.Levels.Count; i++)
             {
-                Debug.LogError($"[OreSpawner] 第 {currentLevelIndex + 1} 个等级数据为空。", this);
+                OreLevelDefinition definition = levelTable.Levels[i];
+
+                if (definition == null)
+                {
+                    continue;
+                }
+
+                if (definition.Level > currentLevel && definition.Level < next)
+                {
+                    next = definition.Level;
+                }
+            }
+
+            return next == int.MaxValue ? currentLevel : next;
+        }
+
+        private void HandleLevelChanged(int newLevel)
+        {
+            if (!initialized)
+            {
+                // 还没初始化时由 Start 读取 CurrentLevel，不需要在这里响应
                 return;
             }
 
-            for (int i = 0; i < level.Groups.Count; i++)
+            int targetTier = ResolveTier(newLevel);
+
+            if (targetTier <= currentTier)
             {
-                OreGroup group = level.Groups[i];
-                remainingCounts.Add(group != null && group.Ore != null ? group.Count : 0);
+                return;
             }
 
             if (logSpawnFlow)
             {
-                Debug.Log($"[OreSpawner] 进入矿石第 {level.Level} 级「{level.DisplayName}」，" +
-                          $"共 {RemainingInCurrentLevel} 块。", this);
-            }
-        }
-
-        private void ResetCurrentLevelCounts()
-        {
-            InitializeLevel(currentLevelIndex);
-        }
-
-        private bool TryAdvanceLevel()
-        {
-            int nextIndex = currentLevelIndex + 1;
-            if (spawnTable == null || nextIndex >= spawnTable.LevelCount)
-            {
-                return false;
+                Debug.Log($"[OreSpawner] 玩家等级变为 {newLevel}，矿石等级 {currentTier} → {targetTier}" +
+                          "（当前这块矿石打碎后生效）");
             }
 
-            InitializeLevel(nextIndex);
-            return true;
-        }
-
-        private void RefreshBuildingLevel()
-        {
-            int totalCount;
-            int normalCount;
-            int specialCount;
-            int targetIndex = GetBuildingLevelIndex(out totalCount, out normalCount, out specialCount);
-
-            bool countsChanged = totalCount != lastTotalCount;
-            CurrentTotalBuildingCount = totalCount;
-            CurrentNormalBuildingCount = normalCount;
-            CurrentSpecialBuildingCount = specialCount;
-
-            if (!countsChanged)
-            {
-                return;
-            }
-
-            lastTotalCount = totalCount;
-
-            if (targetIndex > currentLevelIndex)
-            {
-                currentLevelIndex = targetIndex;
-                InitializeLevel(currentLevelIndex);
-
-                if (logSpawnFlow)
-                {
-                    Debug.Log($"[OreSpawner] 建筑数量变化：总数 {totalCount}（普通 {normalCount}、特殊 {specialCount}），" +
-                              $"矿石等级提升到第 {CurrentOreLevelNumber} 级。", this);
-                }
-            }
-            else if (logSpawnFlow)
-            {
-                Debug.Log($"[OreSpawner] 建筑数量变化：总数 {totalCount}（普通 {normalCount}、特殊 {specialCount}），" +
-                          $"当前仍是矿石第 {CurrentOreLevelNumber} 级。", this);
-            }
-        }
-
-        private int GetBuildingLevelIndex(out int totalCount, out int normalCount, out int specialCount)
-        {
-            CountBuildings(out totalCount, out normalCount, out specialCount);
-
-            int levelNumber = buildingLevelTable != null
-                ? buildingLevelTable.EvaluateOreLevel(totalCount)
-                : 1;
-
-            return ResolveLevelIndex(levelNumber);
-        }
-
-        private int ResolveLevelIndex(int levelNumber)
-        {
-            int index = spawnTable != null ? spawnTable.FindIndexByLevelNumber(levelNumber) : -1;
-            if (index >= 0)
-            {
-                return index;
-            }
-
-            // 找不到对应编号时按顺序兜底，避免建筑表填了表里没有的等级就直接报错停机
-            return Mathf.Clamp(levelNumber - 1, 0, Mathf.Max(0, spawnTable.LevelCount - 1));
-        }
-
-        private void CountBuildings(out int totalCount, out int normalCount, out int specialCount)
-        {
-            totalCount = 0;
-            normalCount = 0;
-            specialCount = 0;
-
-            if (buildingManager == null)
-            {
-                buildingManager = FindFirstObjectByType<BuildingManager>(FindObjectsInactive.Include);
-            }
-
-            if (buildingManager == null)
-            {
-                return;
-            }
-
-            IReadOnlyList<GameObject> placed = buildingManager.PlacedBuildings;
-            for (int i = 0; i < placed.Count; i++)
-            {
-                GameObject building = placed[i];
-                if (building == null)
-                {
-                    continue;
-                }
-
-                totalCount++;
-
-                PlacedBuildingTag tag = building.GetComponent<PlacedBuildingTag>();
-                if (tag != null && tag.IsSpecial)
-                {
-                    specialCount++;
-                }
-                else
-                {
-                    normalCount++;
-                }
-            }
-        }
-
-        [ContextMenu("调试：打印当前生成状态")]
-        private void DebugPrintState()
-        {
-            OreLevelData level = CurrentLevel;
-            Debug.Log($"[OreSpawner] 当前第 {CurrentOreLevelNumber} 级" +
-                      $"（{level?.DisplayName ?? "无"}），本等级剩余 {RemainingInCurrentLevel} 块；" +
-                      $"建筑总数 {CurrentTotalBuildingCount}（普通 {CurrentNormalBuildingCount}、特殊 {CurrentSpecialBuildingCount}）。", this);
+            currentTier = targetTier;
         }
     }
 }

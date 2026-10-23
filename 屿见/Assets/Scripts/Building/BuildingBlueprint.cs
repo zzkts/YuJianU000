@@ -34,7 +34,7 @@ namespace Yujian.Building
 
         [Header("材料楼层")]
         [Tooltip("蓝图上显示「已放入材料」的楼层组件。留空则蓝图只显示整体绿/红，看不到放了哪些颜色的料。" +
-                 "由菜单「屿见/配置建造系统（阶段 4）」自动接线")]
+                 "由菜单「屿见/建筑/配置建造系统（阶段 4）」自动接线")]
         [SerializeField] private BuildingLayerStack materialLayers;
 
         [Header("调试")]
@@ -47,6 +47,7 @@ namespace Yujian.Building
         private static readonly int ColorId = Shader.PropertyToID("_Color");
 
         private BuildingData data;
+        private Vector2 worldFootprint;
         private BlueprintState state = BlueprintState.Valid;
         private Renderer[] renderers;
         private MaterialPropertyBlock propertyBlock;
@@ -60,8 +61,12 @@ namespace Yujian.Building
         /// <summary>当前状态。</summary>
         public BlueprintState State => state;
 
-        /// <summary>占地尺寸（X = 宽，Y = 深）。数据缺失时返回零，调用方应视为不可放置。</summary>
-        public Vector2 Footprint => data != null ? data.Footprint : Vector2.zero;
+        /// <summary>
+        /// 占地世界尺寸（X = 宽，Y = 深）。由 BuildingManager 在 Initialize 时按
+        /// BuildingData.FootprintCells × BuildingGrid.CellSize 算好传进来。
+        /// 未初始化时返回零，调用方应视为不可放置。
+        /// </summary>
+        public Vector2 Footprint => worldFootprint;
 
         /// <summary>
         /// 蓝图上显示已放入材料的楼层组件，可能为 null。
@@ -72,7 +77,9 @@ namespace Yujian.Building
         /// <summary>
         /// 由 BuildingManager 在实例化后立即调用，把蓝图与它的建筑数据绑定起来。
         /// </summary>
-        public void Initialize(BuildingData buildingData)
+        /// <param name="buildingData">蓝图代表的建筑数据。</param>
+        /// <param name="footprint">占地世界尺寸（X = 宽，Y = 深），由格数 × 单格边长得到。</param>
+        public void Initialize(BuildingData buildingData, Vector2 footprint)
         {
             if (buildingData == null)
             {
@@ -80,6 +87,13 @@ namespace Yujian.Building
             }
 
             data = buildingData;
+            worldFootprint = footprint.x > 0f && footprint.y > 0f ? footprint : Vector2.zero;
+
+            if (worldFootprint == Vector2.zero)
+            {
+                Debug.LogError("[BuildingBlueprint] 传入的占地尺寸无效，蓝图的落位与占地判定都会失败。", this);
+            }
+
             EnsureCached();
 
             // 初始按 Valid 画一次，避免第一帧保持预制体自带的外观

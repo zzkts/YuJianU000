@@ -32,7 +32,7 @@ namespace Yujian.EditorTools
         private const float ButtonHeight = 80f;
         private const float ButtonSpacing = 10f;
 
-        [MenuItem("屿见/配置建筑系统（阶段 3）")]
+        [MenuItem("屿见/建筑/配置建筑系统（阶段 3）", false, 510)]
         public static void Configure()
         {
             // ---------- 前置检查：任何一项不满足就整体不执行，避免留下半配置状态 ----------

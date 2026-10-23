@@ -60,7 +60,7 @@ namespace Yujian.EditorTools
         private const float BuyButtonWidth = 160f;
         private const float BuyButtonHeight = 44f;
 
-        [MenuItem("屿见/配置原料商店（阶段 2 重构）")]
+        [MenuItem("屿见/商店/配置原料商店（阶段 2 重构）", false, 410)]
         public static void Configure()
         {
             Canvas canvas = Object.FindFirstObjectByType<Canvas>();

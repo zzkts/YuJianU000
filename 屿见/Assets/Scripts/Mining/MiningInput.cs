@@ -1,8 +1,7 @@
-using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using Yujian.Core;
 using Yujian.Player;
 
 namespace Yujian.Mining
@@ -50,8 +49,6 @@ namespace Yujian.Mining
         [SerializeField] private bool logMissedClicks = true;
 
         /// <summary>UI 射线结果的复用缓冲，避免每次点击都分配新 List。</summary>
-        private readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
-
         /// <summary>EventSystem 缺失的警告只打一次，避免每次点击刷屏。</summary>
         private bool warnedAboutMissingEventSystem;
 
@@ -191,7 +188,7 @@ namespace Yujian.Mining
                 return;
             }
 
-            bool destroyed = ore.TakeDamage(damage);
+            bool destroyed = ore.TakeDamage(damage, DamageSource.Player);
 
             if (!destroyed)
             {
@@ -207,11 +204,8 @@ namespace Yujian.Mining
         }
 
         /// <summary>
-        /// 判断指定屏幕坐标是否落在 UI 上。
-        /// 用 EventSystem.RaycastAll 对给定坐标直接做一次 UI 射线，而不是用
-        /// EventSystem.IsPointerOverGameObject()——后者只认当前鼠标位置，触屏要额外传 fingerId，
-        /// 且结果受 EventSystem 与调用方的执行顺序影响。
-        /// 这里按坐标判定，将来每个指尖传入各自的屏幕坐标即可同时支持多指触摸。
+        /// 判断指定屏幕坐标是否落在 UI 上。实现统一在 <see cref="PointerOverUI"/>，
+        /// 本类只保留自己的开关（blockClicksOverUI）与一次性警告标记。
         /// </summary>
         private bool IsPointerOverUI(Vector2 screenPosition)
         {
@@ -220,31 +214,7 @@ namespace Yujian.Mining
                 return false;
             }
 
-            EventSystem eventSystem = EventSystem.current;
-
-            if (eventSystem == null)
-            {
-                // 没有 EventSystem 就说明场景里没有能吃掉点击的 UI，放行即可
-                if (!warnedAboutMissingEventSystem)
-                {
-                    warnedAboutMissingEventSystem = true;
-                    Debug.LogWarning("[MiningInput] 场景中没有 EventSystem，无法判断点击是否落在 UI 上；" +
-                                     "后续点击一律不做 UI 屏蔽。若已创建商店面板，请补一个 EventSystem。", this);
-                }
-
-                return false;
-            }
-
-            // 每次点击新建一份，避免缓存后 EventSystem 被重建时留下悬空引用。点击频次极低，开销可忽略
-            PointerEventData eventData = new PointerEventData(eventSystem)
-            {
-                position = screenPosition,
-            };
-
-            uiRaycastResults.Clear();
-            eventSystem.RaycastAll(eventData, uiRaycastResults);
-
-            return uiRaycastResults.Count > 0;
+            return PointerOverUI.IsOver(screenPosition, this, ref warnedAboutMissingEventSystem);
         }
 
         /// <summary>把 LayerMask 里的图层名拼成可读文本，供报错信息使用。</summary>

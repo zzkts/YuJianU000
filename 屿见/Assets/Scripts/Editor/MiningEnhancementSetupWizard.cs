@@ -31,7 +31,7 @@ namespace Yujian.EditorTools
             OreType.QingShi,
         };
 
-        [MenuItem("屿见/配置挖矿增强（阶段 7）")]
+        [MenuItem("屿见/挖矿/配置挖矿增强（阶段 7）", false, 310)]
         public static void ConfigureMining()
         {
             Ore[] ores = FindAllOres();

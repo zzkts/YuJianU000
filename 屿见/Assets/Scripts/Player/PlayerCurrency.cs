@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using Yujian.Core.Events;
 
 namespace Yujian.Player
 {
@@ -48,6 +49,28 @@ namespace Yujian.Player
 
             currentMoney += amount;
             OnMoneyChanged?.Invoke(currentMoney);
+            EventBus.Publish(new MoneyChanged(currentMoney, amount));
+        }
+
+        /// <summary>
+        /// 读档用：直接把金币恢复成存档里的值，并广播一次变化。
+        /// 不走 AddMoney / TrySpendMoney——它们只接受正数增量，无法表达“把余额改成 X”。
+        /// 负数按 0 处理并明确警告，避免坏存档把金币变成负数。
+        /// </summary>
+        /// <param name="amount">存档里的金币数量。</param>
+        public void RestoreMoney(int amount)
+        {
+            int clamped = Mathf.Max(0, amount);
+
+            if (clamped != amount)
+            {
+                Debug.LogWarning($"[PlayerCurrency] 存档里的金币为 {amount}，已按 0 恢复。", this);
+            }
+
+            currentMoney = clamped;
+            // 故意不发 EventBus：读档不是“赚到钱”，订阅了金币音的音频管理会连着响。
+            // UI 走旧事件 OnMoneyChanged 已经能正确刷新。
+            OnMoneyChanged?.Invoke(currentMoney);
         }
 
         /// <summary>
@@ -70,6 +93,7 @@ namespace Yujian.Player
 
             currentMoney -= amount;
             OnMoneyChanged?.Invoke(currentMoney);
+            EventBus.Publish(new MoneyChanged(currentMoney, -amount));
             return true;
         }
     }

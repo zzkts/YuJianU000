@@ -79,10 +79,6 @@ namespace Yujian.Building
         [Tooltip("建筑大类")]
         [SerializeField] private BuildingType buildingType = BuildingType.Museum;
 
-        [Tooltip("特殊建筑。矿石生成器的建筑等级表会把特殊建筑单独计数；" +
-                 "普通建筑保持不勾选即可")]
-        [SerializeField] private bool specialBuilding;
-
         [Header("预制体")]
         [Tooltip("建成后真正留在场景里的建筑预制体。根物体建议自带 Collider，" +
                  "并放在 Building 层——放置时检测建筑之间是否重叠靠的就是它")]
@@ -93,14 +89,19 @@ namespace Yujian.Building
         [SerializeField] private GameObject blueprintPrefab;
 
         [Header("占地")]
-        [Tooltip("占地尺寸。X = 宽（世界 X 轴），Y = 深（世界 Z 轴），单位与场景一致。" +
-                 "只用于放置时的重叠检测，不改变预制体本身大小")]
-        [SerializeField] private Vector2 footprint = new Vector2(4f, 4f);
+        [Tooltip("占地格数。X = 沿世界 X 轴的格数，Y = 沿世界 Z 轴的格数。" +
+                 "世界尺寸 = 格数 × BuildingGrid 的单格边长；建筑与蓝图会按该尺寸自动缩放外观")]
+        [SerializeField] private Vector2Int footprintCells = new Vector2Int(2, 2);
 
         [Header("所需材料（阶段 3 只记录，不消耗）")]
         [Tooltip("建造该建筑需要的原料清单。阶段 3 完全不读取这张表——" +
                  "即使玩家一个原料都没有也允许放置。材料检查与扣除是阶段 4 的事")]
         [SerializeField] private BuildingMaterialRequirement[] requiredMaterials = new BuildingMaterialRequirement[0];
+
+        [Header("存档")]
+        [Tooltip("跨存档稳定 ID。由菜单「屿见/通用模块/配置存档系统」按资产 GUID 自动生成，不要手改。" +
+                 "改掉它会让旧存档里的该建筑无法被识别")]
+        [SerializeField] private string saveId = "";
 
         /// <summary>显示名称。</summary>
         public string BuildingName => buildingName;
@@ -108,24 +109,24 @@ namespace Yujian.Building
         /// <summary>建筑大类。</summary>
         public BuildingType BuildingType => buildingType;
 
-        /// <summary>是否算作特殊建筑（例如管风琴博物馆）。</summary>
-        public bool IsSpecialBuilding => specialBuilding;
-
         /// <summary>建成后的建筑预制体，可能为 null。</summary>
         public GameObject BuildingPrefab => buildingPrefab;
 
         /// <summary>蓝图预制体，可能为 null。</summary>
         public GameObject BlueprintPrefab => blueprintPrefab;
 
-        /// <summary>占地尺寸：X = 宽，Y = 深。</summary>
-        public Vector2 Footprint => footprint;
+        /// <summary>占地格数：X = 沿世界 X 轴的格数，Y = 沿世界 Z 轴的格数。</summary>
+        public Vector2Int FootprintCells => footprintCells;
 
         /// <summary>所需材料清单，只读。阶段 3 不消费它。</summary>
         public IReadOnlyList<BuildingMaterialRequirement> RequiredMaterials =>
             requiredMaterials ?? System.Array.Empty<BuildingMaterialRequirement>();
 
-        /// <summary>占地面积是否可用（两个方向都为正）。</summary>
-        public bool HasValidFootprint => footprint.x > 0f && footprint.y > 0f;
+        /// <summary>跨存档稳定 ID。可能为空——为空时存档会明确报错并跳过该建筑。</summary>
+        public string SaveId => saveId;
+
+        /// <summary>占地面积是否可用（两个方向都为正格数）。</summary>
+        public bool HasValidFootprint => footprintCells.x > 0 && footprintCells.y > 0;
 
         /// <summary>所需材料的可读描述，例如 "小砖 ×3"。目前用于日志与将来的建造 UI。</summary>
         public string GetRequirementText()
@@ -166,8 +167,8 @@ namespace Yujian.Building
 
             if (!HasValidFootprint)
             {
-                Debug.LogWarning($"[BuildingData] 资产「{name}」的占地尺寸 {footprint} 含非正数，" +
-                                 "重叠检测会一律判定为「不可放置」。请把宽和深都设成正数。", this);
+                Debug.LogWarning($"[BuildingData] 资产「{name}」的占地格数 {footprintCells} 含非正数，" +
+                                 "重叠检测会一律判定为「不可放置」。请把两个方向的格数都设成正整数。", this);
             }
 
             if (buildingPrefab == null)
@@ -178,6 +179,13 @@ namespace Yujian.Building
             if (blueprintPrefab == null)
             {
                 Debug.LogWarning($"[BuildingData] 资产「{name}」没有配置蓝图 Prefab，该建筑无法被选中。", this);
+            }
+
+            if (string.IsNullOrWhiteSpace(saveId))
+            {
+                // 不拦着资产使用，但存档时这座建筑会被跳过。规则 5：不静默失败
+                Debug.LogWarning($"[BuildingData] 资产「{name}」没有 Save Id，存档时会跳过它。" +
+                                 "请运行菜单「屿见/通用模块/配置存档系统」自动生成。", this);
             }
 
             if (requiredMaterials == null)

@@ -50,6 +50,25 @@ namespace Yujian.Building
             }
         }
 
+        /// <summary>建筑本来的缩放。供外部按占地调整根节点缩放时换算自然尺寸。</summary>
+        public Vector3 BaseScale => baseScale;
+
+        /// <summary>
+        /// 外部按占地把根节点缩放设置好之后调用，把弹出动画的目标缩放同步到新值。
+        /// 必须在 Instantiate 之后调用：Awake / OnEnable 会先于外部缩放执行。
+        /// </summary>
+        public void SetBaseScale(Vector3 scale)
+        {
+            if (scale == Vector3.zero)
+            {
+                Debug.LogWarning("[BuildingSpawnPop] SetBaseScale 收到 (0,0,0)，已忽略。", this);
+                return;
+            }
+
+            baseScale = scale;
+            transform.localScale = playing ? baseScale * fromScale : baseScale;
+        }
+
         private void OnEnable()
         {
             if (!Application.isPlaying)

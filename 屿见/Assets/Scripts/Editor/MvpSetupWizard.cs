@@ -63,7 +63,7 @@ namespace Yujian.EditorTools
         private static readonly Color CoinTextColor = new Color(1f, 0.9f, 0.6f, 1f);
         private static readonly Color CoinBackColor = new Color(0f, 0f, 0f, 0.45f);
 
-        [MenuItem("屿见/配置 MVP 整合（阶段 6）")]
+        [MenuItem("屿见/整合/配置 MVP 整合（阶段 6）", false, 610)]
         public static void Configure()
         {
             // 一律用 FindObjectsInactive.Include：向导在**编辑器里**跑，场景里很多东西
@@ -650,7 +650,7 @@ namespace Yujian.EditorTools
             if (button == null)
             {
                 Debug.LogError($"[MvpSetupWizard] 材料面板的「{label}」按钮引用是空的，" +
-                               "这个按钮既不会出现也不会生效。请重跑菜单「屿见/配置建造系统（阶段 4）」。");
+                               "这个按钮既不会出现也不会生效。请重跑菜单「屿见/建筑/配置建造系统（阶段 4）」。");
                 return 0;
             }
 
