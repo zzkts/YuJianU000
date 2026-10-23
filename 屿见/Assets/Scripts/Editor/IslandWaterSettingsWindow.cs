@@ -10,7 +10,7 @@ namespace Yujian.EditorTools
     /// </summary>
     public class IslandWaterSettingsWindow : EditorWindow
     {
-        private const string MenuPath = "屿见/海面参数调节";
+        private const string MenuPath = "屿见/场景/海面参数调节";
         private const string DefaultMaterialPath = "Assets/Materials/Island/Ocean_Water.mat";
         private const string WaterShaderName = "Yujian/Island Water";
 
@@ -77,7 +77,7 @@ namespace Yujian.EditorTools
                 { "_PatchColor", new Color(0.28f, 0.70f, 0.72f, 1f) },
             };
 
-        [MenuItem(MenuPath)]
+        [MenuItem(MenuPath, false, 220)]
         private static void Open()
         {
             IslandWaterSettingsWindow window = GetWindow<IslandWaterSettingsWindow>("海面参数");
@@ -127,7 +127,7 @@ namespace Yujian.EditorTools
             if (_material == null)
             {
                 EditorGUILayout.HelpBox(
-                    "未找到海面材质。请先运行“屿见/生成低模海岛底图”，或手动拖入使用 Yujian/Island Water 的材质。",
+                    "未找到海面材质。请先运行“屿见/场景/生成低模海岛底图”，或手动拖入使用 Yujian/Island Water 的材质。",
                     MessageType.Warning);
                 EditorGUILayout.EndScrollView();
                 return;

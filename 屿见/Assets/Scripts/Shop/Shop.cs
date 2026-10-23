@@ -1,4 +1,5 @@
 using UnityEngine;
+using Yujian.Core.Events;
 using Yujian.Player;
 
 namespace Yujian.Shop
@@ -53,12 +54,14 @@ namespace Yujian.Shop
             if (material == null)
             {
                 Debug.LogError("[Shop] TryBuy 收到空的 MaterialData，购买取消。", this);
+                EventBus.Publish(new PurchaseFailed(null, color, amount, "原料数据为空"));
                 return false;
             }
 
             if (amount <= 0)
             {
                 Debug.LogWarning($"[Shop] TryBuy 收到非正数数量({amount})，购买取消。", this);
+                EventBus.Publish(new PurchaseFailed(material, color, amount, "购买数量无效"));
                 return false;
             }
 
@@ -66,12 +69,14 @@ namespace Yujian.Shop
             {
                 Debug.LogWarning($"[Shop] 原料「{material.MaterialName}」不支持颜色 {color}，购买取消。" +
                                  "请在 MaterialData 的允许颜色列表里补上，或改掉按钮绑定的颜色。", this);
+                EventBus.Publish(new PurchaseFailed(material, color, amount, "该原料不支持这个颜色"));
                 return false;
             }
 
             if (playerCurrency == null || inventory == null)
             {
                 // Awake 已经打印过明确错误，这里不再重复刷屏
+                EventBus.Publish(new PurchaseFailed(material, color, amount, "商店依赖未配置"));
                 return false;
             }
 
@@ -86,6 +91,7 @@ namespace Yujian.Shop
                               $"需要 {totalCost} 金币，当前只有 {playerCurrency.CurrentMoney}。金币与库存均未变动。");
                 }
 
+                EventBus.Publish(new PurchaseFailed(material, color, amount, "金币不足"));
                 return false;
             }
 
@@ -97,6 +103,7 @@ namespace Yujian.Shop
                           $"花费 {totalCost} 金币，剩余 {playerCurrency.CurrentMoney} 金币。");
             }
 
+            EventBus.Publish(new PurchaseSucceeded(material, color, amount, totalCost));
             return true;
         }
     }

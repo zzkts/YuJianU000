@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using UnityEngine;
+using Yujian.Core.Events;
 using Yujian.Mining;
 
 namespace Yujian.Core
@@ -42,8 +43,9 @@ namespace Yujian.Core
         [SerializeField] private GameObject[] shopAreaPanels = new GameObject[0];
 
         [Header("起始状态")]
-        [Tooltip("进 Play Mode 时所在的区域。按需求「启动游戏 → 挖矿区域」，默认 Mining")]
-        [SerializeField] private GameArea startArea = GameArea.Mining;
+        [Tooltip("进 Play Mode 时所在的区域。按观察模式文档「默认进入观察模式」，默认 Observation：" +
+                 "开局直接停在观察机位看全岛，点底部任意系统按钮才进入该系统")]
+        [SerializeField] private GameArea startArea = GameArea.Observation;
 
         [Header("调试")]
         [Tooltip("是否在 Console 打印区域切换日志")]
@@ -82,6 +84,23 @@ namespace Yujian.Core
 
             // 补发一次：纯事件驱动的订阅者（相机、导航高亮）不必自己再读一遍 CurrentArea
             OnAreaChanged?.Invoke(CurrentArea);
+            EventBus.Publish(new AreaChanged(CurrentArea));
+        }
+
+        /// <summary>
+        /// 退出当前系统，进入观察模式。
+        ///
+        /// 观察模式也是一种 <see cref="GameArea"/>：它没有面板、会关掉挖矿输入，
+        /// 相机由 ObservationCameraController 接管。已经在观察模式时重复调用会被
+        /// <see cref="SetArea"/> 当作「切到当前区域」忽略。
+        ///
+        /// 为什么不让 BottomNavUI 直接 SetArea(Observation)：
+        /// 这里把「观察模式」这个语义收在区域状态里，按钮、建筑退出逻辑都只表达意图，
+        /// 不必各自记住观察模式对应哪个枚举值。
+        /// </summary>
+        public void EnterObservationMode()
+        {
+            SetArea(GameArea.Observation);
         }
 
         /// <summary>
@@ -113,6 +132,7 @@ namespace Yujian.Core
             }
 
             OnAreaChanged?.Invoke(area);
+            EventBus.Publish(new AreaChanged(area));
         }
 
         /// <summary>
@@ -173,7 +193,7 @@ namespace Yujian.Core
                 Debug.LogError("[GameAreaController] 建筑区的面板数组是空的（或整条都是空引用）：" +
                                "切到建筑区时**不会打开任何面板**，而且不会有别的报错。" +
                                "请在 Inspector 里选中本物体，把 Canvas/BuildingPanel 拖进「Building Area Panels」；" +
-                               "或重跑菜单「屿见/配置 MVP 整合（阶段 6）」。", this);
+                               "或重跑菜单「屿见/整合/配置 MVP 整合（阶段 6）」。", this);
             }
 
             if (area == GameArea.Shop && IsUnusable(shopAreaPanels))
@@ -181,7 +201,7 @@ namespace Yujian.Core
                 Debug.LogError("[GameAreaController] 商店区的面板数组是空的（或整条都是空引用）：" +
                                "切到商店区时不会打开商店面板。" +
                                "请把 Canvas/ShopPanel 拖进「Shop Area Panels」；" +
-                               "或重跑菜单「屿见/配置 MVP 整合（阶段 6）」。", this);
+                               "或重跑菜单「屿见/整合/配置 MVP 整合（阶段 6）」。", this);
             }
         }
 
@@ -265,7 +285,7 @@ namespace Yujian.Core
                 if (panel == null)
                 {
                     Debug.LogError($"[GameAreaController] {name} 的面板数组里有空引用（第 {i} 项），" +
-                                   "它不会随区域显隐。请重新运行菜单「屿见/配置 MVP 整合（阶段 6）」。", this);
+                                   "它不会随区域显隐。请重新运行菜单「屿见/整合/配置 MVP 整合（阶段 6）」。", this);
                     continue;
                 }
 

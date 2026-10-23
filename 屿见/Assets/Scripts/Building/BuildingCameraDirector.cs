@@ -1,4 +1,5 @@
 using UnityEngine;
+using Yujian.Core;
 
 namespace Yujian.Building
 {
@@ -122,6 +123,23 @@ namespace Yujian.Building
         /// </summary>
         public void ExitBuildMode()
         {
+            ExitBuildMode(defaultPosition, defaultRotation);
+        }
+
+        /// <summary>
+        /// 退出建造视角，直接过渡到指定的机位。
+        ///
+        /// 为什么需要这个重载：从建筑区直接切到商店时，若先退回「常规机位」再交给
+        /// AreaCameraDirector 走向商店，镜头会明显先往挖矿方向拐一下。把目标机位一起传进来，
+        /// 建造调度一次过渡到位，中间不再经过常规机位。
+        ///
+        /// 仍然会取消未放置的蓝图（原因同无参版本）。
+        /// </summary>
+        /// <param name="targetPosition">退出后的目标位置。</param>
+        /// <param name="targetRotation">退出后的目标旋转。</param>
+        /// <param name="logMessage">日志文案，留空使用默认文案。</param>
+        public void ExitBuildMode(Vector3 targetPosition, Quaternion targetRotation, string logMessage = null)
+        {
             if (buildingManager != null && buildingManager.IsPlacing)
             {
                 buildingManager.CancelSelection();
@@ -133,7 +151,8 @@ namespace Yujian.Building
             }
 
             inBuildMode = false;
-            StartTransition(defaultPosition, defaultRotation, "退出建造视角，回到常规机位");
+            StartTransition(targetPosition, targetRotation,
+                            logMessage ?? "退出建造视角，直接前往目标机位");
         }
 
         /// <summary>
@@ -206,25 +225,7 @@ namespace Yujian.Building
         /// <summary>按「手动指定 → 本物体上的 Camera → Camera.main」的顺序找相机。</summary>
         private void ResolveCameraTransform()
         {
-            if (cameraTransform != null)
-            {
-                return;
-            }
-
-            Camera selfCamera = GetComponent<Camera>();
-
-            if (selfCamera != null)
-            {
-                cameraTransform = selfCamera.transform;
-                return;
-            }
-
-            Camera mainCamera = Camera.main;
-
-            if (mainCamera != null)
-            {
-                cameraTransform = mainCamera.transform;
-            }
+            cameraTransform = CameraResolver.Resolve(cameraTransform, gameObject);
         }
 
         [ContextMenu("把相机当前位置记录为建筑模式机位")]

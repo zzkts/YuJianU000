@@ -86,7 +86,7 @@ namespace Yujian.Building
                 {
                     warnedAboutMissingRenderers = true;
                     Debug.LogError("[BuildingGridVisualizer] Grid Mesh / Grid Highlight 渲染对象未配置，" +
-                                   "网格可视化不会工作。请重新运行菜单「屿见/配置建筑网格与建造相机（阶段 7）」。", this);
+                                   "网格可视化不会工作。请重新运行菜单「屿见/建筑/配置建筑网格与建造相机（阶段 7）」。", this);
                 }
             }
         }

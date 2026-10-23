@@ -32,7 +32,7 @@ namespace Yujian.EditorTools
         private const string BuildingFolder = "Assets/Data/Buildings";
         private const string SaveObjectName = "SaveSystem";
 
-        [MenuItem("屿见/配置存档系统")]
+        [MenuItem("屿见/通用模块/配置存档系统", false, 110)]
         public static void Configure()
         {
             SaveCatalog catalog = EnsureCatalog();

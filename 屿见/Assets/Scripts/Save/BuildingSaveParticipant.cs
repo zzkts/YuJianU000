@@ -188,7 +188,7 @@ namespace Yujian.Save
             else
             {
                 Debug.LogWarning("[BuildingSaveParticipant] PlayerLevel 未配置，建筑恢复后等级不会立即刷新。" +
-                                 "请运行菜单「屿见/配置存档系统」自动接线。", this);
+                                 "请运行菜单「屿见/通用模块/配置存档系统」自动接线。", this);
             }
         }
     }

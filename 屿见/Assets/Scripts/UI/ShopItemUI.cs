@@ -242,7 +242,7 @@ namespace Yujian.UI
         {
             if (panel == null)
             {
-                Debug.LogError("[ShopItemUI] 面板引用为空，无法购买。请重跑菜单「屿见/配置原料商店（阶段 2 重构）」。", this);
+                Debug.LogError("[ShopItemUI] 面板引用为空，无法购买。请重跑菜单「屿见/商店/配置原料商店（阶段 2 重构）」。", this);
                 return;
             }
 
@@ -296,7 +296,7 @@ namespace Yujian.UI
             if (missing)
             {
                 Debug.LogWarning("[ShopItemUI] 有引用没有接上，条目会显示不全。" +
-                                 "请重跑菜单「屿见/配置原料商店（阶段 2 重构）」。", this);
+                                 "请重跑菜单「屿见/商店/配置原料商店（阶段 2 重构）」。", this);
             }
         }
     }

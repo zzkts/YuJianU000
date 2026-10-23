@@ -38,7 +38,7 @@ namespace Yujian.EditorTools
             OreType.HuaGangYan,
         };
 
-        [MenuItem("屿见/配置矿石生成系统（挖矿 2.2.2）")]
+        [MenuItem("屿见/挖矿/配置矿石生成系统（挖矿 2.2.2）", false, 320)]
         public static void Configure()
         {
             if (!EnsureDataFolder())

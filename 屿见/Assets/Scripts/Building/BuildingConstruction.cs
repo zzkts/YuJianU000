@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
+using Yujian.Core.Events;
 using Yujian.Shop;
 
 namespace Yujian.Building
@@ -272,6 +273,8 @@ namespace Yujian.Building
             }
 
             OnConstructionChanged?.Invoke();
+            EventBus.Publish(new MaterialPlaced(material, color));
+            EventBus.Publish(new ConstructionChanged());
             return true;
         }
 
@@ -324,6 +327,8 @@ namespace Yujian.Building
                 }
 
                 OnConstructionChanged?.Invoke();
+                EventBus.Publish(new MaterialUndone(last.Material, last.Color));
+                EventBus.Publish(new ConstructionChanged());
                 return;
             }
 
@@ -411,7 +416,8 @@ namespace Yujian.Building
 
             if (buildingManager != null)
             {
-                buildingManager.CancelSelection();
+                // 读档清场：不是玩家取消，不向 EventBus 发布 BlueprintClosed
+                buildingManager.CancelSelection(false);
             }
             else if (hadMaterials)
             {
@@ -525,6 +531,7 @@ namespace Yujian.Building
             }
 
             OnConstructionChanged?.Invoke();
+            EventBus.Publish(new ConstructionChanged());
         }
 
         /// <summary>把蓝图里剩下的材料全部退回库存。取消蓝图 / 退出建造走这条路，避免凭空吞掉玩家的料。</summary>
@@ -684,6 +691,9 @@ namespace Yujian.Building
             {
                 return;
             }
+
+            // 新旧两条路都发：旧订阅者继续走 OnMessage，新的提示 UI / 音频走 EventBus
+            EventBus.Publish(new MessageShown(message, success));
 
             if (OnMessage != null)
             {

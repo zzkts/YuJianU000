@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using Yujian.Building;
+using Yujian.Core.Events;
 
 namespace Yujian.Player
 {
@@ -94,6 +95,7 @@ namespace Yujian.Player
             }
 
             OnLevelChanged?.Invoke(currentLevel);
+            EventBus.Publish(new LevelChanged(currentLevel));
         }
 
         /// <summary>

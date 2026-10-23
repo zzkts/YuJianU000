@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using Yujian.Core.Events;
 
 namespace Yujian.Mining
 {
@@ -174,7 +175,11 @@ namespace Yujian.Mining
                 Debug.Log($"[Ore] {name} 受到 {damage} 点伤害，剩余 {currentHealth}");
             }
 
-            if (currentHealth > 0f)
+            bool destroyed = currentHealth <= 0f;
+
+            EventBus.Publish(new OreHit(transform.position, destroyed));
+
+            if (!destroyed)
             {
                 return false;
             }

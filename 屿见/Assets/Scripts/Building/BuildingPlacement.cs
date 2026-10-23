@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using Yujian.Core;
 
 namespace Yujian.Building
 {
@@ -59,7 +59,6 @@ namespace Yujian.Building
         [SerializeField] private bool logBlockedPlacements = true;
 
         /// <summary>UI 射线结果的复用缓冲，避免每次点击都分配新 List。</summary>
-        private readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
 
         /// <summary>建筑碰撞体查询的复用缓冲，避免蓝图跟随鼠标时每帧分配数组。</summary>
         private readonly Collider[] overlapBuffer = new Collider[128];
@@ -96,7 +95,7 @@ namespace Yujian.Building
             if (grid == null)
             {
                 Debug.LogError("[BuildingPlacement] BuildingGrid 未配置，任何位置都会被判为不可放置。" +
-                               "请重新运行菜单「屿见/配置建筑网格与建造相机（阶段 7）」。", this);
+                               "请重新运行菜单「屿见/建筑/配置建筑网格与建造相机（阶段 7）」。", this);
             }
 
             if (gridVisualizer == null)
@@ -517,10 +516,7 @@ namespace Yujian.Building
         }
 
         /// <summary>
-        /// 判断指定屏幕坐标是否落在 UI 上。
-        /// 与 MiningInput 用的是同一套做法：EventSystem.RaycastAll 按坐标判定，
-        /// 而不是 EventSystem.IsPointerOverGameObject()——后者只认当前鼠标位置，触屏要额外传 fingerId，
-        /// 且结果受 EventSystem 与调用方的执行顺序影响。
+        /// 判断指定屏幕坐标是否落在 UI 上。实现统一在 <see cref="PointerOverUI"/>。
         /// </summary>
         private bool IsPointerOverUI(Vector2 screenPosition)
         {
@@ -529,29 +525,7 @@ namespace Yujian.Building
                 return false;
             }
 
-            EventSystem eventSystem = EventSystem.current;
-
-            if (eventSystem == null)
-            {
-                if (!warnedAboutMissingEventSystem)
-                {
-                    warnedAboutMissingEventSystem = true;
-                    Debug.LogWarning("[BuildingPlacement] 场景中没有 EventSystem，无法判断点击是否落在 UI 上；" +
-                                     "后续点击一律不做 UI 屏蔽。", this);
-                }
-
-                return false;
-            }
-
-            PointerEventData eventData = new PointerEventData(eventSystem)
-            {
-                position = screenPosition,
-            };
-
-            uiRaycastResults.Clear();
-            eventSystem.RaycastAll(eventData, uiRaycastResults);
-
-            return uiRaycastResults.Count > 0;
+            return PointerOverUI.IsOver(screenPosition, this, ref warnedAboutMissingEventSystem);
         }
     }
 }

@@ -86,7 +86,7 @@ namespace Yujian.Core
                 // 不拦着游戏跑：CurrentArea 会退化成挖矿区。但要说明白，否则
                 // 外部读到的永远是「挖矿」，而没有任何报错——规则 5：不许静默失败
                 Debug.LogError("[GameManager] GameAreaController 未配置，CurrentArea 会一直返回「挖矿」。" +
-                               "请重跑菜单「屿见/配置 MVP 整合（阶段 6）」。", this);
+                               "请重跑菜单「屿见/整合/配置 MVP 整合（阶段 6）」。", this);
             }
         }
     }

@@ -9,7 +9,7 @@ namespace Yujian.Mining
     /// 职责：按伤害来源提供颜色、字号、粗体；不生成、不播放伤害数字。
     /// 新增一种伤害来源时，在表里加一行即可，不需要改 <see cref="DamagePopup"/>。
     /// 资产放在 Assets/Data/Mining/DamageNumberTable.asset，由菜单
-    /// 「屿见/配置伤害数字配置表（挖矿 2.1-3）」创建并接线。
+    /// 「屿见/挖矿/配置伤害数字配置表（挖矿 2.1-3）」创建并接线。
     /// </summary>
     [CreateAssetMenu(menuName = "屿见/伤害数字配置表", fileName = "DamageNumberTable")]
     public class DamageNumberTable : ScriptableObject

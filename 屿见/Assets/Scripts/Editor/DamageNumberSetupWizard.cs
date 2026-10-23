@@ -22,7 +22,7 @@ namespace Yujian.EditorTools
         private const string TablePath = DataFolder + "/DamageNumberTable.asset";
         private const string PopupPrefabPath = "Assets/Prefabs/DamagePopup.prefab";
 
-        [MenuItem("屿见/配置伤害数字配置表（挖矿 2.1-3）")]
+        [MenuItem("屿见/挖矿/配置伤害数字配置表（挖矿 2.1-3）", false, 330)]
         public static void Configure()
         {
             DamageNumberTable table = EnsureTable();

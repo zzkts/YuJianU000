@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Yujian.Core.Events;
 using Yujian.Mining;
 using Yujian.Shop;
 
@@ -81,6 +82,12 @@ namespace Yujian.Building
         private bool miningRestorePending;
 
         /// <summary>
+        /// 读档清场期间 > 0：此时移除建筑属于「系统清场」，不发布 BuildingRemoved。
+        /// 否则音频会为每座被清掉的建筑响一次、等级会跟着往下掉。
+        /// </summary>
+        private int suppressRemovedEventDepth;
+
+        /// <summary>
         /// 蓝图被销毁时触发（无论是取消、撤回还是建成）。触发时机在蓝图被 Destroy 之前。
         /// 参数 built = true 表示已经生成实体建筑，材料应视为已消耗；
         /// false 表示放弃，订阅方（BuildingConstruction）应把蓝图里的材料退回库存。
@@ -144,7 +151,7 @@ namespace Yujian.Building
             if (grid == null)
             {
                 Debug.LogError("[BuildingManager] BuildingGrid 未配置，蓝图无法落位，建筑也无法登记占用。" +
-                               "请重新运行菜单「屿见/配置建筑网格与建造相机（阶段 7）」。", this);
+                               "请重新运行菜单「屿见/建筑/配置建筑网格与建造相机（阶段 7）」。", this);
             }
         }
 
@@ -186,7 +193,7 @@ namespace Yujian.Building
             if (grid == null)
             {
                 Debug.LogError("[BuildingManager] BuildingGrid 未配置，无法按格数换算占地并缩放蓝图。" +
-                               "请重新运行菜单「屿见/配置建筑网格与建造相机（阶段 7）」。", this);
+                               "请重新运行菜单「屿见/建筑/配置建筑网格与建造相机（阶段 7）」。", this);
                 return;
             }
 
@@ -227,6 +234,8 @@ namespace Yujian.Building
             blueprint.Initialize(data, worldFootprint);
             SetMiningSuppressed(true);
 
+            EventBus.Publish(new BlueprintOpened(data));
+
             if (logBuildingFlow)
             {
                 Debug.Log($"[BuildingManager] 已选中「{data.BuildingName}」（{data.BuildingType.ToChineseName()}），" +
@@ -242,11 +251,16 @@ namespace Yujian.Building
         /// 会先广播 OnBlueprintClosed(false)，BuildingConstruction 借此把蓝图里已放入的材料退回库存——
         /// 否则取消一次就凭空吞掉玩家的料。
         /// </summary>
-        public void CancelSelection()
+        /// <param name="publishEvent">
+        /// 是否向 EventBus 发布 BlueprintClosed。读档时用 false：
+        /// 退料是存档恢复的一部分，不是玩家取消，音频不该响。
+        /// 注意 OnBlueprintClosed 这个旧事件**始终**会触发，退料逻辑不受影响。
+        /// </param>
+        public void CancelSelection(bool publishEvent = true)
         {
             bool hadSelection = selectedBuilding != null || currentBlueprint != null;
 
-            CloseBlueprint(false);
+            CloseBlueprint(false, publishEvent);
 
             selectedBuilding = null;
             phase = BuildingPhase.Placing;
@@ -264,9 +278,14 @@ namespace Yujian.Building
         /// 关闭当前蓝图：先广播 OnBlueprintClosed 让订阅方处理材料，再销毁蓝图物体。
         /// 所有销毁蓝图的路径都必须走这里，否则材料结算会被漏掉。
         /// </summary>
-        private void CloseBlueprint(bool built)
+        private void CloseBlueprint(bool built, bool publishEvent = true)
         {
             OnBlueprintClosed?.Invoke(built);
+
+            if (publishEvent)
+            {
+                EventBus.Publish(new BlueprintClosed(built));
+            }
 
             if (currentBlueprint != null)
             {
@@ -304,7 +323,7 @@ namespace Yujian.Building
             if (grid == null)
             {
                 Debug.LogError("[BuildingManager] BuildingGrid 未配置，蓝图不能落位。" +
-                               "请重新运行菜单「屿见/配置建筑网格与建造相机（阶段 7）」。", this);
+                               "请重新运行菜单「屿见/建筑/配置建筑网格与建造相机（阶段 7）」。", this);
                 return false;
             }
 
@@ -330,6 +349,8 @@ namespace Yujian.Building
                           $"所需材料 {selectedBuilding.GetRequirementText()}。" +
                           "现在把材料拖到蓝图上，凑齐后点「确认建造」。");
             }
+
+            EventBus.Publish(new BlueprintAnchored(snappedCenter, footprintRect));
 
             return true;
         }
@@ -413,6 +434,10 @@ namespace Yujian.Building
                           $"共 {layerColors?.Count ?? 0} 层，当前场上共 {placedBuildings.Count} 座建筑。");
             }
 
+            // 落位值马上会被清空，先留一份给事件用
+            Vector3 placedPosition = anchoredPosition;
+            RectInt placedRect = anchoredFootprintRect;
+
             // 先广播：材料已被消耗，BuildingConstruction 收到后清空历史，此后不能再通过蓝图撤回
             CloseBlueprint(true);
             selectedBuilding = null;
@@ -420,6 +445,9 @@ namespace Yujian.Building
             hasAnchor = false;
             anchoredFootprintRect = default;
             SetMiningSuppressed(false);
+
+            // 状态全部提交后再发布：订阅者读到的 BuildingManager 已经是「建造完成」的状态
+            EventBus.Publish(new BuildingPlaced(data, placedPosition, placedRect));
 
             return true;
         }
@@ -523,24 +551,38 @@ namespace Yujian.Building
         public int ClearPlacedBuildings()
         {
             int removed = 0;
+            suppressRemovedEventDepth++;
 
-            for (int i = placedBuildings.Count - 1; i >= 0; i--)
+            try
             {
-                GameObject building = placedBuildings[i];
-
-                if (building == null)
+                for (int i = placedBuildings.Count - 1; i >= 0; i--)
                 {
-                    placedBuildings.RemoveAt(i);
-                    continue;
-                }
+                    GameObject building = placedBuildings[i];
 
-                if (RemoveBuilding(building))
-                {
-                    removed++;
+                    if (building == null)
+                    {
+                        placedBuildings.RemoveAt(i);
+                        continue;
+                    }
+
+                    if (RemoveBuilding(building))
+                    {
+                        removed++;
+                    }
                 }
+            }
+            finally
+            {
+                suppressRemovedEventDepth--;
             }
 
             placedBuildings.Clear();
+
+            if (logBuildingFlow)
+            {
+                Debug.Log($"[BuildingManager] 清场完成，共移除 {removed} 座建筑（读档 / 重置，不发布移除事件）。", this);
+            }
+
             return removed;
         }
 
@@ -670,7 +712,7 @@ namespace Yujian.Building
             {
                 Debug.LogError($"[BuildingManager] 建筑预制体「{instance.name}」的根物体上没有 BuildingLayerStack 组件，" +
                                "楼层不会显示任何颜色。\n" +
-                               "请运行菜单「屿见/配置建造系统（阶段 4）」重建建筑预制体。", instance);
+                               "请运行菜单「屿见/建筑/配置建造系统（阶段 4）」重建建筑预制体。", instance);
                 return;
             }
 
@@ -712,6 +754,13 @@ namespace Yujian.Building
 
             // 广播放在 Destroy 之前：此时列表与占格都已经更新，订阅方立刻存档也不会写进旧状态
             OnBuildingRemoved?.Invoke(building);
+
+            if (suppressRemovedEventDepth == 0)
+            {
+                PlacedBuildingInfo info = building.GetComponent<PlacedBuildingInfo>();
+                EventBus.Publish(new BuildingRemoved(
+                    info != null ? info.Data : null, building.transform.position));
+            }
 
             Destroy(building);
             return true;

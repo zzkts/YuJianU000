@@ -31,7 +31,7 @@ namespace Yujian.EditorTools
 
         private static readonly Color GridLineColor = new Color(0.35f, 0.40f, 0.35f, 0.25f);
 
-        [MenuItem("屿见/配置建筑网格与建造相机（阶段 7）")]
+        [MenuItem("屿见/建筑/配置建筑网格与建造相机（阶段 7）", false, 540)]
         public static void Configure()
         {
             // ---------- 前置检查：任何一项不满足就整体不执行，避免留下半配置状态 ----------

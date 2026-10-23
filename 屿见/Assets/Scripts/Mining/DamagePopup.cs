@@ -132,7 +132,7 @@ namespace Yujian.Mining
                 if (styleTable == null)
                 {
                     Debug.LogError("[DamagePopup] 伤害数字配置表未配置，已使用内置默认样式。" +
-                                   "请运行菜单「屿见/配置伤害数字配置表（挖矿 2.1-3）」。", this);
+                                   "请运行菜单「屿见/挖矿/配置伤害数字配置表（挖矿 2.1-3）」。", this);
                 }
                 else
                 {

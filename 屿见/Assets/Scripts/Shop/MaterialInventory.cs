@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Yujian.Core.Events;
 
 namespace Yujian.Shop
 {
@@ -97,6 +98,7 @@ namespace Yujian.Shop
             }
 
             OnInventoryChanged?.Invoke();
+            EventBus.Publish(new InventoryChanged(material, color, amount));
         }
 
         /// <summary>
@@ -146,6 +148,8 @@ namespace Yujian.Shop
                 }
             }
 
+            // 读档整体替换不发 EventBus：那是“刷新界面”，不是“玩家拿到了材料”，
+            // 否则音频管理会为每一格库存响一次。
             OnInventoryChanged?.Invoke();
 
             if (logInventoryChanges)
@@ -198,6 +202,7 @@ namespace Yujian.Shop
             }
 
             OnInventoryChanged?.Invoke();
+            EventBus.Publish(new InventoryChanged(material, color, -amount));
             return true;
         }
 

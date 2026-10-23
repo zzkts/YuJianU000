@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using Yujian.Core.Events;
 
 namespace Yujian.Player
 {
@@ -48,6 +49,7 @@ namespace Yujian.Player
 
             currentMoney += amount;
             OnMoneyChanged?.Invoke(currentMoney);
+            EventBus.Publish(new MoneyChanged(currentMoney, amount));
         }
 
         /// <summary>
@@ -66,6 +68,8 @@ namespace Yujian.Player
             }
 
             currentMoney = clamped;
+            // 故意不发 EventBus：读档不是“赚到钱”，订阅了金币音的音频管理会连着响。
+            // UI 走旧事件 OnMoneyChanged 已经能正确刷新。
             OnMoneyChanged?.Invoke(currentMoney);
         }
 
@@ -89,6 +93,7 @@ namespace Yujian.Player
 
             currentMoney -= amount;
             OnMoneyChanged?.Invoke(currentMoney);
+            EventBus.Publish(new MoneyChanged(currentMoney, -amount));
             return true;
         }
     }

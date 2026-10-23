@@ -17,7 +17,7 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class IslandMapSetupWizard
     {
-        private const string MenuPath = "屿见/生成低模海岛底图";
+        private const string MenuPath = "屿见/场景/生成低模海岛底图";
         private const string MeshFolder = "Assets/Data/Island";
         private const string MeshAssetPath = MeshFolder + "/IslandTerrain.asset";
         private const string SettingsAssetPath = MeshFolder + "/IslandSettings.asset";
@@ -27,7 +27,7 @@ namespace Yujian.EditorTools
         private const string WaterShaderName = "Yujian/Island Water";
         private const string GroundLayerName = "Ground";
 
-        [MenuItem(MenuPath)]
+        [MenuItem(MenuPath, false, 210)]
         public static void GenerateIsland()
         {
             if (EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode)

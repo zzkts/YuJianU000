@@ -40,7 +40,7 @@ namespace Yujian.UI
             if (currency == null)
             {
                 Debug.LogError("[CoinHudUI] PlayerCurrency 未配置，金币显示不会更新。" +
-                               "请重新运行菜单「屿见/配置 MVP 整合（阶段 6）」。", this);
+                               "请重新运行菜单「屿见/整合/配置 MVP 整合（阶段 6）」。", this);
                 return;
             }
 

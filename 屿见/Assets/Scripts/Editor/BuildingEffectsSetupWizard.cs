@@ -32,7 +32,7 @@ namespace Yujian.EditorTools
         private const string OreLayersField = "oreLayers";
         private const string AttackIntervalField = "attackInterval";
 
-        [MenuItem("屿见/配置建筑效果（阶段 5）")]
+        [MenuItem("屿见/建筑/配置建筑效果（阶段 5）", false, 530)]
         public static void Configure()
         {
             int oreLayer = LayerMask.NameToLayer(OreLayerName);
@@ -111,14 +111,14 @@ namespace Yujian.EditorTools
                 if (root.GetComponent<BuildingLayerStack>() == null)
                 {
                     Debug.LogWarning($"[BuildingEffectsSetupWizard] 建筑预制体上没有 BuildingLayerStack，" +
-                                     "楼层不会显示颜色。可运行菜单「屿见/配置建造系统（阶段 4）」修复。");
+                                     "楼层不会显示颜色。可运行菜单「屿见/建筑/配置建造系统（阶段 4）」修复。");
                 }
 
                 if (root.GetComponent<Collider>() == null)
                 {
                     Debug.LogWarning($"[BuildingEffectsSetupWizard] 建筑预制体根物体上没有 Collider，" +
                                      "别的建筑检测不到它、会允许重叠放置。" +
-                                     "可运行菜单「屿见/配置建造系统（阶段 4）」修复。");
+                                     "可运行菜单「屿见/建筑/配置建造系统（阶段 4）」修复。");
                 }
 
                 SerializedObject so = new SerializedObject(effect);

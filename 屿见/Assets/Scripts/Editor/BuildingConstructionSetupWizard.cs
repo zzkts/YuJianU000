@@ -54,7 +54,7 @@ namespace Yujian.EditorTools
 
         private static readonly Vector3 DefaultFootprint = new Vector3(4f, 4f, 4f);
 
-        [MenuItem("屿见/配置建造系统（阶段 4）")]
+        [MenuItem("屿见/建筑/配置建造系统（阶段 4）", false, 520)]
         public static void Configure()
         {
             BuildingData data = AssetDatabase.LoadAssetAtPath<BuildingData>(
@@ -104,7 +104,7 @@ namespace Yujian.EditorTools
 
             if (manager == null)
             {
-                Fail("场景里找不到 BuildingManager，请先运行菜单「屿见/配置建筑系统（阶段 3）」。");
+                Fail("场景里找不到 BuildingManager，请先运行菜单「屿见/建筑/配置建筑系统（阶段 3）」。");
                 return;
             }
 

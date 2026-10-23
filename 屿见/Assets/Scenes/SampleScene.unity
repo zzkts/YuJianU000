@@ -324,6 +324,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 95835767}
+  - component: {fileID: 95835768}
   m_Layer: 0
   m_Name: BuildingPanel
   m_TagString: Untagged
@@ -353,6 +354,24 @@ RectTransform:
   m_AnchoredPosition: {x: -30, y: 160}
   m_SizeDelta: {x: 320, y: 260}
   m_Pivot: {x: 1, y: 0}
+--- !u!114 &95835768
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 95835766}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83e04ab3f0915f74eac8ec08cb42134d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.UI.UIPanel
+  panelId: 2
+  target: {fileID: 0}
+  canvasGroup: {fileID: 0}
+  slide: {fileID: 0}
+  modal: 0
+  logPanelFlow: 0
 --- !u!1 &104431770
 GameObject:
   m_ObjectHideFlags: 0
@@ -365,6 +384,7 @@ GameObject:
   - component: {fileID: 104431774}
   - component: {fileID: 104431773}
   - component: {fileID: 104431772}
+  - component: {fileID: 104431775}
   m_Layer: 0
   m_Name: BottomNav
   m_TagString: Untagged
@@ -451,6 +471,24 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 104431770}
   m_CullTransparentMesh: 1
+--- !u!114 &104431775
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 104431770}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83e04ab3f0915f74eac8ec08cb42134d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.UI.UIPanel
+  panelId: 4
+  target: {fileID: 0}
+  canvasGroup: {fileID: 0}
+  slide: {fileID: 0}
+  modal: 0
+  logPanelFlow: 0
 --- !u!1 &148571677
 GameObject:
   m_ObjectHideFlags: 0
@@ -917,6 +955,7 @@ GameObject:
   - component: {fileID: 277603792}
   - component: {fileID: 277603793}
   - component: {fileID: 277603794}
+  - component: {fileID: 277603795}
   m_Layer: 0
   m_Name: "\u6750\u6599\u9762\u677F"
   m_TagString: Untagged
@@ -991,6 +1030,24 @@ MonoBehaviour:
   hiddenOffsetY: -740
   duration: 0.22
   startHidden: 1
+--- !u!114 &277603795
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 277603791}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83e04ab3f0915f74eac8ec08cb42134d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.UI.UIPanel
+  panelId: 3
+  target: {fileID: 0}
+  canvasGroup: {fileID: 0}
+  slide: {fileID: 0}
+  modal: 0
+  logPanelFlow: 0
 --- !u!1 &319655592
 GameObject:
   m_ObjectHideFlags: 0
@@ -2688,6 +2745,7 @@ GameObject:
   - component: {fileID: 651460891}
   - component: {fileID: 651460890}
   - component: {fileID: 651460889}
+  - component: {fileID: 651460892}
   m_Layer: 0
   m_Name: CoinHud
   m_TagString: Untagged
@@ -2769,6 +2827,24 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 651460887}
   m_CullTransparentMesh: 1
+--- !u!114 &651460892
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 651460887}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83e04ab3f0915f74eac8ec08cb42134d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.UI.UIPanel
+  panelId: 5
+  target: {fileID: 0}
+  canvasGroup: {fileID: 0}
+  slide: {fileID: 0}
+  modal: 0
+  logPanelFlow: 0
 --- !u!1 &679634628
 GameObject:
   m_ObjectHideFlags: 0
@@ -4092,6 +4168,69 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 976504838}
   m_CullTransparentMesh: 1
+--- !u!1 &989055621
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 989055624}
+  - component: {fileID: 989055623}
+  - component: {fileID: 989055622}
+  m_Layer: 0
+  m_Name: CommonModules
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &989055622
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 989055621}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c8183cb3590e4824ea0fd0192686780d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.UI.UIManager
+  logUIFlow: 0
+--- !u!114 &989055623
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 989055621}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6a8b47d8589ef1d439284fe1d5946b59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Audio.AudioManager
+  catalog: {fileID: 11400000, guid: 9cfe4b870b8e12740a9b3133a7dad543, type: 2}
+  sourceCount: 10
+  musicFadeSeconds: 0.6
+  switchMusicByArea: 1
+  logAudioFlow: 0
+--- !u!4 &989055624
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 989055621}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1015485368
 GameObject:
   m_ObjectHideFlags: 0
@@ -4814,6 +4953,7 @@ GameObject:
   - component: {fileID: 1270640616}
   - component: {fileID: 1270640615}
   - component: {fileID: 1270640614}
+  - component: {fileID: 1270640618}
   m_Layer: 5
   m_Name: ShopPanel
   m_TagString: Untagged
@@ -4942,6 +5082,24 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1270640612}
   m_CullTransparentMesh: 1
+--- !u!114 &1270640618
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1270640612}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83e04ab3f0915f74eac8ec08cb42134d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.UI.UIPanel
+  panelId: 1
+  target: {fileID: 0}
+  canvasGroup: {fileID: 0}
+  slide: {fileID: 0}
+  modal: 0
+  logPanelFlow: 0
 --- !u!1 &1292234868
 GameObject:
   m_ObjectHideFlags: 0
@@ -6445,6 +6603,7 @@ GameObject:
   - component: {fileID: 1851669748}
   - component: {fileID: 1851669747}
   - component: {fileID: 1851669750}
+  - component: {fileID: 1851669751}
   m_Layer: 0
   m_Name: GameAreaSystem
   m_TagString: Untagged
@@ -6467,12 +6626,38 @@ MonoBehaviour:
   areas: {fileID: 1851669748}
   cameraTransform: {fileID: 330585546}
   buildingDirector: {fileID: 8800000000000000005}
+  observationCamera: {fileID: 1851669751}
   miningPosition: {x: -20.93, y: 0.82, z: -12.9}
   miningEulerAngles: {x: 0, y: 0, z: 0}
   shopPosition: {x: -23.49, y: 22, z: -23.28}
   shopEulerAngles: {x: 45, y: 0, z: 0}
-  moveSpeed: 25
-  smoothTime: 0.35
+  observationPosition: {x: 10.21735, y: 106.49, z: -84.06}
+  observationEulerAngles: {x: 55, y: 0, z: 0}
+  transitionDuration: 0.6
+  transitionCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
   snapOnStart: 1
   logCameraFlow: 1
 --- !u!114 &1851669748
@@ -6493,7 +6678,7 @@ MonoBehaviour:
   - {fileID: 95835766}
   shopAreaPanels:
   - {fileID: 1270640612}
-  startArea: 0
+  startArea: 3
   logAreaFlow: 1
 --- !u!4 &1851669749
 Transform:
@@ -6527,6 +6712,40 @@ MonoBehaviour:
   levelTable: {fileID: 11400000, guid: dc98e149d069dc04ca7e148ad44423fe, type: 2}
   spawnDelay: 0.2
   logSpawnFlow: 1
+--- !u!114 &1851669751
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1851669746}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4abac786b97d72c4d9bbb01912b91710, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Core.ObservationCameraController
+  areas: {fileID: 1851669748}
+  buildingDirector: {fileID: 8800000000000000005}
+  cameraTransform: {fileID: 330585546}
+  lookAction: {fileID: -5630151704836100654, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  rotateAction: {fileID: -2185481485913320682, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  panAction: {fileID: -4090225696740746782, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  scrollAction: {fileID: 6240969308177333660, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  blockWhenPointerOverUI: 1
+  rotateSensitivity: 0.25
+  invertRotateY: 0
+  rotateAxisLockThreshold: 3
+  minPitch: 15
+  maxPitch: 85
+  panSensitivity: 1
+  invertPanY: 0
+  clampPanToHome: 1
+  maxPanDistance: 80
+  zoomStepPerNotch: 8
+  minDistance: 40
+  maxDistance: 200
+  groundY: 0
+  logCameraControlFlow: 1
 --- !u!1 &1870839764
 GameObject:
   m_ObjectHideFlags: 0
@@ -6745,7 +6964,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &2037839256
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6791,6 +7010,10 @@ MonoBehaviour:
   loadOnStart: 1
   saveOnQuit: 1
   saveOnFocusLost: 0
+  autoSaveEnabled: 1
+  autoSaveIntervalSeconds: 60
+  autoSaveOnBuildingChanged: 1
+  buildingManager: {fileID: 0}
   logSaveFlow: 1
 --- !u!4 &2037839259
 Transform:
@@ -7199,6 +7422,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Building.BuildingUI
   buildingManager: {fileID: 8800000000000000003}
   cameraDirector: {fileID: 8800000000000000005}
+  areas: {fileID: 1851669748}
   availableBuildings:
   - {fileID: 11400000, guid: edf5bd059cb594140a3e9171684ddc03, type: 2}
 --- !u!114 &8800000000000000011
@@ -7313,3 +7537,4 @@ SceneRoots:
   - {fileID: 1347120860}
   - {fileID: 850255510}
   - {fileID: 2037839259}
+  - {fileID: 989055624}

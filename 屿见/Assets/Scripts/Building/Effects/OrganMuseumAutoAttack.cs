@@ -82,7 +82,7 @@ namespace Yujian.Building.Effects
                 canAttack = false;
                 Debug.LogError("[OrganMuseumAutoAttack] Ore Layers 没有勾选任何图层，" +
                                "风琴博物馆永远找不到目标，效果不会启动（空跑只会刷屏）。" +
-                               "请把该字段勾成 Ore 层，或运行菜单「屿见/配置建筑效果（阶段 5）」自动勾好。", this);
+                               "请把该字段勾成 Ore 层，或运行菜单「屿见/建筑/配置建筑效果（阶段 5）」自动勾好。", this);
                 return;
             }
 

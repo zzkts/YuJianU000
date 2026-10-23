@@ -137,7 +137,7 @@ namespace Yujian.UI
                 Debug.LogWarning("[BuildingMaterialPanel] Sliding Panel 未配置。两个后果：" +
                                  "① 面板瞬间显隐，不会从屏幕底部滑入；" +
                                  "② 面板仍停在场景里摆的旧位置（早先那一版是屏幕右上角），不是底部居中。" +
-                                 "请跑菜单「屿见/配置建造系统（阶段 4）」并 Ctrl+S 保存场景。", this);
+                                 "请跑菜单「屿见/建筑/配置建造系统（阶段 4）」并 Ctrl+S 保存场景。", this);
             }
 
             WireButtons();
@@ -285,7 +285,7 @@ namespace Yujian.UI
                 // 而且不会有任何报错——必须当场说清楚（规则 5）
                 Debug.LogError("[BuildingMaterialPanel] Building Construction 未配置，" +
                                "「撤回」「确认建造」点了不会有任何反应。" +
-                               "请重跑菜单「屿见/配置建造系统（阶段 4）」。", this);
+                               "请重跑菜单「屿见/建筑/配置建造系统（阶段 4）」。", this);
             }
 
             if (undoButton == null)
@@ -324,7 +324,7 @@ namespace Yujian.UI
             {
                 Debug.LogError($"[BuildingMaterialPanel]「{label}」按钮在场景里是关闭的" +
                                "（Inspector 里名字左边的勾没打上），面板显示时它也不会出现、更收不到点击。" +
-                               "多半是向导从隐藏的按钮样品上克隆时漏了激活——请重跑菜单「屿见/配置建造系统（阶段 4）」。",
+                               "多半是向导从隐藏的按钮样品上克隆时漏了激活——请重跑菜单「屿见/建筑/配置建造系统（阶段 4）」。",
                                button);
             }
         }
@@ -472,7 +472,7 @@ namespace Yujian.UI
             if (item == null)
             {
                 Debug.LogWarning($"[BuildingMaterialPanel] 条目模板「{itemTemplate.name}」上没有 MaterialDragItem 组件，" +
-                                 "已自动补上。建议运行菜单「屿见/配置建造系统（阶段 4）」重建面板。", this);
+                                 "已自动补上。建议运行菜单「屿见/建筑/配置建造系统（阶段 4）」重建面板。", this);
                 item = clone.gameObject.AddComponent<MaterialDragItem>();
             }
 

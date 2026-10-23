@@ -99,7 +99,7 @@ namespace Yujian.Building
         [SerializeField] private BuildingMaterialRequirement[] requiredMaterials = new BuildingMaterialRequirement[0];
 
         [Header("存档")]
-        [Tooltip("跨存档稳定 ID。由菜单「屿见/配置存档系统」按资产 GUID 自动生成，不要手改。" +
+        [Tooltip("跨存档稳定 ID。由菜单「屿见/通用模块/配置存档系统」按资产 GUID 自动生成，不要手改。" +
                  "改掉它会让旧存档里的该建筑无法被识别")]
         [SerializeField] private string saveId = "";
 
@@ -185,7 +185,7 @@ namespace Yujian.Building
             {
                 // 不拦着资产使用，但存档时这座建筑会被跳过。规则 5：不静默失败
                 Debug.LogWarning($"[BuildingData] 资产「{name}」没有 Save Id，存档时会跳过它。" +
-                                 "请运行菜单「屿见/配置存档系统」自动生成。", this);
+                                 "请运行菜单「屿见/通用模块/配置存档系统」自动生成。", this);
             }
 
             if (requiredMaterials == null)

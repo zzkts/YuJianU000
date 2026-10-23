@@ -9,17 +9,17 @@ namespace Yujian.Save
     /// 存档目录：把“存档里的稳定 ID”解析回工程里的 ScriptableObject 资产。
     ///
     /// JsonUtility 不能序列化资产引用，所以存档只写字符串 ID；
-    /// 读档时必须有这样一张表才能还原成 MaterialData。目录由菜单「屿见/配置存档系统」自动填充。
+    /// 读档时必须有这样一张表才能还原成 MaterialData。目录由菜单「屿见/通用模块/配置存档系统」自动填充。
     ///
     /// 目前登记材料与建筑。第 3 步会加入 OreGroup / OreEntry。
     /// </summary>
     [CreateAssetMenu(menuName = "屿见/存档/存档目录", fileName = "SaveCatalog")]
     public class SaveCatalog : ScriptableObject
     {
-        [Tooltip("所有可能需要写进存档的原料。由菜单「屿见/配置存档系统」自动补齐")]
+        [Tooltip("所有可能需要写进存档的原料。由菜单「屿见/通用模块/配置存档系统」自动补齐")]
         [SerializeField] private List<MaterialData> materials = new List<MaterialData>();
 
-        [Tooltip("所有可能需要写进存档的建筑。由菜单「屿见/配置存档系统」自动补齐")]
+        [Tooltip("所有可能需要写进存档的建筑。由菜单「屿见/通用模块/配置存档系统」自动补齐")]
         [SerializeField] private List<BuildingData> buildings = new List<BuildingData>();
 
         private Dictionary<string, MaterialData> materialLookup;
@@ -59,7 +59,7 @@ namespace Yujian.Save
             if (string.IsNullOrWhiteSpace(material.SaveId))
             {
                 Debug.LogError($"[SaveCatalog] 原料资产「{material.name}」没有 Save Id，无法写入存档。" +
-                               "请运行菜单「屿见/配置存档系统」。", material);
+                               "请运行菜单「屿见/通用模块/配置存档系统」。", material);
                 return null;
             }
 
@@ -68,7 +68,7 @@ namespace Yujian.Save
             if (!materialLookup.TryGetValue(material.SaveId, out MaterialData found) || found != material)
             {
                 Debug.LogError($"[SaveCatalog] 原料「{material.name}」不在存档目录「{name}」里，" +
-                               "或者它的 Save Id 与目录中的记录冲突。请运行菜单「屿见/配置存档系统」补齐目录。", this);
+                               "或者它的 Save Id 与目录中的记录冲突。请运行菜单「屿见/通用模块/配置存档系统」补齐目录。", this);
                 return null;
             }
 
@@ -103,7 +103,7 @@ namespace Yujian.Save
             if (string.IsNullOrWhiteSpace(building.SaveId))
             {
                 Debug.LogError($"[SaveCatalog] 建筑资产「{building.name}」没有 Save Id，无法写入存档。" +
-                               "请运行菜单「屿见/配置存档系统」。", building);
+                               "请运行菜单「屿见/通用模块/配置存档系统」。", building);
                 return null;
             }
 
@@ -112,7 +112,7 @@ namespace Yujian.Save
             if (!buildingLookup.TryGetValue(building.SaveId, out BuildingData found) || found != building)
             {
                 Debug.LogError($"[SaveCatalog] 建筑「{building.name}」不在存档目录「{name}」里，" +
-                               "或者它的 Save Id 与目录中的记录冲突。请运行菜单「屿见/配置存档系统」补齐目录。", this);
+                               "或者它的 Save Id 与目录中的记录冲突。请运行菜单「屿见/通用模块/配置存档系统」补齐目录。", this);
                 return null;
             }
 

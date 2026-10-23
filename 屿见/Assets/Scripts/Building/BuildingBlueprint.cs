@@ -34,7 +34,7 @@ namespace Yujian.Building
 
         [Header("材料楼层")]
         [Tooltip("蓝图上显示「已放入材料」的楼层组件。留空则蓝图只显示整体绿/红，看不到放了哪些颜色的料。" +
-                 "由菜单「屿见/配置建造系统（阶段 4）」自动接线")]
+                 "由菜单「屿见/建筑/配置建造系统（阶段 4）」自动接线")]
         [SerializeField] private BuildingLayerStack materialLayers;
 
         [Header("调试")]

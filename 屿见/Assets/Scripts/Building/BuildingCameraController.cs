@@ -1,7 +1,6 @@
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using Yujian.Core;
 
 namespace Yujian.Building
 {
@@ -72,7 +71,6 @@ namespace Yujian.Building
         [SerializeField] private bool logCameraControlFlow = true;
 
         /// <summary>UI 射线结果的复用缓冲。</summary>
-        private readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
 
         // 地面焦点 + 相机相对焦点的偏移。平移只改焦点，缩放只改偏移长度，旋转始终不变。
         private Vector3 focusPoint;
@@ -112,7 +110,7 @@ namespace Yujian.Building
             if (lookAction == null || panAction == null || scrollAction == null)
             {
                 Debug.LogError("[BuildingCameraController] 输入动作未配置完整（Look / Pan / Scroll），" +
-                               "缺失的动作不会响应。请重新运行菜单「屿见/配置建筑网格与建造相机（阶段 7）」。", this);
+                               "缺失的动作不会响应。请重新运行菜单「屿见/建筑/配置建筑网格与建造相机（阶段 7）」。", this);
             }
 
             if (minDistance <= 0.1f)
@@ -417,8 +415,7 @@ namespace Yujian.Building
         }
 
         /// <summary>
-        /// 指针是否落在 UI 上。与 MiningInput / BuildingPlacement 使用同一套
-        /// EventSystem.RaycastAll 写法，避免 IsPointerOverGameObject 在触屏与执行顺序上的坑。
+        /// 指针是否落在 UI 上。实现统一在 <see cref="PointerOverUI"/>。
         /// </summary>
         private bool IsPointerOverUI()
         {
@@ -429,53 +426,13 @@ namespace Yujian.Building
                 return false;
             }
 
-            EventSystem eventSystem = EventSystem.current;
-
-            if (eventSystem == null)
-            {
-                if (!warnedAboutMissingEventSystem)
-                {
-                    warnedAboutMissingEventSystem = true;
-                    Debug.LogWarning("[BuildingCameraController] 场景中没有 EventSystem，" +
-                                     "无法判断指针是否在 UI 上；UI 屏蔽不会生效。", this);
-                }
-
-                return false;
-            }
-
-            PointerEventData eventData = new PointerEventData(eventSystem)
-            {
-                position = pointer.position.ReadValue(),
-            };
-
-            uiRaycastResults.Clear();
-            eventSystem.RaycastAll(eventData, uiRaycastResults);
-
-            return uiRaycastResults.Count > 0;
+            return PointerOverUI.IsOver(pointer.position.ReadValue(), this, ref warnedAboutMissingEventSystem);
         }
 
         /// <summary>按「手动指定 → 本物体上的 Camera → Camera.main」的顺序找相机。</summary>
         private void ResolveCameraTransform()
         {
-            if (cameraTransform != null)
-            {
-                return;
-            }
-
-            Camera selfCamera = GetComponent<Camera>();
-
-            if (selfCamera != null)
-            {
-                cameraTransform = selfCamera.transform;
-                return;
-            }
-
-            Camera mainCamera = Camera.main;
-
-            if (mainCamera != null)
-            {
-                cameraTransform = mainCamera.transform;
-            }
+            cameraTransform = CameraResolver.Resolve(cameraTransform, gameObject);
         }
 
     }

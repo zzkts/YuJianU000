@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using Yujian.Building;
+using Yujian.Core.Events;
 
 namespace Yujian.Save
 {
@@ -27,7 +28,7 @@ namespace Yujian.Save
     {
         [Header("参与者")]
         [Tooltip("按数组顺序依次执行 Capture / Restore。顺序很重要：先基础数据，再依赖它的系统。" +
-                 "由菜单「屿见/配置存档系统」自动接线")]
+                 "由菜单「屿见/通用模块/配置存档系统」自动接线")]
         [SerializeField] private SaveParticipant[] participants = new SaveParticipant[0];
 
         [Header("时机")]
@@ -51,7 +52,7 @@ namespace Yujian.Save
                  "读档时的批量清场会被内部标记屏蔽，不会触发")]
         [SerializeField] private bool autoSaveOnBuildingChanged = true;
 
-        [Tooltip("建筑管理器。用于订阅建造 / 拆除事件；由菜单「屿见/配置存档系统」自动接线。留空时会尝试在场景里查找")]
+        [Tooltip("建筑管理器。用于订阅建造 / 拆除事件；由菜单「屿见/通用模块/配置存档系统」自动接线。留空时会尝试在场景里查找")]
         [SerializeField] private BuildingManager buildingManager;
 
         [Header("调试")]
@@ -290,6 +291,7 @@ namespace Yujian.Save
             }
 
             OnSaved?.Invoke();
+            EventBus.Publish(new SaveCompleted());
             return true;
         }
 
@@ -435,6 +437,7 @@ namespace Yujian.Save
             }
 
             OnLoaded?.Invoke();
+            EventBus.Publish(new LoadCompleted());
             return true;
         }
 
@@ -582,7 +585,7 @@ namespace Yujian.Save
                 if (logSaveFlow)
                 {
                     Debug.LogWarning("[SaveSystem] 没有找到 BuildingManager，建造 / 拆除后不会立即保存" +
-                                     "（定时保存仍然有效）。请运行菜单「屿见/配置存档系统」自动接线。", this);
+                                     "（定时保存仍然有效）。请运行菜单「屿见/通用模块/配置存档系统」自动接线。", this);
                 }
 
                 return;
@@ -765,7 +768,13 @@ namespace Yujian.Save
             }
         }
 
-        /// <summary>检查参与者列表。空列表或空引用时明确报错，避免存出一个空文件。</summary>
+        /// <summary>
+        /// 检查参与者列表。空列表、空引用或重复项时明确报错，避免存出一个空文件 / 把同一份状态写两遍。
+        ///
+        /// 为什么重复项必须拦下来：同一个参与者在数组里出现两次时，Capture 会写两遍（后面覆盖前面），
+        /// Restore 会恢复两遍（建筑会被生成两份）。这种错误在运行时不报任何异常，只会表现为
+        /// “存档越读越多”，事后极难定位，所以必须在入口就拒绝执行。
+        /// </summary>
         private bool ValidateParticipants()
         {
             if (participants == null || participants.Length == 0)
@@ -774,20 +783,32 @@ namespace Yujian.Save
                 {
                     warnedAboutMissingParticipants = true;
                     Debug.LogError("[SaveSystem] 没有任何 SaveParticipant，存档不会包含任何数据。" +
-                                   "请运行菜单「屿见/配置存档系统」。", this);
+                                   "请运行菜单「屿见/通用模块/配置存档系统」。", this);
                 }
 
                 return false;
             }
 
             bool valid = true;
+            HashSet<SaveParticipant> seen = new HashSet<SaveParticipant>();
 
             for (int i = 0; i < participants.Length; i++)
             {
-                if (participants[i] == null)
+                SaveParticipant participant = participants[i];
+
+                if (participant == null)
                 {
                     Debug.LogError($"[SaveSystem] participants 第 {i} 项是空引用，存档不会执行。" +
-                                   "请重新运行菜单「屿见/配置存档系统」。", this);
+                                   "请重新运行菜单「屿见/通用模块/配置存档系统」。", this);
+                    valid = false;
+                    continue;
+                }
+
+                if (!seen.Add(participant))
+                {
+                    Debug.LogError($"[SaveSystem] participants 第 {i} 项与前面的项是同一个组件" +
+                                   $"（{participant.GetType().Name}），会导致状态被写入 / 恢复两次。" +
+                                   "本次存 / 读档已取消，请删除数组里的重复项。", participant);
                     valid = false;
                 }
             }
