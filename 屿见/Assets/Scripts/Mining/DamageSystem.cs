@@ -15,6 +15,9 @@ namespace Yujian.Mining
         [Tooltip("玩家属性，提供基础攻击力与伤害倍率")]
         [SerializeField] private PlayerStats playerStats;
 
+        [Tooltip("挖矿工具升级进度。配置后优先使用工具的当前攻击力")]
+        [SerializeField] private MiningToolProgress miningTool;
+
         [Header("调试")]
         [Tooltip("是否在 Console 打印每次伤害计算结果")]
         [SerializeField] private bool logCalculatedDamage = false;
@@ -31,14 +34,21 @@ namespace Yujian.Mining
                 return 0f;
             }
 
-            float damage = playerStats.BaseAttack * playerStats.DamageMultiplier;
+            float baseAttack = miningTool != null ? miningTool.CurrentAttack : playerStats.BaseAttack;
+            float damage = baseAttack * playerStats.DamageMultiplier;
 
             if (logCalculatedDamage)
             {
-                Debug.Log($"[DamageSystem] 伤害 = {playerStats.BaseAttack} × {playerStats.DamageMultiplier} = {damage}");
+                Debug.Log($"[DamageSystem] 伤害 = {baseAttack} × {playerStats.DamageMultiplier} = {damage}");
             }
 
             return damage;
+        }
+
+        /// <summary>编辑器向导调用，把挖矿工具进度接进来。</summary>
+        public void ConfigureForSetup(MiningToolProgress tool)
+        {
+            miningTool = tool;
         }
     }
 }

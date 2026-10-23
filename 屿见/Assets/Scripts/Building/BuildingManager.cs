@@ -309,6 +309,16 @@ namespace Yujian.Building
             ApplyBuildingLayer(instance);
             placedBuildings.Add(instance);
 
+            // 记录建筑来源，矿石生成器靠它区分普通建筑和特殊建筑。
+            // 只加在运行时实例上，不改预制体资产。
+            PlacedBuildingTag placedTag = instance.GetComponent<PlacedBuildingTag>();
+            if (placedTag == null)
+            {
+                placedTag = instance.AddComponent<PlacedBuildingTag>();
+            }
+
+            placedTag.Configure(data);
+
             ApplyLayerColors(instance, layerColors);
 
             if (instance.GetComponentInChildren<Collider>() == null)

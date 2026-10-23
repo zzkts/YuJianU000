@@ -22,6 +22,23 @@ namespace Yujian.Mining
             tintByType = tint;
         }
 
+        /// <summary>
+        /// 运行时切换矿种并立刻重新染色。
+        /// OreSpawner 生成下一块矿时会调用它，避免场景里还留着上一块矿的颜色。
+        /// </summary>
+        public void ApplyType(OreType newType, Color tint, bool tintEnabled)
+        {
+            type = newType;
+            tintByType = tintEnabled;
+
+            if (!tintByType)
+            {
+                return;
+            }
+
+            ApplyTint(tint);
+        }
+
         /// <summary>刷新时随机换一种矿石，尽量不和当前种类重复。</summary>
         public void RandomizeType()
         {
@@ -49,8 +66,12 @@ namespace Yujian.Mining
         [ContextMenu("应用种类颜色")]
         private void ApplyTint()
         {
+            ApplyTint(OreTypeInfo.Tint(type));
+        }
+
+        private void ApplyTint(Color color)
+        {
             Renderer[] renderers = GetComponentsInChildren<Renderer>();
-            Color color = OreTypeInfo.Tint(type);
 
             for (int i = 0; i < renderers.Length; i++)
             {

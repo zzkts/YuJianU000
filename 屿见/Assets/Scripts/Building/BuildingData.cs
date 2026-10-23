@@ -79,6 +79,10 @@ namespace Yujian.Building
         [Tooltip("建筑大类")]
         [SerializeField] private BuildingType buildingType = BuildingType.Museum;
 
+        [Tooltip("特殊建筑。矿石生成器的建筑等级表会把特殊建筑单独计数；" +
+                 "普通建筑保持不勾选即可")]
+        [SerializeField] private bool specialBuilding;
+
         [Header("预制体")]
         [Tooltip("建成后真正留在场景里的建筑预制体。根物体建议自带 Collider，" +
                  "并放在 Building 层——放置时检测建筑之间是否重叠靠的就是它")]
@@ -103,6 +107,9 @@ namespace Yujian.Building
 
         /// <summary>建筑大类。</summary>
         public BuildingType BuildingType => buildingType;
+
+        /// <summary>是否算作特殊建筑（例如管风琴博物馆）。</summary>
+        public bool IsSpecialBuilding => specialBuilding;
 
         /// <summary>建成后的建筑预制体，可能为 null。</summary>
         public GameObject BuildingPrefab => buildingPrefab;
