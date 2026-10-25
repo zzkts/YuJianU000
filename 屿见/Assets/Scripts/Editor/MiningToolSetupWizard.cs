@@ -27,7 +27,7 @@ namespace Yujian.EditorTools
 
             if (created)
             {
-                toolData.ConfigureForSetup("石头", "mine_01", 1, 1, 15);
+                toolData.ConfigureForSetup("石头", "mine_01", 1, 1, 15, 15);
                 EditorUtility.SetDirty(toolData);
             }
 

@@ -181,14 +181,15 @@ namespace Yujian.Mining
             string oreName = ore.name;
             int reward = ore.Reward;
 
-            float damage = damageSystem.CalculatePlayerDamage();
+            // 玩家点击才判定暴击；建筑自动攻击走不带 out 的重载，保持稳定输出
+            float damage = damageSystem.CalculatePlayerDamage(out bool isCritical);
             if (damage <= 0f)
             {
                 // DamageSystem 已经打印了明确错误，这里不再重复刷屏
                 return;
             }
 
-            bool destroyed = ore.TakeDamage(damage, DamageSource.Player);
+            bool destroyed = ore.TakeDamage(damage, DamageSource.Player, isCritical);
 
             if (!destroyed)
             {
@@ -199,7 +200,8 @@ namespace Yujian.Mining
 
             if (logMiningFlow)
             {
-                Debug.Log($"[MiningInput] 击碎 {oreName}，发放 {reward} 金币，当前金币 {playerCurrency.CurrentMoney}");
+                Debug.Log($"[MiningInput] 击碎 {oreName}，发放 {reward} 金币，当前金币 {playerCurrency.CurrentMoney}" +
+                          (isCritical ? "（本次为暴击）" : string.Empty));
             }
         }
 

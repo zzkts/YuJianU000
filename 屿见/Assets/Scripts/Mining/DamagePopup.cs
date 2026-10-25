@@ -27,6 +27,14 @@ namespace Yujian.Mining
         [Tooltip("向上飘动的距离（世界单位）")]
         [SerializeField] private float riseDistance = 0.8f;
 
+        [Header("暴击")]
+        [Tooltip("暴击数字颜色，默认橙红")]
+        [SerializeField] private Color criticalColor = new Color(1f, 0.42f, 0.15f, 1f);
+
+        [Tooltip("暴击数字相对普通数字的放大倍数")]
+        [Min(1f)]
+        [SerializeField] private float criticalFontScale = 1.3f;
+
         [Header("调试")]
         [Tooltip("配置表缺失或缺行时是否在 Console 报错")]
         [SerializeField] private bool logStyleFallback = true;
@@ -61,6 +69,17 @@ namespace Yujian.Mining
         /// <param name="source">伤害来源，决定使用配置表里的哪一行样式。</param>
         public void Play(float damage, DamageSource source)
         {
+            Play(damage, source, false);
+        }
+
+        /// <summary>
+        /// 播放一次伤害数字；暴击时改用更醒目的颜色、字号和 CRIT 前缀。
+        /// </summary>
+        /// <param name="damage">要显示的伤害数值。</param>
+        /// <param name="source">伤害来源，决定使用配置表里的哪一行样式。</param>
+        /// <param name="isCritical">本次伤害是否暴击。</param>
+        public void Play(float damage, DamageSource source, bool isCritical)
+        {
             if (!IsInMiningArea())
             {
                 Destroy(gameObject);
@@ -74,10 +93,12 @@ namespace Yujian.Mining
             }
 
             DamageNumberTable.Style style = ResolveStyle(source);
-            baseColor = style.Color;
+            baseColor = isCritical ? criticalColor : style.Color;
 
-            label.text = damage.ToString("0.##");
-            label.fontSize = Mathf.Max(1, style.FontSize);
+            // 伤害数字使用 Unity 内置字体，不含中文字形，所以暴击标记用 CRIT 而不是「暴击」，
+            // 避免显示成方框。以后换上中文字体可以再改成中文。
+            label.text = isCritical ? $"CRIT {damage:0.##}" : damage.ToString("0.##");
+            label.fontSize = Mathf.Max(1, Mathf.RoundToInt(style.FontSize * (isCritical ? Mathf.Max(1f, criticalFontScale) : 1f)));
             label.fontStyle = style.Bold ? FontStyle.Bold : FontStyle.Normal;
             label.color = baseColor;
             label.enabled = true;

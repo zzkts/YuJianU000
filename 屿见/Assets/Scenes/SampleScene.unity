@@ -7702,6 +7702,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.DamageSystem
   playerStats: {fileID: 573473442}
   miningTool: {fileID: 573473448}
+  criticalChancePercent: 20
+  criticalDamageMultiplier: 2
   logCalculatedDamage: 0
 --- !u!4 &2022863319
 Transform:

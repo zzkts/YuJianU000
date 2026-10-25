@@ -31,7 +31,7 @@ namespace Yujian.Mining
         public PlayerCurrency Currency => playerCurrency;
         public int CurrentLevel => Mathf.Max(1, currentLevel);
         public int CurrentAttack => toolData != null ? toolData.GetAttackAtLevel(CurrentLevel) : 1;
-        public int NextUpgradeCost => toolData != null ? toolData.GoldCostPerLevel : 0;
+        public int NextUpgradeCost => toolData != null ? toolData.GetUpgradeCost(CurrentLevel) : 0;
 
         /// <summary>等级或攻击力变化时触发，后续 UI 订阅它刷新显示。</summary>
         public event Action<MiningToolProgress> OnToolChanged;

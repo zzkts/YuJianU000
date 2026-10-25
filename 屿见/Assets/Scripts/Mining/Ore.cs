@@ -151,6 +151,18 @@ namespace Yujian.Mining
         /// <returns>本次伤害是否导致矿石被击碎。</returns>
         public bool TakeDamage(float damage, DamageSource source)
         {
+            return TakeDamage(damage, source, false);
+        }
+
+        /// <summary>
+        /// 承接一次伤害，并决定伤害数字是否按暴击样式显示。
+        /// </summary>
+        /// <param name="damage">伤害值，由 DamageSystem 计算后传入。</param>
+        /// <param name="source">伤害来源，只用于决定伤害数字的样式（策划案 2.1-3）。</param>
+        /// <param name="isCritical">本次伤害是否暴击，仅影响飘字表现，伤害值已由 DamageSystem 乘好。</param>
+        /// <returns>本次伤害是否导致矿石被击碎。</returns>
+        public bool TakeDamage(float damage, DamageSource source, bool isCritical)
+        {
             if (!IsAlive)
             {
                 return false;
@@ -164,7 +176,7 @@ namespace Yujian.Mining
 
             currentHealth = Mathf.Max(0f, currentHealth - damage);
 
-            SpawnDamagePopup(damage, source);
+            SpawnDamagePopup(damage, source, isCritical);
             PlayHitFeedback();
 
             OreHitFlash hitFlash = GetComponent<OreHitFlash>();
@@ -423,7 +435,7 @@ namespace Yujian.Mining
         /// 在矿石上方的随机位置生成一次伤害数字。
         /// 预制体独立于矿石，因此矿石被销毁时伤害数字仍能正常播放完毕。
         /// </summary>
-        private void SpawnDamagePopup(float damage, DamageSource source)
+        private void SpawnDamagePopup(float damage, DamageSource source, bool isCritical)
         {
             if (damagePopupPrefab == null)
             {
@@ -437,7 +449,7 @@ namespace Yujian.Mining
                 Random.Range(-damagePopupRandomRange.z, damagePopupRandomRange.z));
 
             DamagePopup popup = Instantiate(damagePopupPrefab, center + jitter, Quaternion.identity);
-            popup.Play(damage, source);
+            popup.Play(damage, source, isCritical);
         }
 
         /// <summary>

@@ -104,3 +104,6 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+# Unity 未正常关闭时生成的场景备份，不纳入版本管理
+_Recovery/
+_Recovery.meta
