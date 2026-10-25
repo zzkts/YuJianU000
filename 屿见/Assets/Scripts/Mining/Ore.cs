@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using Yujian.Core;
 using Yujian.Core.Events;
 
 namespace Yujian.Mining
@@ -46,6 +47,11 @@ namespace Yujian.Mining
         [Tooltip("伤害数字位置的随机范围（各轴上下浮动该值），该区域在 Scene 视图中用 Gizmos 显示")]
         [SerializeField] private Vector3 damagePopupRandomRange = new Vector3(0.4f, 0.2f, 0.4f);
 
+        [Header("区域显隐")]
+        [Tooltip("勾选后，矿石只在挖矿区显示；在观察 / 建筑 / 商店区自动隐藏，" +
+                 "避免玩家在岛上提前看到矿石")]
+        [SerializeField] private bool onlyVisibleInMiningArea = true;
+
         [Header("调试")]
         [Tooltip("是否在 Console 打印受击与击碎日志，阶段 1 验收依赖该项")]
         [SerializeField] private bool logMiningFlow = true;
@@ -80,6 +86,12 @@ namespace Yujian.Mining
         private Vector3 baseScale;
         private Quaternion baseRotation;
 
+        // 两层显隐：生成/死亡决定「这块矿石现在该不该出现」，
+        // 区域决定「玩家是不是在矿洞里」。两者都允许才真正显示。
+        private bool spawnVisible = true;
+        private bool areaVisible = true;
+        private bool areaStateReceived;
+
         /// <summary>当前生命值。</summary>
         public float CurrentHealth => currentHealth;
 
@@ -100,6 +112,45 @@ namespace Yujian.Mining
 
         /// <summary>参与表现的实际节点。</summary>
         private Transform Visual => visualRoot != null ? visualRoot : transform;
+
+        private void OnEnable()
+        {
+            EventBus.Subscribe<AreaChanged>(HandleAreaChanged);
+        }
+
+        private void OnDisable()
+        {
+            EventBus.Unsubscribe<AreaChanged>(HandleAreaChanged);
+        }
+
+        private void Start()
+        {
+            if (areaStateReceived)
+            {
+                return;
+            }
+
+            // 事件还没来（例如单独测试矿石 Prefab 的场景），自己读一次当前区域。
+            if (!onlyVisibleInMiningArea)
+            {
+                areaVisible = true;
+                ApplyVisualVisibility();
+                return;
+            }
+
+            GameAreaController controller =
+                Object.FindFirstObjectByType<GameAreaController>(FindObjectsInactive.Include);
+
+            areaVisible = controller == null || controller.CurrentArea == GameArea.Mining;
+            ApplyVisualVisibility();
+        }
+
+        private void HandleAreaChanged(AreaChanged evt)
+        {
+            areaStateReceived = true;
+            areaVisible = !onlyVisibleInMiningArea || evt.Area == GameArea.Mining;
+            ApplyVisualVisibility();
+        }
 
         private void Awake()
         {
@@ -397,6 +448,18 @@ namespace Yujian.Mining
 
         private void SetOreVisible(bool visible)
         {
+            spawnVisible = visible;
+            ApplyVisualVisibility();
+        }
+
+        /// <summary>
+        /// 真正决定矿石现在是否可见：既要「没被打碎」，也要「玩家在矿洞里」。
+        /// 这样离开矿区再回来，不会把已经打碎的矿石错误显示出来。
+        /// </summary>
+        private void ApplyVisualVisibility()
+        {
+            bool visible = spawnVisible && areaVisible;
+
             Collider[] colliders = GetComponentsInChildren<Collider>(true);
             for (int i = 0; i < colliders.Length; i++)
             {
