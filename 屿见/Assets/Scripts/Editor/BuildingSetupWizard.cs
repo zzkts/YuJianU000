@@ -23,6 +23,7 @@ namespace Yujian.EditorTools
         private const string BuildingDataPath = "Assets/Data/Buildings/Building_风琴博物馆.asset";
         private const string SystemObjectName = "BuildingSystem";
         private const string PanelObjectName = "BuildingPanel";
+        private const string BlueprintActionPanelName = "蓝图按钮";
 
         // 以下坐标全部读自 SampleScene.unity 的真实值，不是估的
         private static readonly Vector3 MapCenter = new Vector3(10.21735f, 0f, -9.49205f);
@@ -122,29 +123,6 @@ namespace Yujian.EditorTools
             SetFloat(placementSo, "groundHeight", 0f);
             SetFloat(placementSo, "overlapBoxHeight", 4f);
             SetBool(placementSo, "blockClicksOverUI", true);
-
-            if (miningInput != null)
-            {
-                // MiningInput 的 clickAction 就是 Player/Attack，直接复用它的引用，
-                // 省得手工去拖 .inputactions 资产、再在弹出的动作列表里翻
-                SerializedProperty clickAction = new SerializedObject(miningInput).FindProperty("clickAction");
-
-                if (clickAction != null && clickAction.objectReferenceValue != null)
-                {
-                    SetObject(placementSo, "confirmAction", clickAction.objectReferenceValue);
-                }
-                else
-                {
-                    Debug.LogWarning("[BuildingSetupWizard] MiningInput 的 Click Action 是空的，" +
-                                     "Confirm Action 需要你手动指定 Player/Attack。");
-                }
-            }
-            else
-            {
-                Debug.LogWarning("[BuildingSetupWizard] 场景里找不到 MiningInput，" +
-                                 "BuildingPlacement 的 Confirm Action 需要手动指定 Player/Attack。");
-            }
-
             placementSo.ApplyModifiedPropertiesWithoutUndo();
 
             // ---------- 4. BuildingCameraDirector ----------
@@ -302,7 +280,8 @@ namespace Yujian.EditorTools
                 }
 
                 if (buttons[i].transform.parent != null &&
-                    buttons[i].transform.parent.name == PanelObjectName)
+                    (buttons[i].transform.parent.name == PanelObjectName ||
+                     buttons[i].transform.parent.name == BlueprintActionPanelName))
                 {
                     continue;
                 }

@@ -12,10 +12,10 @@ namespace Yujian.Building
     /// </summary>
     public enum BuildingPhase
     {
-        /// <summary>蓝图跟着鼠标走，等玩家点击地面落位。阶段 3 的行为。</summary>
+        /// <summary>蓝图跟着指针走，等玩家点蓝图右侧的 √ 落位。</summary>
         Placing = 0,
 
-        /// <summary>蓝图已落位冻结，等玩家放入材料、再确认建造。阶段 4 新增。</summary>
+        /// <summary>蓝图已落位冻结，等玩家放入材料、再点 √ 建成。阶段 4 新增。</summary>
         Filling = 1,
     }
 
@@ -28,15 +28,16 @@ namespace Yujian.Building
     ///
     /// 不做坐标换算与重叠检测（BuildingPlacement 负责），不决定该放哪几块料（BuildingConstruction 负责）。
     ///
-    /// 阶段 4 的流程：SelectBuilding（蓝图跟鼠标）→ AnchorBlueprint（落位冻结）→
-    /// BuildingConstruction 往蓝图里放材料 → BuildAtAnchor（生成实体建筑）。
+    /// 阶段 4 的流程：SelectBuilding（按住左键拖动蓝图）→ 蓝图旁的 √ 调 AnchorBlueprint（落位冻结）→
+    /// BuildingConstruction 往蓝图里放材料 → 材料齐后 √ 调 BuildAtAnchor（生成实体建筑）。
     /// "点地面"不再是"立刻建出来"，中间多了填料这一步，这是阶段 4 与阶段 3 最大的区别。
+    /// 2026-10-26 起，落位与建成都走 BuildingBlueprintActionUI 的按钮，不再复用 Player/Attack。
     /// </summary>
     public class BuildingManager : MonoBehaviour
     {
         [Header("依赖")]
-        [Tooltip("挖矿输入。放置蓝图期间会被临时禁用，" +
-                 "否则同一次左键点击会同时触发「放置建筑」和「挖矿」")]
+        [Tooltip("挖矿输入。蓝图在场期间会被临时禁用，" +
+                 "避免玩家在建筑区点击时误挖矿石")]
         [SerializeField] private MiningInput miningInput;
 
         [Tooltip("建筑网格。落位时记录占地矩形，建成时登记占用，移除时释放。留空会报错")]
@@ -242,7 +243,7 @@ namespace Yujian.Building
                           $"占地 {data.FootprintCells.x}×{data.FootprintCells.y} 格" +
                           $"（世界尺寸 {worldFootprint.x}×{worldFootprint.y}），蓝图出现在 {defaultSpawnPosition}。" +
                           $"所需材料 {data.GetRequirementText()}。" +
-                          "移动鼠标调整位置，点击地面落位，然后在材料面板里把材料拖到蓝图上。");
+                          "按住左键拖动蓝图到目标位置，松开后点蓝图右侧的 √ 落位，再把材料拖到蓝图上。");
             }
         }
 
@@ -347,7 +348,7 @@ namespace Yujian.Building
             {
                 Debug.Log($"[BuildingManager] 蓝图已落位在 {snappedCenter}，占地格子 {footprintRect}，" +
                           $"所需材料 {selectedBuilding.GetRequirementText()}。" +
-                          "现在把材料拖到蓝图上，凑齐后点「确认建造」。");
+                          "现在把材料拖到蓝图上，凑齐后点蓝图右侧的 √ 建成。");
             }
 
             EventBus.Publish(new BlueprintAnchored(snappedCenter, footprintRect));
@@ -371,7 +372,7 @@ namespace Yujian.Building
 
             if (phase != BuildingPhase.Filling || !hasAnchor)
             {
-                Debug.LogWarning("[BuildingManager] 蓝图还没有落位，不能建造。请先点击地面把蓝图放下。", this);
+                Debug.LogWarning("[BuildingManager] 蓝图还没有落位，不能建造。请先点蓝图右侧的 √ 把蓝图放下。", this);
                 return false;
             }
 
@@ -767,15 +768,12 @@ namespace Yujian.Building
         }
 
         /// <summary>
-        /// 放置期间临时关掉挖矿输入。
+        /// 蓝图在场期间临时关掉挖矿输入。
         /// 用组件的 enabled 而不是去改 MiningInput 的代码：MiningInput 的 OnEnable/OnDisable
         /// 会自行订阅、退订 InputAction，禁用组件就等价于"它不再响应点击"，已有脚本零改动。
         ///
-        /// ⚠ 代价：MiningInput.OnDisable() 还会调用那个共享动作的 Disable()，而 InputAction
-        /// 的 Enable/Disable **不是引用计数**的（Enable() 内部就是 `if (enabled) return;`）。
-        /// 所以这一关会把 BuildingPlacement 对同一个 Player/Attack 动作的订阅一并关掉——
-        /// 由 BuildingPlacement.EnsureConfirmActionEnabled() 在 LateUpdate 里补回来。
-        /// 这是一处真实的耦合：改这里之前先看那个方法。
+        /// 2026-10-26 之后建筑落位不再复用 Player/Attack（改为蓝图旁的 √），
+        /// 因此这里禁用的就只是挖矿本身，不再有共享 InputAction 被连带关掉的问题。
         /// </summary>
         private void SetMiningSuppressed(bool suppress)
         {
@@ -809,11 +807,10 @@ namespace Yujian.Building
                 return;
             }
 
-            // 不在这里立刻恢复：本方法可能是从 Player/Attack 的一次 performed 回调里被调用的
-            // （BuildingPlacement 确认落位 → AnchorBlueprint → 这里）。当场重新启用会让 MiningInput
-            // 在同一次回调派发过程中重新订阅该动作，"同一次点击会不会再挖一次矿"取决于 Input System
-            // 内部的派发快照实现——这条我无法在本地实证，所以统一延到本帧末尾恢复，
-            // 让"确认放置的那一次点击"在时序上不可能同时触发挖矿。
+            // 不在这里立刻恢复：本方法通常是在 UI 点击回调里被调用的
+            // （蓝图旁的 √ → AnchorBlueprint → 这里）。当场重新启用会让 MiningInput
+            // 在同一次输入事件派发过程中重新订阅 Player/Attack，可能让这次点击又落成一次挖矿。
+            // 统一延到本帧末尾恢复，时序上就不可能"同一次点击既落位又挖矿"。
             miningSuppressed = false;
 
             // 只有“屏蔽时它本来是开着的”才需要由本类打开。

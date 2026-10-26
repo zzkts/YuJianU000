@@ -31,6 +31,7 @@ namespace Yujian.EditorTools
         private const string SystemObjectName = "BuildingSystem";
         private const string ExistingPanelName = "BuildingPanel";
         private const string MaterialPanelName = "材料面板";
+        private const string BlueprintActionPanelName = "蓝图按钮";
 
         /// <summary>
         /// 材料面板的尺寸与贴边距离。面板贴在**屏幕底部居中**，隐藏时整体往下挪出屏幕。
@@ -617,7 +618,9 @@ namespace Yujian.EditorTools
 
                 string parentName = buttons[i].transform.parent.name;
 
-                if (parentName == ExistingPanelName || parentName == MaterialPanelName)
+                if (parentName == ExistingPanelName ||
+                    parentName == MaterialPanelName ||
+                    parentName == BlueprintActionPanelName)
                 {
                     continue;
                 }
