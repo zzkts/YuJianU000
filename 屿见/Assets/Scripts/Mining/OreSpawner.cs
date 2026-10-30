@@ -177,12 +177,18 @@ namespace Yujian.Mining
                 return;
             }
 
-            ore.ApplyDefinition(entry.Type, entry.MaxHealth, entry.Reward);
+            // D7=A：矿石组里填的是第 1 层基准值，实际生成时按当前矿层乘上几何成长
+            int tier = Mathf.Max(1, currentTier);
+            float health = entry.MaxHealth * levelTable.GetHealthMultiplier(tier);
+            int reward = levelTable.GetRewardAtTier(entry.Reward, tier);
+
+            ore.ApplyDefinition(entry.Type, health, reward);
 
             if (logSpawnFlow)
             {
                 Debug.Log($"[OreSpawner] 等级 {currentTier} / 组「{group.name}」生成" +
-                          $"「{OreTypeInfo.DisplayName(entry.Type)}」（HP {entry.MaxHealth}，奖励 {entry.Reward}）");
+                          $"「{OreTypeInfo.DisplayName(entry.Type)}」（基准 HP {entry.MaxHealth} → " +
+                          $"实际 HP {health:0.##}，奖励 {entry.Reward} → {reward}）");
             }
         }
 

@@ -41,6 +41,9 @@ namespace Yujian.Mining
         [Tooltip("伤害计算系统")]
         [SerializeField] private DamageSystem damageSystem;
 
+        [Tooltip("暴击点系统。留空则本局没有暴击点（普通攻击照常）")]
+        [SerializeField] private CritPointSystem critPointSystem;
+
         [Header("调试")]
         [Tooltip("是否在 Console 打印击碎与奖励发放日志")]
         [SerializeField] private bool logMiningFlow = true;
@@ -148,8 +151,10 @@ namespace Yujian.Mining
             }
 
             Ray ray = viewCamera.ScreenPointToRay(screenPosition);
+            RaycastHit[] hits = Physics.RaycastAll(
+                ray, maxRayDistance, oreLayers, QueryTriggerInteraction.Ignore);
 
-            if (!Physics.Raycast(ray, out RaycastHit hit, maxRayDistance, oreLayers, QueryTriggerInteraction.Ignore))
+            if (hits.Length == 0)
             {
                 if (logMissedClicks)
                 {
@@ -163,15 +168,45 @@ namespace Yujian.Mining
                 return;
             }
 
-            Ore ore = hit.collider.GetComponentInParent<Ore>();
+            // 暴击点优先：它可能被矿石挡住，所以先在所有命中里找，而不是只取最近的一击
+            CritPoint critPoint = null;
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                critPoint = hits[i].collider.GetComponentInParent<CritPoint>();
+
+                if (critPoint != null)
+                {
+                    break;
+                }
+            }
+
+            if (critPoint != null)
+            {
+                ProcessCritPoint(critPoint);
+                return;
+            }
+
+            Ore ore = null;
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                ore = hits[i].collider.GetComponentInParent<Ore>();
+
+                if (ore != null)
+                {
+                    break;
+                }
+            }
 
             if (ore == null)
             {
                 if (logMissedClicks)
                 {
-                    string hitLayer = LayerMask.LayerToName(hit.collider.gameObject.layer);
-                    Debug.Log($"[MiningInput] 命中了 {hit.collider.name}（层 {hitLayer}），" +
-                              $"但它的父级上没有 Ore 组件。射线确实在发射，只是打到了别的东西。");
+                    RaycastHit nearest = hits[0];
+                    string hitLayer = LayerMask.LayerToName(nearest.collider.gameObject.layer);
+                    Debug.Log($"[MiningInput] 命中了 {nearest.collider.name}（层 {hitLayer}），" +
+                              $"但它的父级上既没有 Ore 也没有 CritPoint。射线确实在发射，只是打到了别的东西。");
                 }
 
                 return;
@@ -181,7 +216,8 @@ namespace Yujian.Mining
             string oreName = ore.name;
             int reward = ore.Reward;
 
-            // 玩家点击才判定暴击；建筑自动攻击走不带 out 的重载，保持稳定输出
+            // D3=A：普通攻击不再随机暴击，isCritical 恒为 false；
+            // 暴击只由上面的暴击点分支产生
             float damage = damageSystem.CalculatePlayerDamage(out bool isCritical);
             if (damage <= 0f)
             {
@@ -193,6 +229,12 @@ namespace Yujian.Mining
 
             if (!destroyed)
             {
+                // 普通攻击完成后再掷暴击点的骰子；击碎时不生成，反正马上要清场
+                if (critPointSystem != null)
+                {
+                    critPointSystem.NotifyPlayerAttack(ore);
+                }
+
                 return;
             }
 
@@ -200,8 +242,52 @@ namespace Yujian.Mining
 
             if (logMiningFlow)
             {
-                Debug.Log($"[MiningInput] 击碎 {oreName}，发放 {reward} 金币，当前金币 {playerCurrency.CurrentMoney}" +
-                          (isCritical ? "（本次为暴击）" : string.Empty));
+                Debug.Log($"[MiningInput] 击碎 {oreName}，发放 {reward} 金币，当前金币 {playerCurrency.CurrentMoney}");
+            }
+        }
+
+        /// <summary>
+        /// 点中暴击点：按暴击倍数结算一次伤害，然后让暴击点消失。
+        /// 伤害仍然走 Ore.TakeDamage(isCritical: true)，飘字会显示 CRIT。
+        /// </summary>
+        private void ProcessCritPoint(CritPoint point)
+        {
+            Ore owner = point.Owner;
+
+            if (owner == null || !owner.IsAlive)
+            {
+                critPointSystem?.Consume(point);
+                return;
+            }
+
+            string oreName = owner.name;
+            int reward = owner.Reward;
+            float damage = damageSystem.CalculateCritPointDamage();
+
+            if (damage <= 0f)
+            {
+                return;
+            }
+
+            bool destroyed = owner.TakeDamage(damage, DamageSource.Player, true);
+            critPointSystem?.Consume(point);
+
+            if (!destroyed)
+            {
+                if (logMiningFlow)
+                {
+                    Debug.Log($"[MiningInput] 点中暴击点，对 {oreName} 造成 {damage} 伤害。");
+                }
+
+                return;
+            }
+
+            playerCurrency.AddMoney(reward);
+
+            if (logMiningFlow)
+            {
+                Debug.Log($"[MiningInput] 暴击点击碎 {oreName}，发放 {reward} 金币，" +
+                          $"当前金币 {playerCurrency.CurrentMoney}");
             }
         }
 

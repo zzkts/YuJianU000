@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.Events;
 using UnityEditor.SceneManagement;
@@ -20,10 +21,27 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class BuildingSetupWizard
     {
-        private const string BuildingDataPath = "Assets/Data/Buildings/Building_风琴博物馆.asset";
+        private const string BuildingFolder = "Assets/Data/Buildings";
         private const string SystemObjectName = "BuildingSystem";
         private const string PanelObjectName = "BuildingPanel";
         private const string BlueprintActionPanelName = "蓝图按钮";
+
+        /// <summary>
+        /// 建筑面板里的按钮顺序（也就是玩家看到的顺序）。
+        /// **新增建筑时把文件名追加到这里**：面板、BuildingUI.availableBuildings 与按钮下标一次配齐。
+        /// 风琴博物馆固定第一，三座主要建筑按剧情顺序排在后面。
+        /// </summary>
+        private static readonly string[] BuildingFileNames =
+        {
+            "Building_风琴博物馆.asset",
+            "Building_八卦楼.asset",
+            "Building_菽庄花园.asset",
+            "Building_日光岩.asset",
+        };
+
+        /// <summary>建筑面板顶部的里程碑进度行。名字固定，里程碑 UI 会按它找文本。</summary>
+        private const string ProgressTextName = "MilestoneProgressText";
+        private const float ProgressTextHeight = 44f;
 
         // 以下坐标全部读自 SampleScene.unity 的真实值，不是估的
         private static readonly Vector3 MapCenter = new Vector3(10.21735f, 0f, -9.49205f);
@@ -38,13 +56,16 @@ namespace Yujian.EditorTools
         {
             // ---------- 前置检查：任何一项不满足就整体不执行，避免留下半配置状态 ----------
 
-            BuildingData data = AssetDatabase.LoadAssetAtPath<BuildingData>(BuildingDataPath);
+            List<BuildingData> buildings = LoadBuildings();
 
-            if (data == null)
+            if (buildings.Count == 0)
             {
-                Fail($"找不到建筑数据资产：\n{BuildingDataPath}\n\n请确认该文件存在且已导入。");
+                Fail($"在 {BuildingFolder} 下找不到任何建筑数据资产，无法创建建筑按钮。\n\n" +
+                     "请确认 BuildingFileNames 里列出的资产存在且已导入。");
                 return;
             }
+
+            BuildingData data = buildings[0];
 
             int buildingLayer = LayerMask.NameToLayer("Building");
 
@@ -146,8 +167,12 @@ namespace Yujian.EditorTools
 
             if (list != null)
             {
-                list.arraySize = 1;
-                list.GetArrayElementAtIndex(0).objectReferenceValue = data;
+                list.arraySize = buildings.Count;
+
+                for (int i = 0; i < buildings.Count; i++)
+                {
+                    list.GetArrayElementAtIndex(i).objectReferenceValue = buildings[i];
+                }
             }
             else
             {
@@ -159,7 +184,7 @@ namespace Yujian.EditorTools
 
             // ---------- 6. 按钮面板 ----------
 
-            BuildButtonPanel(canvas, templateButton, ui, data);
+            BuildButtonPanel(canvas, templateButton, ui, buildings);
 
             // ---------- 7. 收尾 ----------
 
@@ -169,15 +194,18 @@ namespace Yujian.EditorTools
 
             Debug.Log($"[BuildingSetupWizard] 配置完成：\n" +
                       $"  · {SystemObjectName}：BuildingManager / BuildingPlacement / BuildingCameraDirector / BuildingUI\n" +
-                      $"  · Canvas/{PanelObjectName}：3 个按钮（{data.BuildingName} / 取消蓝图 / 退出建造）\n" +
+                      $"  · Canvas/{PanelObjectName}：{buildings.Count} 个建筑按钮 + 取消蓝图 / 退出建造，" +
+                      $"顶部进度行「主要建筑 0/3」\n" +
                       "请按 Ctrl+S 保存场景。");
         }
 
         /// <summary>
         /// 在 Canvas 右下角建按钮面板。
         /// 位置选右下是因为商店面板占的是左下（anchoredPosition 280,400，尺寸 520×760）。
+        /// 面板 = 顶部一行里程碑进度 + N 个建筑按钮 + 取消蓝图 / 退出建造。
         /// </summary>
-        private static void BuildButtonPanel(Canvas canvas, Transform templateButton, BuildingUI ui, BuildingData data)
+        private static void BuildButtonPanel(
+            Canvas canvas, Transform templateButton, BuildingUI ui, IReadOnlyList<BuildingData> buildings)
         {
             Transform existing = canvas.transform.Find(PanelObjectName);
             GameObject panel;
@@ -191,33 +219,90 @@ namespace Yujian.EditorTools
                 panel = new GameObject(PanelObjectName, typeof(RectTransform));
                 Undo.RegisterCreatedObjectUndo(panel, "创建 " + PanelObjectName);
 
-                RectTransform rect = panel.GetComponent<RectTransform>();
-                rect.SetParent(canvas.transform, false);
-                rect.anchorMin = new Vector2(1f, 0f);
-                rect.anchorMax = new Vector2(1f, 0f);
-                rect.pivot = new Vector2(1f, 0f);
-                rect.anchoredPosition = new Vector2(-30f, 30f);
-                rect.sizeDelta = new Vector2(320f, 3f * ButtonHeight + 2f * ButtonSpacing);
+                RectTransform created = panel.GetComponent<RectTransform>();
+                created.SetParent(canvas.transform, false);
+                created.anchorMin = new Vector2(1f, 0f);
+                created.anchorMax = new Vector2(1f, 0f);
+                created.pivot = new Vector2(1f, 0f);
+                created.anchoredPosition = new Vector2(-30f, 30f);
             }
 
-            // 重复运行时先清掉旧按钮，否则每跑一次就多三个
+            int buttonCount = buildings.Count + 2; // + 取消蓝图 / 退出建造
+
+            // 尺寸每次重跑都重写：建筑数量变了面板高度要跟着变
+            RectTransform panelRect = panel.GetComponent<RectTransform>();
+
+            if (panelRect != null)
+            {
+                panelRect.sizeDelta = new Vector2(
+                    320f,
+                    ProgressTextHeight + ButtonSpacing +
+                    buttonCount * ButtonHeight + (buttonCount - 1) * ButtonSpacing);
+            }
+
+            // 重复运行时先清掉旧按钮，否则每跑一次就多一批。
+            // 进度行要留下：里程碑 UI 组件持有它的引用，重建会让引用变成 Missing。
             for (int i = panel.transform.childCount - 1; i >= 0; i--)
             {
-                Undo.DestroyObjectImmediate(panel.transform.GetChild(i).gameObject);
+                Transform child = panel.transform.GetChild(i);
+
+                if (child.name == ProgressTextName)
+                {
+                    continue;
+                }
+
+                Undo.DestroyObjectImmediate(child.gameObject);
             }
 
-            CreateButton(panel.transform, templateButton, 0, data.BuildingName,
-                button => UnityEventTools.AddIntPersistentListener(button.onClick, ui.SelectBuilding, 0));
+            // ---------- 顶部进度行 ----------
 
-            CreateButton(panel.transform, templateButton, 1, "取消蓝图",
+            bool createdProgressText = panel.transform.Find(ProgressTextName) == null;
+            Text progressText = FindOrCreateTextChild(panel.transform, ProgressTextName);
+            RectTransform progressRect = progressText.GetComponent<RectTransform>();
+            progressRect.anchorMin = new Vector2(0f, 1f);
+            progressRect.anchorMax = new Vector2(1f, 1f);
+            progressRect.pivot = new Vector2(0.5f, 1f);
+            progressRect.anchoredPosition = Vector2.zero;
+            progressRect.sizeDelta = new Vector2(0f, ProgressTextHeight);
+
+            progressText.font = BuiltinFont();
+            progressText.fontSize = 26;
+            progressText.alignment = TextAnchor.MiddleCenter;
+            progressText.color = Color.white;
+            progressText.raycastTarget = false;
+
+            if (createdProgressText)
+            {
+                // 只是新建时的占位文案；真实数字由 MilestonePanelUI 写入。
+                // 重跑本向导时不覆盖，避免把已刷新的进度打回 0/3。
+                progressText.text = "主要建筑 0/3";
+            }
+
+            // ---------- 按钮 ----------
+
+            float top = ProgressTextHeight + ButtonSpacing;
+
+            for (int i = 0; i < buildings.Count; i++)
+            {
+                // 必须拷贝一份：for 循环变量在所有迭代里是同一个，闭包会全部抓到最后一个下标
+                int index = i;
+
+                CreateButton(panel.transform, templateButton, top, buildings[i].BuildingName,
+                    button => UnityEventTools.AddIntPersistentListener(button.onClick, ui.SelectBuilding, index));
+
+                top += ButtonHeight + ButtonSpacing;
+            }
+
+            CreateButton(panel.transform, templateButton, top, "取消蓝图",
                 button => UnityEventTools.AddPersistentListener(button.onClick, ui.CancelSelection));
+            top += ButtonHeight + ButtonSpacing;
 
-            CreateButton(panel.transform, templateButton, 2, "退出建造",
+            CreateButton(panel.transform, templateButton, top, "退出建造",
                 button => UnityEventTools.AddPersistentListener(button.onClick, ui.ExitBuildMode));
         }
 
         private static void CreateButton(
-            Transform panel, Transform templateButton, int index, string label, System.Action<Button> wire)
+            Transform panel, Transform templateButton, float top, string label, System.Action<Button> wire)
         {
             // 拿商店里已有的按钮当模板：字体、图片、配色都跟着复制过来，
             // 不必在代码里加载字体（那才是容易出错的地方）
@@ -239,7 +324,7 @@ namespace Yujian.EditorTools
                 rect.anchorMin = new Vector2(0f, 1f);
                 rect.anchorMax = new Vector2(1f, 1f);
                 rect.pivot = new Vector2(0.5f, 1f);
-                rect.anchoredPosition = new Vector2(0f, -index * (ButtonHeight + ButtonSpacing));
+                rect.anchoredPosition = new Vector2(0f, -top);
                 rect.sizeDelta = new Vector2(0f, ButtonHeight);
             }
 
@@ -290,6 +375,55 @@ namespace Yujian.EditorTools
             }
 
             return null;
+        }
+
+        /// <summary>按 BuildingFileNames 的顺序加载建筑资产；缺哪个就警告哪个，不中断。</summary>
+        private static List<BuildingData> LoadBuildings()
+        {
+            List<BuildingData> result = new List<BuildingData>(BuildingFileNames.Length);
+
+            for (int i = 0; i < BuildingFileNames.Length; i++)
+            {
+                string path = BuildingFolder + "/" + BuildingFileNames[i];
+                BuildingData data = AssetDatabase.LoadAssetAtPath<BuildingData>(path);
+
+                if (data == null)
+                {
+                    Debug.LogWarning($"[BuildingSetupWizard] 找不到建筑资产「{path}」，" +
+                                     "这一项不会出现在建筑面板里。");
+                    continue;
+                }
+
+                result.Add(data);
+            }
+
+            return result;
+        }
+
+        /// <summary>找到名字对应的子物体，没有就建一个（重跑向导时复用，不会越堆越多）。</summary>
+        private static Text FindOrCreateTextChild(Transform parent, string childName)
+        {
+            Transform existing = parent.Find(childName);
+            GameObject child;
+
+            if (existing == null)
+            {
+                child = new GameObject(childName, typeof(RectTransform));
+                Undo.RegisterCreatedObjectUndo(child, "创建 " + childName);
+                child.transform.SetParent(parent, false);
+            }
+            else
+            {
+                child = existing.gameObject;
+            }
+
+            return EnsureComponent<Text>(child);
+        }
+
+        private static Font BuiltinFont()
+        {
+            // 项目规则：不引入 TextMeshPro，UI 文字用旧版 Text + 内置字体
+            return Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         }
 
         private static Transform FindOrCreateChild(Transform parent, string childName)

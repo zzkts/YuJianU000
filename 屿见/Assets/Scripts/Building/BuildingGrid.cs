@@ -488,15 +488,74 @@ namespace Yujian.Building
                 {
                     int index = x + y * cellCounts.x;
 
+                    // 先查面积（可建台地）再查占用：策划案 3.2 要求面积优先，
+                    // 同时压在沙滩和别的建筑上时，提示要说「不在可建台地上」
+                    if (!buildableMask[index])
+                    {
+                        failure = GridPlacementFailure.NotBuildable;
+                        return false;
+                    }
+
                     if (occupied[index])
                     {
                         failure = GridPlacementFailure.Occupied;
                         return false;
                     }
+                }
+            }
 
+            failure = GridPlacementFailure.None;
+            return true;
+        }
+
+        /// <summary>
+        /// 与 <see cref="CanPlace"/> 相同，但把 <paramref name="ignoreOwnerId"/> 自己占着的格子
+        /// 视为可用。迁移时必须用它：建筑的原占格还没释放，照常判定会一直被自己挡住。
+        /// </summary>
+        public bool CanPlaceIgnoringOwner(
+            RectInt rect, int ignoreOwnerId, out GridPlacementFailure failure)
+        {
+            if (!configured || occupied == null || buildableMask == null)
+            {
+                failure = GridPlacementFailure.NotConfigured;
+                return false;
+            }
+
+            if (rect.width <= 0 || rect.height <= 0)
+            {
+                failure = GridPlacementFailure.InvalidFootprint;
+                return false;
+            }
+
+            if (rect.xMin < 0 || rect.yMin < 0 ||
+                rect.xMax > cellCounts.x || rect.yMax > cellCounts.y)
+            {
+                failure = GridPlacementFailure.OutOfBounds;
+                return false;
+            }
+
+            bool hasOwnRect = ownerRects.TryGetValue(ignoreOwnerId, out RectInt ownRect);
+
+            for (int y = rect.yMin; y < rect.yMax; y++)
+            {
+                for (int x = rect.xMin; x < rect.xMax; x++)
+                {
+                    int index = x + y * cellCounts.x;
+
+                    bool occupiedBySelf = hasOwnRect
+                        && x >= ownRect.xMin && x < ownRect.xMax
+                        && y >= ownRect.yMin && y < ownRect.yMax;
+
+                    // 面积优先：先看是不是可建台地，再看有没有被别的建筑占
                     if (!buildableMask[index])
                     {
                         failure = GridPlacementFailure.NotBuildable;
+                        return false;
+                    }
+
+                    if (occupied[index] && !occupiedBySelf)
+                    {
+                        failure = GridPlacementFailure.Occupied;
                         return false;
                     }
                 }

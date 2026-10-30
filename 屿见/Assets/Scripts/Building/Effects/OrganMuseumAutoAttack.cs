@@ -65,6 +65,12 @@ namespace Yujian.Building.Effects
         /// <summary>"场景里没有可打的矿石"是否已经提示过，避免矿区被打空之后每秒刷一条。</summary>
         private bool loggedNoTarget;
 
+        /// <summary>本建筑实例的运行时信息，提供等级与升级表。挂在父物体上，缓存在这里。</summary>
+        private PlacedBuildingInfo ownerInfo;
+
+        /// <summary>本建筑当前等级（没有 PlacedBuildingInfo 时为 1）。</summary>
+        public int CurrentLevel => ownerInfo != null ? ownerInfo.Level : 1;
+
         /// <summary>实际出射点。</summary>
         private Transform Origin => attackOrigin != null ? attackOrigin : transform;
 
@@ -163,8 +169,11 @@ namespace Yujian.Building.Effects
             loggedNoTarget = false;
             currentTarget = target;
 
-            // 每发都现算：玩家升级后，建筑的下一发立刻跟着变强（本阶段的核心验收点）
-            float damage = Context.DamageSystem.CalculatePlayerDamage();
+            // 每发都现算：玩家升级后，建筑的下一发立刻跟着变强（阶段 5 的核心验收点）；
+            // 2026-10-29 起再乘上本建筑的升级倍率（策划案 3.4，1 级 = ×1，不改变原有手感）
+            float baseDamage = Context.DamageSystem.CalculatePlayerDamage();
+            float upgradeMultiplier = GetUpgradeMultiplier();
+            float damage = baseDamage * upgradeMultiplier;
 
             if (damage <= 0f)
             {
@@ -188,7 +197,7 @@ namespace Yujian.Building.Effects
             {
                 Debug.Log($"[OrganMuseumAutoAttack] {name} 自动攻击 {targetName}，" +
                           $"造成 {damage} 点伤害{(destroyed ? "，已击碎" : string.Empty)}。" +
-                          $"（伤害来自玩家当前值：基础攻击力 × 伤害倍率）", this);
+                          $"（玩家伤害 {baseDamage:0.##} × 建筑 {CurrentLevel} 级倍率 {upgradeMultiplier:0.##}）", this);
             }
 
             if (!destroyed || !grantRewardOnKill || reward <= 0)
@@ -204,6 +213,28 @@ namespace Yujian.Building.Effects
                 Debug.Log($"[OrganMuseumAutoAttack] 击碎 {targetName}，发放 {reward} 金币，" +
                           $"当前金币 {Context.PlayerCurrency.CurrentMoney}", this);
             }
+        }
+
+        /// <summary>
+        /// 本建筑等级对应的效果倍率（策划案 3.4 的升级表）。
+        ///
+        /// 每发都读一次等级，所以升级后**下一发立即生效**，不需要重建建筑或重新初始化。
+        /// 没有升级表 / 不是由 BuildingManager 生成的实例时返回 1（保持原有行为）。
+        /// </summary>
+        private float GetUpgradeMultiplier()
+        {
+            if (ownerInfo == null)
+            {
+                ownerInfo = GetComponentInParent<PlacedBuildingInfo>();
+            }
+
+            if (ownerInfo == null || ownerInfo.Data == null)
+            {
+                return 1f;
+            }
+
+            BuildingUpgradeTable table = ownerInfo.Data.UpgradeTable;
+            return table != null ? table.GetEffectMultiplier(ownerInfo.Level) : 1f;
         }
 
         /// <summary>

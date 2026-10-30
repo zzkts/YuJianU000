@@ -15,17 +15,17 @@ MonoBehaviour:
   entries:
   - type: 0
     weight: 1
-    maxHealth: 10
+    maxHealth: 5
     reward: 10
   - type: 1
     weight: 1
-    maxHealth: 10
+    maxHealth: 5
     reward: 10
   - type: 2
     weight: 1
-    maxHealth: 10
+    maxHealth: 5
     reward: 10
   - type: 3
     weight: 1
-    maxHealth: 10
+    maxHealth: 5
     reward: 10

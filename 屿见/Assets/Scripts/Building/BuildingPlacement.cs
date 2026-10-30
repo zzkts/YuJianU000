@@ -8,7 +8,8 @@ namespace Yujian.Building
     /// <summary>
     /// 放置控制器。职责：把"鼠标屏幕坐标"变成"蓝图的世界坐标"，并判断那里能不能放。
     ///
-    /// 按住左键拖动时：指针位置 → 屏幕坐标 → 射线 → 地面交点 → 移动蓝图 →
+    /// 按住左键拖动时：指针位置 → 屏幕坐标 → 射线 → 地面交点 → 算出吸附格点 →
+    /// 蓝图平滑追向吸附点（<see cref="TickVisual"/>，与建筑迁移同一套过渡）→
     /// Physics.CheckBox 重叠检测 → 蓝图变色。松开后蓝图停在原地，指针可以腾出来点 ×/√。
     /// 落位：蓝图右侧的 √ 调用 <see cref="TryAnchorCurrentBlueprint"/>，判定通过后调用
     /// BuildingManager.AnchorBlueprint()，自己既不生成建筑也不记账。
@@ -42,6 +43,11 @@ namespace Yujian.Building
         [Tooltip("地面高度。场景里的 Plane 在 y = 0。" +
                  "这里用一个数学平面求交，而不是物理射线——不会被矿石、建筑、玩家挡住")]
         [SerializeField] private float groundHeight = 0f;
+
+        [Header("吸附过渡")]
+        [Tooltip("蓝图朝吸附点移动的速度（世界单位 / 秒），与建筑迁移保持一致：拖动时不会硬跳到格点，" +
+                 "而是平滑追上去；0 = 直接吸附。调大更跟手、调小更柔和")]
+        [SerializeField, Min(0f)] private float snapMoveSpeed = 24f;
 
         [Header("占地检测")]
         [Tooltip("检测盒从地面向上延伸的高度，必须覆盖建筑碰撞体的高度。" +
@@ -77,6 +83,9 @@ namespace Yujian.Building
         private bool hasSnappedPose;
         private bool currentPlacementValid;
         private bool dragging;
+
+        /// <summary>蓝图每帧朝它平滑移动的目标（最近一次吸附点）。与迁移系统同一套过渡做法。</summary>
+        private Vector3 visualTarget;
 
         /// <summary>当前是否有一个属于场上蓝图的吸附位置，可供 √ 落位。</summary>
         public bool HasCurrentSnappedPose =>
@@ -172,7 +181,14 @@ namespace Yujian.Building
                 dragging = false;
                 ClearSnappedPose();
                 posedBlueprint = blueprint;
+
+                // 新蓝图从它自己的出生点开始追，避免从上一次的目标位置飞过来
+                visualTarget = blueprint.transform.position;
             }
+
+            // 每帧推进吸附过渡：即使指针松开 / 停在 UI / 离开网格，蓝图也会收尾到最近的吸附点，
+            // 不会半路僵在格子之间（与迁移系统的 TickVisual 同一做法）
+            TickVisual(Time.deltaTime);
 
             Pointer pointer = Pointer.current;
 
@@ -181,13 +197,14 @@ namespace Yujian.Building
                 return;
             }
 
-            // 松开就停止拖动。蓝图停在最后的位置，玩家可以腾出手去点 ×/√
+            // 松开就停止拖动：不再接受新的吸附目标。此前设下的目标点仍由 TickVisual 收尾，
+            // 所以蓝图最终停在吸附点上（不会悬在格子之间），玩家可以腾出手去点 ×/√
             if (pointer.press.wasReleasedThisFrame)
             {
                 dragging = false;
             }
 
-            // 没有按住时蓝图不动。这就是「拖拽」与「跟随指针」的关键区别：
+            // 没有按住时不再更新吸附目标。这就是「拖拽」与「跟随指针」的关键区别：
             // 如果蓝图一直跟着指针，×/√ 也会跟着跑，指针永远追不上按钮
             if (!pointer.press.isPressed && !pointer.press.wasPressedThisFrame)
             {
@@ -237,8 +254,9 @@ namespace Yujian.Building
                 return;
             }
 
-            // 先吸附再赋值。吸附后的位置才是蓝图与实体建筑共同的权威坐标
-            blueprint.transform.position = snappedCenter;
+            // 吸附后的位置才是蓝图与实体建筑共同的权威坐标。这里只更新视觉目标，
+            // 蓝图由 TickVisual 平滑追过去（与迁移系统一致），不会在格线附近硬跳
+            visualTarget = snappedCenter;
 
             bool valid = IsPlacementValid(snappedCenter, cellRect, blueprint, out string reason);
 
@@ -257,6 +275,35 @@ namespace Yujian.Building
 
             // 这里不打印 reason：指针每帧移动，失败是常态，打印会刷屏。
             // 点 √ 时会在 TryAnchorCurrentBlueprint 里把具体原因打出来。
+        }
+
+        /// <summary>
+        /// 推进吸附过渡：蓝图朝 <see cref="visualTarget"/> 匀速移动。
+        /// 由 <see cref="Update"/> 每帧调用；批处理验证里没有 Update，可以用它手动推进。
+        /// </summary>
+        public void TickVisual(float deltaTime)
+        {
+            if (buildingManager == null || !buildingManager.IsPlacing)
+            {
+                return;
+            }
+
+            BuildingBlueprint blueprint = buildingManager.CurrentBlueprint;
+
+            if (blueprint == null)
+            {
+                return;
+            }
+
+            if (snapMoveSpeed <= 0f)
+            {
+                blueprint.transform.position = visualTarget;
+                return;
+            }
+
+            float step = snapMoveSpeed * Mathf.Max(0f, deltaTime);
+            blueprint.transform.position = Vector3.MoveTowards(
+                blueprint.transform.position, visualTarget, step);
         }
 
         /// <summary>丢掉吸附位置。没有蓝图 / 已落位 / 换蓝图时调用。</summary>

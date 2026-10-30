@@ -19,20 +19,14 @@ namespace Yujian.Mining
         [SerializeField] private MiningToolProgress miningTool;
 
         [Header("暴击")]
-        [Tooltip("暴击概率（百分比）。20 表示每次玩家攻击有 20% 的概率触发暴击")]
-        [Range(0f, 100f)]
-        [SerializeField] private float criticalChancePercent = 20f;
-
-        [Tooltip("暴击伤害倍数。2 表示暴击造成双倍伤害；不会低于 1 倍")]
+        [Tooltip("暴击伤害倍数。2 表示点中暴击点造成双倍伤害；不会低于 1 倍。" +
+                 "D3=A 起暴击只来自矿石上的暴击点，不再有随机暴击")]
         [Min(1f)]
         [SerializeField] private float criticalDamageMultiplier = 2f;
 
         [Header("调试")]
         [Tooltip("是否在 Console 打印每次伤害计算结果")]
         [SerializeField] private bool logCalculatedDamage = false;
-
-        /// <summary>暴击概率（百分比）。</summary>
-        public float CriticalChancePercent => criticalChancePercent;
 
         /// <summary>暴击伤害倍数。</summary>
         public float CriticalDamageMultiplier => criticalDamageMultiplier;
@@ -44,18 +38,6 @@ namespace Yujian.Mining
         /// <returns>基础攻击力 × 伤害倍率；PlayerStats 未配置时返回 0 并报错。</returns>
         public float CalculatePlayerDamage()
         {
-            return CalculatePlayerDamage(out bool _);
-        }
-
-        /// <summary>
-        /// 计算玩家当前的单次伤害，并判定本次是否暴击。
-        /// 只有玩家主动点击挖矿使用这个重载；暴击后伤害再乘以暴击倍数。
-        /// </summary>
-        /// <param name="isCritical">本次攻击是否触发暴击。</param>
-        public float CalculatePlayerDamage(out bool isCritical)
-        {
-            isCritical = false;
-
             if (playerStats == null)
             {
                 Debug.LogError("[DamageSystem] PlayerStats 未配置，无法计算伤害。", this);
@@ -65,16 +47,39 @@ namespace Yujian.Mining
             float baseAttack = miningTool != null ? miningTool.CurrentAttack : playerStats.BaseAttack;
             float damage = baseAttack * playerStats.DamageMultiplier;
 
-            if (criticalChancePercent > 0f && UnityEngine.Random.value * 100f < criticalChancePercent)
+            if (logCalculatedDamage)
             {
-                isCritical = true;
-                damage *= Mathf.Max(1f, criticalDamageMultiplier);
+                Debug.Log($"[DamageSystem] 伤害 = {baseAttack} × {playerStats.DamageMultiplier} = {damage}");
             }
+
+            return damage;
+        }
+
+        /// <summary>
+        /// 计算玩家当前的单次伤害。
+        /// 保留 out 参数只是为了不改动既有调用方：D3=A 起普通攻击**永不**随机暴击，
+        /// isCritical 恒为 false。暴击只由玩家点中矿石上的暴击点触发，
+        /// 走 <see cref="CalculateCritPointDamage"/>。
+        /// </summary>
+        /// <param name="isCritical">恒为 false，保留仅为兼容旧调用。</param>
+        public float CalculatePlayerDamage(out bool isCritical)
+        {
+            isCritical = false;
+            return CalculatePlayerDamage();
+        }
+
+        /// <summary>
+        /// 计算一次暴击点伤害：普通单次伤害 × 暴击倍数。
+        /// 暴击点由 <see cref="CritPointSystem"/> 生成，玩家点中时调用这里，
+        /// 而不是在普通攻击里偷偷掷骰子。
+        /// </summary>
+        public float CalculateCritPointDamage()
+        {
+            float damage = CalculatePlayerDamage() * Mathf.Max(1f, criticalDamageMultiplier);
 
             if (logCalculatedDamage)
             {
-                Debug.Log($"[DamageSystem] 伤害 = {baseAttack} × {playerStats.DamageMultiplier} = {damage}" +
-                          (isCritical ? $"（暴击 ×{criticalDamageMultiplier}）" : string.Empty));
+                Debug.Log($"[DamageSystem] 暴击点伤害 = 普通伤害 × {criticalDamageMultiplier} = {damage}");
             }
 
             return damage;
@@ -86,10 +91,9 @@ namespace Yujian.Mining
             miningTool = tool;
         }
 
-        /// <summary>编辑器向导调用，配置暴击概率与倍数。</summary>
-        public void ConfigureCriticalHit(float chancePercent, float multiplier)
+        /// <summary>编辑器向导调用，配置暴击点伤害倍数。</summary>
+        public void ConfigureCriticalHit(float multiplier)
         {
-            criticalChancePercent = Mathf.Clamp(chancePercent, 0f, 100f);
             criticalDamageMultiplier = Mathf.Max(1f, multiplier);
         }
     }

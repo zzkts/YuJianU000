@@ -421,7 +421,7 @@ namespace Yujian.Building
             placedBuildings.Add(instance);
 
             ApplyLayerColors(instance, layerColors);
-            AttachPlacedBuildingInfo(instance, data, anchoredFootprintRect, layerColors);
+            AttachPlacedBuildingInfo(instance, data, anchoredFootprintRect, layerColors, 1);
 
             if (instance.GetComponentInChildren<Collider>() == null)
             {
@@ -462,9 +462,11 @@ namespace Yujian.Building
         /// <param name="data">建筑静态数据。</param>
         /// <param name="rect">存档里的占地格子矩形。</param>
         /// <param name="layerColors">自下而上的楼层颜色。</param>
+        /// <param name="level">存档里的建筑等级，旧存档传 0 或 1 都按 1 级处理。</param>
         /// <param name="error">失败原因，供存档参与者写日志。</param>
         public bool RestoreBuilding(
-            BuildingData data, RectInt rect, IReadOnlyList<MaterialColor> layerColors, out string error)
+            BuildingData data, RectInt rect, IReadOnlyList<MaterialColor> layerColors,
+            int level, out string error)
         {
             error = null;
 
@@ -526,7 +528,7 @@ namespace Yujian.Building
 
             placedBuildings.Add(instance);
             ApplyLayerColors(instance, layerColors);
-            AttachPlacedBuildingInfo(instance, data, rect, layerColors);
+            AttachPlacedBuildingInfo(instance, data, rect, layerColors, level);
 
             if (instance.GetComponentInChildren<Collider>() == null)
             {
@@ -587,9 +589,10 @@ namespace Yujian.Building
             return removed;
         }
 
-        /// <summary>把「属于哪座建筑、占哪几格、每层什么颜色」写到实例上，供存档参与者读取。</summary>
+        /// <summary>把「属于哪座建筑、占哪几格、每层什么颜色、几级」写到实例上，供存档与升级读取。</summary>
         private static void AttachPlacedBuildingInfo(
-            GameObject instance, BuildingData data, RectInt rect, IReadOnlyList<MaterialColor> layerColors)
+            GameObject instance, BuildingData data, RectInt rect,
+            IReadOnlyList<MaterialColor> layerColors, int level)
         {
             PlacedBuildingInfo info = instance.GetComponent<PlacedBuildingInfo>();
 
@@ -598,7 +601,97 @@ namespace Yujian.Building
                 info = instance.AddComponent<PlacedBuildingInfo>();
             }
 
-            info.Initialize(data, rect, layerColors);
+            info.Initialize(data, rect, layerColors, level);
+        }
+
+        /// <summary>
+        /// 把一座已建成的建筑迁移到新位置（策划案 3.3）。
+        ///
+        /// 顺序：校验新占格（把自己的旧占格排除）→ 释放旧占格 → 登记新占格 →
+        /// 更新实例信息与 transform → 广播 <see cref="BuildingMoved"/>。
+        /// 任何一步失败都保持建筑在原位、占格不变。
+        /// </summary>
+        /// <param name="building">已放置在列表里的建筑实例。</param>
+        /// <param name="snappedCenter">吸附后的新中心世界坐标。</param>
+        /// <param name="newRect">新的占地格子矩形。</param>
+        /// <param name="error">失败原因。</param>
+        /// <returns>是否迁移成功。</returns>
+        public bool TryMoveBuilding(
+            GameObject building, Vector3 snappedCenter, RectInt newRect, out string error)
+        {
+            error = null;
+
+            if (building == null)
+            {
+                error = "建筑为空。";
+                return false;
+            }
+
+            if (!placedBuildings.Contains(building))
+            {
+                error = $"「{building.name}」不在已放置建筑列表里。";
+                return false;
+            }
+
+            if (grid == null)
+            {
+                error = "BuildingGrid 未配置。";
+                return false;
+            }
+
+            PlacedBuildingInfo info = building.GetComponent<PlacedBuildingInfo>();
+
+            if (info == null || info.Data == null)
+            {
+                error = $"「{building.name}」上没有 PlacedBuildingInfo 或建筑数据为空。";
+                return false;
+            }
+
+            Vector2Int expectedCells = info.Data.FootprintCells;
+
+            if (newRect.width != expectedCells.x || newRect.height != expectedCells.y)
+            {
+                error = $"新占格 {newRect.width}×{newRect.height} 与「{info.Data.BuildingName}」" +
+                        $"配置的 {expectedCells.x}×{expectedCells.y} 不一致。";
+                return false;
+            }
+
+            int ownerId = building.GetInstanceID();
+
+            if (!grid.CanPlaceIgnoringOwner(newRect, ownerId, out GridPlacementFailure failure))
+            {
+                error = $"新位置不可放置：{failure.ToChineseName()}。";
+                return false;
+            }
+
+            RectInt previousRect = info.FootprintRect;
+
+            if (!grid.Release(ownerId))
+            {
+                Debug.LogWarning($"[BuildingManager] 建筑「{building.name}」没有网格占用记录，" +
+                                 "迁移时跳过释放步骤。", this);
+            }
+
+            if (!grid.Occupy(newRect, ownerId))
+            {
+                // 恢复旧占格，别让建筑变成"看得见但网格里没记录"
+                grid.Occupy(previousRect, ownerId);
+                error = $"新占格 {newRect} 登记失败，已回滚到原位置。";
+                return false;
+            }
+
+            info.SetFootprintRect(newRect);
+            building.transform.position = snappedCenter;
+
+            if (logBuildingFlow)
+            {
+                Debug.Log($"[BuildingManager] 已迁移「{building.name}」：{previousRect} → {newRect}，" +
+                          $"新位置 {snappedCenter}。");
+            }
+
+            EventBus.Publish(new BuildingMoved(info.Data, previousRect, newRect, snappedCenter));
+
+            return true;
         }
 
         /// <summary>

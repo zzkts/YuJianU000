@@ -185,7 +185,7 @@ namespace Yujian.UI
             }
 
             RefreshBase();
-            ShowFeedback($"升级成功，攻击力提升到 {tool.CurrentAttack}。", true);
+            ShowFeedback($"升级成功，攻击力提升到 {tool.CurrentAttack:0.##}。", true);
         }
 
         private void HandleToolChanged(MiningToolProgress _)
@@ -212,11 +212,11 @@ namespace Yujian.UI
             }
 
             int level = tool.CurrentLevel;
-            int attack = tool.CurrentAttack;
-            int nextAttack = tool.Data.GetAttackAtLevel(level + 1);
+            float attack = tool.CurrentAttack;
+            float nextAttack = tool.Data.GetAttackAtLevel(level + 1);
 
             SetText(titleText, $"挖矿工具 · {tool.Data.DisplayName}（{tool.Data.ItemId}）");
-            SetText(statsText, $"等级 {level}　攻击力 {attack} → {nextAttack}");
+            SetText(statsText, $"等级 {level}　攻击力 {attack:0.##} → {nextAttack:0.##}");
 
             if (currency == null)
             {
