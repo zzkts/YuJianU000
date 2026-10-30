@@ -45,9 +45,20 @@ namespace Yujian.Building
         [SerializeField] private float groundHeight = 0f;
 
         [Header("吸附过渡")]
-        [Tooltip("蓝图朝吸附点移动的速度（世界单位 / 秒），与建筑迁移保持一致：拖动时不会硬跳到格点，" +
-                 "而是平滑追上去；0 = 直接吸附。调大更跟手、调小更柔和")]
+        [Tooltip("蓝图朝吸附点移动的基准速度（世界单位 / 秒），中等距离时的速度，与建筑迁移保持一致。" +
+                 "拖动时不会硬跳到格点，而是平滑追上去；0 = 直接吸附。调大更跟手、调小更柔和")]
         [SerializeField, Min(0f)] private float snapMoveSpeed = 24f;
+
+        [Tooltip("指针甩远时的速度上限（世界单位 / 秒）。与吸附点的距离达到「加速距离」后按这个速度追，" +
+                 "远距离不会再慢慢挪。应大于等于基准速度")]
+        [SerializeField, Min(0f)] private float snapMaxSpeed = 96f;
+
+        [Tooltip("加速距离（世界单位）。蓝图与吸附点的距离在 0 ~ 该值之间时，速度从「基准速度 × 近距离比例」" +
+                 "平滑升到上限；超过该值就一直按上限追。0 = 只按上限速度追")]
+        [SerializeField, Min(0f)] private float snapCatchUpDistance = 6f;
+
+        [Tooltip("贴着吸附点时的速度比例。距离为 0 时速度 = 基准速度 × 该值，避免收尾时硬撞上去")]
+        [SerializeField, Range(0.01f, 1f)] private float snapNearSpeedRatio = 0.35f;
 
         [Header("占地检测")]
         [Tooltip("检测盒从地面向上延伸的高度，必须覆盖建筑碰撞体的高度。" +
@@ -278,7 +289,8 @@ namespace Yujian.Building
         }
 
         /// <summary>
-        /// 推进吸附过渡：蓝图朝 <see cref="visualTarget"/> 匀速移动。
+        /// 推进吸附过渡：蓝图朝 <see cref="visualTarget"/> 移动，离得越远越快、贴得越近越慢
+        /// （曲线见 <see cref="SnapFollowMotion"/>，与建筑迁移同一套）。
         /// 由 <see cref="Update"/> 每帧调用；批处理验证里没有 Update，可以用它手动推进。
         /// </summary>
         public void TickVisual(float deltaTime)
@@ -295,15 +307,14 @@ namespace Yujian.Building
                 return;
             }
 
-            if (snapMoveSpeed <= 0f)
-            {
-                blueprint.transform.position = visualTarget;
-                return;
-            }
-
-            float step = snapMoveSpeed * Mathf.Max(0f, deltaTime);
-            blueprint.transform.position = Vector3.MoveTowards(
-                blueprint.transform.position, visualTarget, step);
+            blueprint.transform.position = SnapFollowMotion.Advance(
+                blueprint.transform.position,
+                visualTarget,
+                snapMoveSpeed,
+                snapMaxSpeed,
+                snapCatchUpDistance,
+                snapNearSpeedRatio,
+                deltaTime);
         }
 
         /// <summary>丢掉吸附位置。没有蓝图 / 已落位 / 换蓝图时调用。</summary>

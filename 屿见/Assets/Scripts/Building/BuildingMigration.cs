@@ -58,9 +58,20 @@ namespace Yujian.Building
         [SerializeField] private float groundHeight = 0f;
 
         [Header("吸附过渡")]
-        [Tooltip("建筑朝吸附点移动的速度（世界单位 / 秒）。拖动时不会硬跳到格点，而是平滑追上去；" +
-                 "0 = 直接吸附。调大更跟手、调小更柔和")]
+        [Tooltip("建筑朝吸附点移动的基准速度（世界单位 / 秒），中等距离时的速度。" +
+                 "拖动时不会硬跳到格点，而是平滑追上去；0 = 直接吸附。调大更跟手、调小更柔和")]
         [SerializeField, Min(0f)] private float snapMoveSpeed = 24f;
+
+        [Tooltip("光标甩远时的速度上限（世界单位 / 秒）。与吸附点的距离达到「加速距离」后按这个速度追，" +
+                 "远距离不会再慢慢挪。应大于等于基准速度")]
+        [SerializeField, Min(0f)] private float snapMaxSpeed = 96f;
+
+        [Tooltip("加速距离（世界单位）。建筑与吸附点的距离在 0 ~ 该值之间时，速度从「基准速度 × 近距离比例」" +
+                 "平滑升到上限；超过该值就一直按上限追。0 = 只按上限速度追")]
+        [SerializeField, Min(0f)] private float snapCatchUpDistance = 6f;
+
+        [Tooltip("贴着吸附点时的速度比例。距离为 0 时速度 = 基准速度 × 该值，避免收尾时硬撞上去")]
+        [SerializeField, Range(0.01f, 1f)] private float snapNearSpeedRatio = 0.35f;
 
         [Header("绿 / 红外表（Assets/Shaders/BuildingPreviewTint.shader）")]
         [Tooltip("迁移预览材质模板。由菜单「屿见/建筑/配置建筑迁移与升级」自动生成并挂上。" +
@@ -389,7 +400,8 @@ namespace Yujian.Building
         }
 
         /// <summary>
-        /// 推进吸附过渡：建筑朝 <see cref="visualTarget"/> 匀速移动。
+        /// 推进吸附过渡：建筑朝 <see cref="visualTarget"/> 移动，离得越远越快、贴得越近越慢
+        /// （曲线见 <see cref="SnapFollowMotion"/>）。
         /// 由 <see cref="Update"/> 每帧调用；批处理验证里没有 Update，可以用它手动推进。
         /// </summary>
         public void TickVisual(float deltaTime)
@@ -399,15 +411,14 @@ namespace Yujian.Building
                 return;
             }
 
-            if (snapMoveSpeed <= 0f)
-            {
-                target.transform.position = visualTarget;
-                return;
-            }
-
-            float step = snapMoveSpeed * Mathf.Max(0f, deltaTime);
-            target.transform.position = Vector3.MoveTowards(
-                target.transform.position, visualTarget, step);
+            target.transform.position = SnapFollowMotion.Advance(
+                target.transform.position,
+                visualTarget,
+                snapMoveSpeed,
+                snapMaxSpeed,
+                snapCatchUpDistance,
+                snapNearSpeedRatio,
+                deltaTime);
         }
 
         /// <summary>松开指针：进入「等确认」状态。建筑继续收尾到吸附点，但占格还没提交。</summary>

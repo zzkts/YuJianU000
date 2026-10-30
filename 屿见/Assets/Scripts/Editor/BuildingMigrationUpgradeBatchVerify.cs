@@ -33,6 +33,7 @@ namespace Yujian.EditorTools
             VerifyUpgradeLogic();
             VerifyMigration();
             VerifyBlueprintSmoothSnap();
+            VerifySnapFollowCurve();
             VerifySave();
             VerifyOldSaveLevelDefault();
 
@@ -653,7 +654,120 @@ namespace Yujian.EditorTools
             return true;
         }
 
-        // ---------------- 5. 存档 ----------------
+        // ---------------- 5. 吸附速度曲线（远快近慢） ----------------
+
+        private static void VerifySnapFollowCurve()
+        {
+            const float baseSpeed = 24f;
+            const float maxSpeed = 96f;
+            const float catchUp = 6f;
+            const float nearRatio = 0.35f;
+            Vector3 origin = Vector3.zero;
+
+            // 远处：按上限追
+            Vector3 farStep = SnapFollowMotion.Advance(
+                origin, new Vector3(100f, 0f, 0f), baseSpeed, maxSpeed, catchUp, nearRatio, 0.1f);
+            Check(Mathf.Abs(farStep.x - maxSpeed * 0.1f) < 0.001f,
+                $"远距离按上限速度追（期望 {maxSpeed * 0.1f}，实际 {farStep.x}）");
+
+            // 中段：比基准速度快（这就是「不跟手」的修复）
+            Vector3 midStep = SnapFollowMotion.Advance(
+                origin, new Vector3(catchUp * 0.5f, 0f, 0f), baseSpeed, maxSpeed, catchUp, nearRatio, 0.01f);
+            Check(midStep.x > baseSpeed * 0.01f + 0.0001f,
+                $"中段距离比基准速度快（实际一步 {midStep.x}，基准 {baseSpeed * 0.01f}）");
+
+            // 近处：降到基准 × 近距离比例（收尾柔和）
+            Vector3 nearStep = SnapFollowMotion.Advance(
+                origin, new Vector3(0.2f, 0f, 0f), baseSpeed, maxSpeed, catchUp, nearRatio, 0.001f);
+            float nearExpected = baseSpeed * nearRatio * 0.001f;
+            Check(nearStep.x < baseSpeed * 0.001f, "近距离确实比匀速慢");
+            Check(Mathf.Abs(nearStep.x - nearExpected) < 0.001f,
+                $"贴近目标时速度约为基准 × {nearRatio}（期望 {nearExpected}，实际 {nearStep.x}）");
+
+            // 上限 <= 0 时退化成匀速
+            Vector3 flatStep = SnapFollowMotion.Advance(
+                origin, new Vector3(100f, 0f, 0f), baseSpeed, 0f, catchUp, nearRatio, 0.1f);
+            Check(Mathf.Abs(flatStep.x - baseSpeed * 0.1f) < 0.001f,
+                $"上限 <= 0 时退回基准速度（期望 {baseSpeed * 0.1f}，实际 {flatStep.x}）");
+
+            // dt = 0 不动；基准速度 = 0 直接吸附
+            Vector3 stillStep = SnapFollowMotion.Advance(
+                origin, new Vector3(100f, 0f, 0f), baseSpeed, maxSpeed, catchUp, nearRatio, 0f);
+            Check(stillStep.sqrMagnitude < 1e-6f, "dt = 0 时不移动");
+
+            Vector3 instant = SnapFollowMotion.Advance(
+                origin, new Vector3(5f, 0f, 0f), 0f, maxSpeed, catchUp, nearRatio, 0f);
+            Check((instant - new Vector3(5f, 0f, 0f)).sqrMagnitude < 1e-6f,
+                "基准速度 = 0 时直接吸附");
+
+            // 远距离持续推进后仍精确停在吸附点
+            Vector3 target = new Vector3(100f, 0f, 0f);
+            Vector3 position = origin;
+
+            for (int i = 0; i < 200; i++)
+            {
+                position = SnapFollowMotion.Advance(
+                    position, target, baseSpeed, maxSpeed, catchUp, nearRatio, 0.02f);
+            }
+
+            Check((position - target).sqrMagnitude < 1e-6f, "持续推进后精确停在吸附点");
+
+            CheckFollowFields(
+                Object.FindFirstObjectByType<BuildingMigration>(FindObjectsInactive.Include), "BuildingMigration");
+            CheckFollowFields(
+                Object.FindFirstObjectByType<BuildingPlacement>(FindObjectsInactive.Include), "BuildingPlacement");
+
+            BuildingMigration migration = Object.FindFirstObjectByType<BuildingMigration>(FindObjectsInactive.Include);
+            BuildingPlacement placement = Object.FindFirstObjectByType<BuildingPlacement>(FindObjectsInactive.Include);
+
+            if (migration != null && placement != null)
+            {
+                SerializedObject migrationSerialized = new SerializedObject(migration);
+                SerializedObject placementSerialized = new SerializedObject(placement);
+
+                Check(Mathf.Approximately(
+                        migrationSerialized.FindProperty("snapMaxSpeed").floatValue,
+                        placementSerialized.FindProperty("snapMaxSpeed").floatValue) &&
+                      Mathf.Approximately(
+                        migrationSerialized.FindProperty("snapCatchUpDistance").floatValue,
+                        placementSerialized.FindProperty("snapCatchUpDistance").floatValue) &&
+                      Mathf.Approximately(
+                        migrationSerialized.FindProperty("snapNearSpeedRatio").floatValue,
+                        placementSerialized.FindProperty("snapNearSpeedRatio").floatValue),
+                    "迁移与蓝图的三个新吸附参数一致（两套手感不分叉）");
+            }
+        }
+
+        private static void CheckFollowFields(Object component, string label)
+        {
+            if (component == null)
+            {
+                Check(false, label + " 找不到，无法检查吸附速度字段");
+                return;
+            }
+
+            SerializedObject serialized = new SerializedObject(component);
+            SerializedProperty baseSpeed = serialized.FindProperty("snapMoveSpeed");
+            SerializedProperty maxSpeed = serialized.FindProperty("snapMaxSpeed");
+            SerializedProperty catchUp = serialized.FindProperty("snapCatchUpDistance");
+            SerializedProperty nearRatio = serialized.FindProperty("snapNearSpeedRatio");
+
+            Check(baseSpeed != null && maxSpeed != null && catchUp != null && nearRatio != null,
+                label + " 的四个吸附速度字段都已序列化");
+
+            if (baseSpeed == null || maxSpeed == null || catchUp == null || nearRatio == null)
+            {
+                return;
+            }
+
+            Check(maxSpeed.floatValue > baseSpeed.floatValue,
+                $"{label}.snapMaxSpeed({maxSpeed.floatValue}) 比基准速度快（远距离能加速）");
+            Check(catchUp.floatValue > 0f, label + ".snapCatchUpDistance 大于 0");
+            Check(nearRatio.floatValue > 0f && nearRatio.floatValue <= 1f,
+                $"{label}.snapNearSpeedRatio 在 (0,1] 之间（近距离更慢）");
+        }
+
+        // ---------------- 6. 存档 ----------------
 
         private static void VerifySave()
         {
