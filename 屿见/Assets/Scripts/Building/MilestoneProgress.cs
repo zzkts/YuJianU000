@@ -126,6 +126,82 @@ namespace Yujian.Building
             return completed.Contains(data);
         }
 
+        /// <summary>该建筑是否属于「特殊建筑」清单（只看配置，不看是否建成）。</summary>
+        public bool IsMilestone(BuildingData data)
+        {
+            if (data == null)
+            {
+                return false;
+            }
+
+            EnsureInitialized();
+
+            for (int i = 0; i < snapshot.Length; i++)
+            {
+                if (snapshot[i] == data)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 该建筑当前是否已经建在场上。
+        /// 直接扫 <see cref="BuildingManager.PlacedBuildings"/>，不依赖事件回调顺序，
+        /// 供「特殊建筑只能建一座」的入口校验使用。
+        /// </summary>
+        public bool IsOnField(BuildingData data)
+        {
+            if (data == null || buildingManager == null)
+            {
+                return false;
+            }
+
+            IReadOnlyList<GameObject> placed = buildingManager.PlacedBuildings;
+
+            for (int i = 0; i < placed.Count; i++)
+            {
+                GameObject instance = placed[i];
+
+                if (instance == null)
+                {
+                    continue;
+                }
+
+                PlacedBuildingInfo info = instance.GetComponent<PlacedBuildingInfo>();
+
+                if (info != null && info.Data == data)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 还差哪些特殊建筑没建（按配置顺序）。每次调用都会新建一份列表，
+        /// 供进度 UI 一次性读取，不暴露可变内部状态。
+        /// </summary>
+        public List<BuildingData> GetRemainingMilestones()
+        {
+            EnsureInitialized();
+
+            List<BuildingData> remaining = new List<BuildingData>(snapshot.Length);
+
+            for (int i = 0; i < snapshot.Length; i++)
+            {
+                if (!IsOnField(snapshot[i]))
+                {
+                    remaining.Add(snapshot[i]);
+                }
+            }
+
+            return remaining;
+        }
+
         private void HandleBuildingPlaced(BuildingPlaced evt)
         {
             // BuildingManager 发布事件前已经把实例加进 PlacedBuildings，直接重算即可

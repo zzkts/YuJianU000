@@ -39,6 +39,9 @@ namespace Yujian.UI
         [Tooltip("Max 模式的悬停说明")]
         [SerializeField] private string maxTooltip = "Max——升级到等级间隔";
 
+        [Tooltip("悬停说明相对光标的偏移（默认放在光标右方）")]
+        [SerializeField] private Vector2 tooltipCursorOffset = new Vector2(18f, 0f);
+
         private bool wired;
 
         /// <summary>当前升级方式。</summary>
@@ -87,11 +90,48 @@ namespace Yujian.UI
 
             tooltipText.text = Mode == BuildingUpgradeMode.OneLevel ? oneLevelTooltip : maxTooltip;
             tooltipText.gameObject.SetActive(true);
+            PositionTooltip(eventData.position);
         }
 
         public void OnPointerExit(PointerEventData eventData)
         {
             HideTooltip();
+        }
+
+        /// <summary>
+        /// 策划案 3.4：悬停说明显示在光标右方。
+        /// 把屏幕坐标换算到提示文字的父节点坐标，再以左侧中心为轴摆放。
+        /// </summary>
+        private void PositionTooltip(Vector2 screenPosition)
+        {
+            if (tooltipText == null)
+            {
+                return;
+            }
+
+            RectTransform tooltipRect = tooltipText.rectTransform;
+            RectTransform parentRect = tooltipRect.parent as RectTransform;
+
+            if (parentRect == null)
+            {
+                return;
+            }
+
+            Canvas canvas = tooltipText.canvas;
+            Camera camera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay
+                ? canvas.worldCamera
+                : null;
+
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    parentRect, screenPosition, camera, out Vector2 localPoint))
+            {
+                return;
+            }
+
+            tooltipRect.anchorMin = new Vector2(0.5f, 0.5f);
+            tooltipRect.anchorMax = new Vector2(0.5f, 0.5f);
+            tooltipRect.pivot = new Vector2(0f, 0.5f);
+            tooltipRect.anchoredPosition = localPoint + tooltipCursorOffset;
         }
 
         private void WireButton()

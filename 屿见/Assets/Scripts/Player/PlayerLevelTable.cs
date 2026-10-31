@@ -94,6 +94,53 @@ namespace Yujian.Player
             return resultLevel;
         }
 
+        /// <summary>
+        /// 查找「比当前建筑数更高」的最小建筑数阈值，供建筑进度 UI 显示 X/N。
+        /// 没有更高阈值（已满级）时返回 false，两个输出参数均为 0。
+        /// </summary>
+        /// <param name="buildingCount">当前已建成建筑总数。</param>
+        /// <param name="nextBuildingCount">下一个等级需要的建筑总数。</param>
+        /// <param name="nextLevel">达到该建筑数后的等级。</param>
+        public bool TryGetNextThreshold(int buildingCount, out int nextBuildingCount, out int nextLevel)
+        {
+            nextBuildingCount = 0;
+            nextLevel = 0;
+
+            if (buildingCount < 0)
+            {
+                buildingCount = 0;
+            }
+
+            bool found = false;
+            int smallestGreater = int.MaxValue;
+
+            if (thresholds != null)
+            {
+                for (int i = 0; i < thresholds.Count; i++)
+                {
+                    BuildingLevelThreshold threshold = thresholds[i];
+
+                    if (threshold == null || threshold.Level <= 0)
+                    {
+                        continue;
+                    }
+
+                    if (threshold.BuildingCount <= buildingCount ||
+                        threshold.BuildingCount >= smallestGreater)
+                    {
+                        continue;
+                    }
+
+                    smallestGreater = threshold.BuildingCount;
+                    nextBuildingCount = threshold.BuildingCount;
+                    nextLevel = threshold.Level;
+                    found = true;
+                }
+            }
+
+            return found;
+        }
+
         private void OnValidate()
         {
             if (thresholds == null)
