@@ -30,7 +30,10 @@ namespace Yujian.Mining
         public MiningToolData Data => toolData;
         public PlayerCurrency Currency => playerCurrency;
         public int CurrentLevel => Mathf.Max(1, currentLevel);
-        public int CurrentAttack => toolData != null ? toolData.GetAttackAtLevel(CurrentLevel) : 1;
+
+        /// <summary>当前攻击力。D7=A 起是几何曲线的浮点值，可能是 1.82 这种小数。</summary>
+        public float CurrentAttack => toolData != null ? toolData.GetAttackAtLevel(CurrentLevel) : 1f;
+
         public int NextUpgradeCost => toolData != null ? toolData.GetUpgradeCost(CurrentLevel) : 0;
 
         /// <summary>等级或攻击力变化时触发，后续 UI 订阅它刷新显示。</summary>

@@ -93,6 +93,11 @@ namespace Yujian.Building
                  "世界尺寸 = 格数 × BuildingGrid 的单格边长；建筑与蓝图会按该尺寸自动缩放外观")]
         [SerializeField] private Vector2Int footprintCells = new Vector2Int(2, 2);
 
+        [Header("升级")]
+        [Tooltip("采用的升级表（策划案 3.4，例如 LevelUP_01）。留空表示这座建筑不能升级，" +
+                 "建筑上方的升级按钮会提示「未配置升级表」")]
+        [SerializeField] private BuildingUpgradeTable upgradeTable;
+
         [Header("所需材料（阶段 3 只记录，不消耗）")]
         [Tooltip("建造该建筑需要的原料清单。阶段 3 完全不读取这张表——" +
                  "即使玩家一个原料都没有也允许放置。材料检查与扣除是阶段 4 的事")]
@@ -117,6 +122,9 @@ namespace Yujian.Building
 
         /// <summary>占地格数：X = 沿世界 X 轴的格数，Y = 沿世界 Z 轴的格数。</summary>
         public Vector2Int FootprintCells => footprintCells;
+
+        /// <summary>采用的升级表，可能为 null（不可升级）。</summary>
+        public BuildingUpgradeTable UpgradeTable => upgradeTable;
 
         /// <summary>所需材料清单，只读。阶段 3 不消费它。</summary>
         public IReadOnlyList<BuildingMaterialRequirement> RequiredMaterials =>
@@ -186,6 +194,12 @@ namespace Yujian.Building
                 // 不拦着资产使用，但存档时这座建筑会被跳过。规则 5：不静默失败
                 Debug.LogWarning($"[BuildingData] 资产「{name}」没有 Save Id，存档时会跳过它。" +
                                  "请运行菜单「屿见/通用模块/配置存档系统」自动生成。", this);
+            }
+
+            if (upgradeTable == null)
+            {
+                // 不拦着资产使用：建筑照样能建，只是不能升级
+                Debug.LogWarning($"[BuildingData] 资产「{name}」没有配置升级表，这座建筑不能升级。", this);
             }
 
             if (requiredMaterials == null)

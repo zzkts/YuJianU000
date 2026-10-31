@@ -10,7 +10,10 @@ namespace Yujian.UI
     /// 建造材料面板（阶段 4）。
     ///
     /// 职责：蓝图落位之后，把「这个建筑需要哪些材料」摊成一个个可拖拽的条目，
-    /// 显示每种的持有数量，并把「撤回 / 确认建造」两个按钮接到 BuildingConstruction 上。
+    /// 显示每种的持有数量。
+    ///
+    /// 2026-10-26 按建筑系统策划案改造：「撤回 / √」改由蓝图旁的 BuildingBlueprintActionUI 负责。
+    /// Use Blueprint Actions 勾上时，本面板只保留材料列表，旧的两个按钮会被隐藏。
     ///
     /// 条目**全部由 BuildingData.RequiredMaterials 推导**：
     ///   需求里的 MaterialData → 它的 AllowedColors → 每种颜色一个条目。
@@ -62,8 +65,14 @@ namespace Yujian.UI
         [Tooltip("拖拽残影的父物体。留空则用本物体所在的 Canvas")]
         [SerializeField] private RectTransform ghostParent;
 
+        [Tooltip("旧版的「撤回 / 确认建造」按钮。Use Blueprint Actions 打开后会被隐藏")]
         [SerializeField] private Button undoButton;
         [SerializeField] private Button confirmButton;
+
+        [Header("交互归属")]
+        [Tooltip("勾选后，撤回与建成改由蓝图旁的 ×/√/撤回 按钮负责，本面板不再显示旧的两个按钮。" +
+                 "跑过菜单「屿见/建筑/配置蓝图按钮（×/√）」后会自动勾上")]
+        [SerializeField] private bool useBlueprintActions;
 
         [Header("排版")]
         [Tooltip("条目高度（像素）。模板自带的高度为正时以模板为准")]
@@ -140,7 +149,33 @@ namespace Yujian.UI
                                  "请跑菜单「屿见/建筑/配置建造系统（阶段 4）」并 Ctrl+S 保存场景。", this);
             }
 
-            WireButtons();
+            if (construction == null)
+            {
+                // 旧路径靠 WireButtons 报这一条；切到蓝图按钮后不再走 WireButtons，所以这里单独报
+                Debug.LogError("[BuildingMaterialPanel] Building Construction 未配置，" +
+                               "材料面板无法把材料放进蓝图。请重跑菜单「屿见/建筑/配置建造系统（阶段 4）」。",
+                               this);
+            }
+
+            if (useBlueprintActions)
+            {
+                // 新交互把「撤回 / 确认建造」搬到了蓝图旁。旧按钮留在场景里只会多出两个入口，
+                // 而且会和「× 消失后 撤回 出现在原位」的规格冲突，所以直接隐藏。
+                // 不销毁：关掉这个开关（或向导重跑）还能退回旧布局
+                if (undoButton != null)
+                {
+                    undoButton.gameObject.SetActive(false);
+                }
+
+                if (confirmButton != null)
+                {
+                    confirmButton.gameObject.SetActive(false);
+                }
+            }
+            else
+            {
+                WireButtons();
+            }
         }
 
         private void OnEnable()
@@ -549,7 +584,7 @@ namespace Yujian.UI
 
         private void RefreshConfirmButton()
         {
-            if (confirmButton == null || construction == null)
+            if (confirmButton == null || construction == null || !confirmButton.gameObject.activeSelf)
             {
                 return;
             }

@@ -20,24 +20,33 @@ namespace Yujian.Building
         private RectInt footprintRect;
         private readonly List<MaterialColor> layerColors = new List<MaterialColor>();
 
+        [Tooltip("建筑等级。建成与读档恢复时写入，升级时由 BuildingUpgrade 更新。" +
+                 "旧存档没有该字段时按 1 级处理")]
+        [SerializeField, Min(1)] private int level = 1;
+
         /// <summary>建筑静态数据。可能为空（旧实例或手动挂载），调用方需判空。</summary>
         public BuildingData Data => data;
 
-        /// <summary>占地格子矩形（x → 世界 X，y → 世界 Z）。</summary>
+        /// <summary>占地格子矩形（x → 世界 X，y → 世界 Z）。迁移后由 BuildingManager 更新。</summary>
         public RectInt FootprintRect => footprintRect;
 
         /// <summary>自下而上的楼层颜色，只读。</summary>
         public IReadOnlyList<MaterialColor> LayerColors => layerColors;
 
+        /// <summary>建筑等级，恒 >= 1。</summary>
+        public int Level => Mathf.Max(1, level);
+
         /// <summary>
         /// 由 BuildingManager 在建造成 / 读档恢复时调用。会复制颜色列表，
         /// 调用方之后修改自己的列表不会影响这里。
         /// </summary>
+        /// <param name="initialLevel">初始等级。建成默认 1，读档传入存档等级。</param>
         public void Initialize(
-            BuildingData source, RectInt rect, IReadOnlyList<MaterialColor> colors)
+            BuildingData source, RectInt rect, IReadOnlyList<MaterialColor> colors, int initialLevel = 1)
         {
             data = source;
             footprintRect = rect;
+            level = Mathf.Max(1, initialLevel);
 
             layerColors.Clear();
 
@@ -50,6 +59,18 @@ namespace Yujian.Building
             {
                 layerColors.Add(colors[i]);
             }
+        }
+
+        /// <summary>写入建筑等级。低于 1 的一律按 1 处理。</summary>
+        public void SetLevel(int value)
+        {
+            level = Mathf.Max(1, value);
+        }
+
+        /// <summary>迁移后更新占地矩形。占用登记本身由 BuildingManager 负责。</summary>
+        public void SetFootprintRect(RectInt rect)
+        {
+            footprintRect = rect;
         }
     }
 }

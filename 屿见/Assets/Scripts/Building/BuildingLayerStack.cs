@@ -195,6 +195,50 @@ namespace Yujian.Building
             }
         }
 
+        /// <summary>
+        /// 临时改变所有楼层颜色的不透明度（迁移时的半透明闪烁用），RGB 不动。
+        ///
+        /// 只改 MaterialPropertyBlock 里的 alpha，不克隆材质；材质本身必须支持透明混合
+        /// 才能真的透出来（迁移代码会把材质临时切成透明模式）。
+        /// </summary>
+        public void SetLayerAlpha(float alpha)
+        {
+            layerAlpha = Mathf.Clamp01(alpha);
+            EnsureCached();
+
+            if (propertyBlock == null)
+            {
+                propertyBlock = new MaterialPropertyBlock();
+            }
+
+            for (int i = 0; i < layerRenderers.Count; i++)
+            {
+                Renderer renderer = layerRenderers[i];
+
+                if (renderer == null || !renderer.enabled)
+                {
+                    continue;
+                }
+
+                renderer.GetPropertyBlock(propertyBlock);
+
+                // 还没刷过色的层没有 _BaseColor，读出来是黑色；跳过它们，别把楼刷黑
+                if (propertyBlock.isEmpty)
+                {
+                    continue;
+                }
+
+                Color color = propertyBlock.GetColor(BaseColorId);
+                color.a = layerAlpha;
+                propertyBlock.SetColor(BaseColorId, color);
+                propertyBlock.SetColor(ColorId, color);
+                renderer.SetPropertyBlock(propertyBlock);
+            }
+        }
+
+        /// <summary>当前楼层不透明度。迁移结束后用它恢复原值。</summary>
+        public float CurrentLayerAlpha => layerAlpha;
+
         /// <summary>隐藏第 index 层（保留样板，不销毁）。</summary>
         public void SetLayerVisible(int index, bool visible)
         {

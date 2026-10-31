@@ -10,13 +10,15 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 62860099c0761ad4fb5dd52fd3e2a120, type: 3}
-  m_Name: "Building_风琴博物馆"
+  m_Name: "Building_\u98CE\u7434\u535A\u7269\u9986"
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Building.BuildingData
-  buildingName: "风琴博物馆"
+  buildingName: "\u98CE\u7434\u535A\u7269\u9986"
   buildingType: 0
   buildingPrefab: {fileID: 5479955157972750790, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
   blueprintPrefab: {fileID: 7451330899216750001, guid: a7f3c19e4b2d47c8b06e9d531af82047, type: 3}
   footprintCells: {x: 2, y: 2}
+  upgradeTable: {fileID: 11400000, guid: e9d44926108337944aca6f094bdcf54e, type: 2}
   requiredMaterials:
   - material: {fileID: 11400000, guid: 9f1a5c65d730e014daa9213d786dea96, type: 2}
     amount: 3
+  saveId: edf5bd059cb594140a3e9171684ddc03

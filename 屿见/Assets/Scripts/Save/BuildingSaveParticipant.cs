@@ -94,6 +94,7 @@ namespace Yujian.Save
                     y = rect.y,
                     width = rect.width,
                     height = rect.height,
+                    level = info.Level,
                 };
 
                 IReadOnlyList<MaterialColor> colors = info.LayerColors;
@@ -163,7 +164,10 @@ namespace Yujian.Save
                     colors.Add((MaterialColor)entry.layerColors[j]);
                 }
 
-                if (buildingManager.RestoreBuilding(building, rect, colors, out string error))
+                // 旧存档没有 level 字段时为 0，按 1 级恢复
+                int level = entry.level > 0 ? entry.level : 1;
+
+                if (buildingManager.RestoreBuilding(building, rect, colors, level, out string error))
                 {
                     restored++;
                 }

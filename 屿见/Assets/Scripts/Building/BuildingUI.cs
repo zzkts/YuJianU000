@@ -27,6 +27,9 @@ namespace Yujian.Building
         [Tooltip("可供玩家建造的建筑清单。顺序与 UI 按钮传进来的下标一一对应")]
         [SerializeField] private BuildingData[] availableBuildings = new BuildingData[0];
 
+        [Tooltip("特殊建筑清单。用来禁止同一座特殊建筑重复建造；留空则不限制")]
+        [SerializeField] private MilestoneProgress milestoneProgress;
+
         /// <summary>可选建筑的数量。</summary>
         public int AvailableBuildingCount =>
             availableBuildings == null ? 0 : availableBuildings.Length;
@@ -59,7 +62,46 @@ namespace Yujian.Building
                 return;
             }
 
+            if (!IsBuildingAvailable(index, out string unavailableReason))
+            {
+                Debug.LogWarning($"[BuildingUI] 不能建造「{data.BuildingName}」：{unavailableReason}", this);
+                return;
+            }
+
             buildingManager.SelectBuilding(data);
+        }
+
+        /// <summary>
+        /// 清单里第 index 项当前是否可建造。目前唯一限制是「特殊建筑场上最多一座」。
+        /// 按钮置灰与点击校验共用这一份判断，避免两边规则分叉。
+        /// </summary>
+        public bool IsBuildingAvailable(int index, out string reason)
+        {
+            reason = string.Empty;
+
+            if (availableBuildings == null || index < 0 || index >= availableBuildings.Length)
+            {
+                reason = $"建筑下标 {index} 越界（清单共 {AvailableBuildingCount} 项）";
+                return false;
+            }
+
+            BuildingData data = availableBuildings[index];
+
+            if (data == null)
+            {
+                reason = $"建筑清单第 {index} 项是空的";
+                return false;
+            }
+
+            if (milestoneProgress != null &&
+                milestoneProgress.IsMilestone(data) &&
+                milestoneProgress.IsOnField(data))
+            {
+                reason = $"「{data.BuildingName}」已建成，不能重复建造";
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>取消当前蓝图，但仍留在建造模式（镜头不动）。</summary>

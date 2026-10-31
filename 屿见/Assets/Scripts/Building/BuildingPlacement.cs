@@ -8,11 +8,19 @@ namespace Yujian.Building
     /// <summary>
     /// 放置控制器。职责：把"鼠标屏幕坐标"变成"蓝图的世界坐标"，并判断那里能不能放。
     ///
-    /// 每帧：指针位置 → 屏幕坐标 → 射线 → 地面交点 → 移动蓝图 → Physics.CheckBox 重叠检测 → 蓝图变色。
-    /// 点击：判定通过后调用 BuildingManager.AnchorBlueprint()，自己既不生成建筑也不记账。
+    /// 按住左键拖动时：指针位置 → 屏幕坐标 → 射线 → 地面交点 → 算出吸附格点 →
+    /// 蓝图平滑追向吸附点（<see cref="TickVisual"/>，与建筑迁移同一套过渡）→
+    /// Physics.CheckBox 重叠检测 → 蓝图变色。松开后蓝图停在原地，指针可以腾出来点 ×/√。
+    /// 落位：蓝图右侧的 √ 调用 <see cref="TryAnchorCurrentBlueprint"/>，判定通过后调用
+    /// BuildingManager.AnchorBlueprint()，自己既不生成建筑也不记账。
     ///
-    /// 阶段 4 新增：蓝图落位（Filling 相位）之后本类完全让开——不再移动蓝图、不再响应确认点击，
-    /// 建造改由材料面板上的「确认建造」按钮触发。
+    /// 阶段 4 新增：蓝图落位（Filling 相位）之后本类完全让开——不再移动蓝图。
+    /// 2026-10-26 按建筑系统策划案改造：不再订阅 Player/Attack，点击地面不会落位；
+    /// × / √ 改由蓝图旁的 <see cref="BuildingBlueprintActionUI"/> 负责。
+    ///
+    /// 为什么是「按住拖动」而不是「一直跟随指针」：×/√ 挂在蓝图两侧。
+    /// 如果蓝图始终贴着指针，按钮也会跟着指针跑，指针永远追不上按钮。
+    /// 松开后蓝图停住，按钮位置固定，才点得到。
     ///
     /// 本类单向依赖 BuildingManager，BuildingManager 不知道本类存在。
     /// </summary>
@@ -31,15 +39,26 @@ namespace Yujian.Building
         [Tooltip("网格可视化。蓝图移动时显示当前占地格。留空仍可放置，但没有格线与高亮")]
         [SerializeField] private BuildingGridVisualizer gridVisualizer;
 
-        [Tooltip("确认放置的输入动作。复用工程的 Assets/InputSystem_Actions.inputactions，" +
-                 "选 Player/Attack（已绑定鼠标左键、触摸点击、手柄），不要新建输入资产。" +
-                 "放置期间 MiningInput 会被禁用，所以同一次点击不会既放置又挖矿")]
-        [SerializeField] private InputActionReference confirmAction;
-
         [Header("地面")]
         [Tooltip("地面高度。场景里的 Plane 在 y = 0。" +
                  "这里用一个数学平面求交，而不是物理射线——不会被矿石、建筑、玩家挡住")]
         [SerializeField] private float groundHeight = 0f;
+
+        [Header("吸附过渡")]
+        [Tooltip("蓝图朝吸附点移动的基准速度（世界单位 / 秒），中等距离时的速度，与建筑迁移保持一致。" +
+                 "拖动时不会硬跳到格点，而是平滑追上去；0 = 直接吸附。调大更跟手、调小更柔和")]
+        [SerializeField, Min(0f)] private float snapMoveSpeed = 24f;
+
+        [Tooltip("指针甩远时的速度上限（世界单位 / 秒）。与吸附点的距离达到「加速距离」后按这个速度追，" +
+                 "远距离不会再慢慢挪。应大于等于基准速度")]
+        [SerializeField, Min(0f)] private float snapMaxSpeed = 96f;
+
+        [Tooltip("加速距离（世界单位）。蓝图与吸附点的距离在 0 ~ 该值之间时，速度从「基准速度 × 近距离比例」" +
+                 "平滑升到上限；超过该值就一直按上限追。0 = 只按上限速度追")]
+        [SerializeField, Min(0f)] private float snapCatchUpDistance = 6f;
+
+        [Tooltip("贴着吸附点时的速度比例。距离为 0 时速度 = 基准速度 × 该值，避免收尾时硬撞上去")]
+        [SerializeField, Range(0.01f, 1f)] private float snapNearSpeedRatio = 0.35f;
 
         [Header("占地检测")]
         [Tooltip("检测盒从地面向上延伸的高度，必须覆盖建筑碰撞体的高度。" +
@@ -47,8 +66,8 @@ namespace Yujian.Building
         [SerializeField] private float overlapBoxHeight = 4f;
 
         [Header("UI 屏蔽")]
-        [Tooltip("勾选后，落在 UI（商店面板、建筑按钮）上的点击不会穿透去放置建筑。" +
-                 "Physics.CheckBox 看不见 Canvas，所以必须单独判定一次")]
+        [Tooltip("勾选后，指针落到 UI（商店面板、建筑按钮、蓝图旁的 ×/√）上时冻结蓝图位置。" +
+                 "否则玩家把鼠标移向按钮时，蓝图会跟着跑到按钮背后的地面上")]
         [SerializeField] private bool blockClicksOverUI = true;
 
         [Header("调试")]
@@ -58,15 +77,45 @@ namespace Yujian.Building
         [Tooltip("是否在 Console 打印「位置不可放置，本次点击被忽略」的日志")]
         [SerializeField] private bool logBlockedPlacements = true;
 
-        /// <summary>UI 射线结果的复用缓冲，避免每次点击都分配新 List。</summary>
-
-        /// <summary>建筑碰撞体查询的复用缓冲，避免蓝图跟随鼠标时每帧分配数组。</summary>
+        /// <summary>建筑碰撞体查询的复用缓冲，避免蓝图跟随指针时每帧分配数组。</summary>
         private readonly Collider[] overlapBuffer = new Collider[128];
 
         private bool warnedAboutMissingEventSystem;
         private bool warnedAboutMissingBuildingLayers;
         private bool warnedAboutBadFootprint;
         private bool warnedAboutMissingGrid;
+
+        /// <summary>当前吸附位置属于哪个蓝图。换蓝图时必须丢弃旧位置，避免把新蓝图落到上一座的位置。</summary>
+        private BuildingBlueprint posedBlueprint;
+
+        private Vector3 currentSnappedCenter;
+        private RectInt currentSnappedRect;
+        private string currentPlacementReason;
+        private bool hasSnappedPose;
+        private bool currentPlacementValid;
+        private bool dragging;
+
+        /// <summary>蓝图每帧朝它平滑移动的目标（最近一次吸附点）。与迁移系统同一套过渡做法。</summary>
+        private Vector3 visualTarget;
+
+        /// <summary>当前是否有一个属于场上蓝图的吸附位置，可供 √ 落位。</summary>
+        public bool HasCurrentSnappedPose =>
+            hasSnappedPose && buildingManager != null && posedBlueprint == buildingManager.CurrentBlueprint;
+
+        /// <summary>最近一次吸附后的建筑中心（世界坐标）。</summary>
+        public Vector3 CurrentSnappedCenter => currentSnappedCenter;
+
+        /// <summary>最近一次吸附后的占地格子。</summary>
+        public RectInt CurrentSnappedRect => currentSnappedRect;
+
+        /// <summary>当前吸附位置能否落位。蓝图还没吸附、已落位或换蓝图时一律为 false。</summary>
+        public bool IsCurrentPlacementValid =>
+            HasCurrentSnappedPose &&
+            currentPlacementValid &&
+            buildingManager.Phase == BuildingPhase.Placing;
+
+        /// <summary>最近一次不可放置的原因，供按钮或调试日志使用。</summary>
+        public string CurrentPlacementReason => currentPlacementReason;
 
         private void Awake()
         {
@@ -84,12 +133,6 @@ namespace Yujian.Building
                     Debug.LogError("[BuildingPlacement] 未配置 View Camera，且场景中没有带 MainCamera 标签的相机，" +
                                    "无法把鼠标位置换算成世界坐标。", this);
                 }
-            }
-
-            if (confirmAction == null)
-            {
-                Debug.LogError("[BuildingPlacement] Confirm Action 未配置。请把 Assets/InputSystem_Actions.inputactions " +
-                               "拖入该字段，并在弹出的动作列表中选中 Player/Attack。", this);
             }
 
             if (grid == null)
@@ -111,73 +154,13 @@ namespace Yujian.Building
             }
         }
 
-        private void OnEnable()
-        {
-            if (confirmAction == null)
-            {
-                return;
-            }
-
-            // performed 在一次按下中只触发一次：按住不松手不会连续放置
-            confirmAction.action.performed += OnConfirmPerformed;
-            confirmAction.action.Enable();
-        }
-
-        private void OnDisable()
-        {
-            if (confirmAction == null)
-            {
-                return;
-            }
-
-            confirmAction.action.performed -= OnConfirmPerformed;
-
-            // 这里**故意不调用** confirmAction.action.Disable()。
-            // MiningInput 用的是同一个 Player/Attack 动作，而 InputAction.Enable/Disable 不是引用计数的
-            // （Enable() 内部就是 `if (enabled) return;`），本类一关就会把 MiningInput 也一起关掉。
-            // 本类被禁用时最多是不接收放置点击，动作留给 MiningInput 自己管即可。
-        }
-
-        private void LateUpdate()
-        {
-            EnsureConfirmActionEnabled();
-        }
-
-        /// <summary>
-        /// 保证确认动作在放置期间是启用的。
-        ///
-        /// 为什么需要这个：进入放置模式时 BuildingManager 会禁用 MiningInput 组件来屏蔽挖矿，
-        /// 而 MiningInput.OnDisable() 会调用该共享动作的 Disable()。由于 Enable/Disable 不是引用计数的，
-        /// 这一关会把本类的输入也一起关掉——表现就是蓝图能跟手，但点击永远放不下去。
-        ///
-        /// 放在 LateUpdate 而不是 Update：MiningInput.OnDisable 是 SelectBuilding 调用栈里同步触发的，
-        /// 那时仍在 Update 阶段；等到 LateUpdate，本帧的禁用已经全部发生完了。
-        /// </summary>
-        private void EnsureConfirmActionEnabled()
-        {
-            if (confirmAction == null)
-            {
-                return;
-            }
-
-            if (buildingManager == null || !buildingManager.IsPlacing)
-            {
-                return;
-            }
-
-            if (confirmAction.action.enabled)
-            {
-                return;
-            }
-
-            confirmAction.action.Enable();
-        }
-
         private void Update()
         {
             // 没有蓝图时不占用任何资源：不读指针、不发射线、不做物理查询
             if (buildingManager == null || !buildingManager.IsPlacing)
             {
+                dragging = false;
+                ClearSnappedPose();
                 HideGridPreview();
                 return;
             }
@@ -186,6 +169,8 @@ namespace Yujian.Building
             // 玩家要从材料面板往外拖，鼠标会长时间停在面板上，蓝图跟过去就会被面板整个盖住
             if (buildingManager.Phase == BuildingPhase.Filling)
             {
+                dragging = false;
+                ClearSnappedPose();
                 HideGridPreview();
                 return;
             }
@@ -194,18 +179,77 @@ namespace Yujian.Building
 
             if (blueprint == null)
             {
+                dragging = false;
+                ClearSnappedPose();
                 HideGridPreview();
                 return;
             }
 
-            if (!TryGetPointerScreenPosition(out Vector2 screenPosition))
+            // 换了一座建筑就丢掉上一座的位置。否则在指针还没落到地面上时点 √，
+            // 会把新蓝图放到旧蓝图的位置上
+            if (posedBlueprint != blueprint)
+            {
+                dragging = false;
+                ClearSnappedPose();
+                posedBlueprint = blueprint;
+
+                // 新蓝图从它自己的出生点开始追，避免从上一次的目标位置飞过来
+                visualTarget = blueprint.transform.position;
+            }
+
+            // 每帧推进吸附过渡：即使指针松开 / 停在 UI / 离开网格，蓝图也会收尾到最近的吸附点，
+            // 不会半路僵在格子之间（与迁移系统的 TickVisual 同一做法）
+            TickVisual(Time.deltaTime);
+
+            Pointer pointer = Pointer.current;
+
+            if (pointer == null)
+            {
+                return;
+            }
+
+            // 松开就停止拖动：不再接受新的吸附目标。此前设下的目标点仍由 TickVisual 收尾，
+            // 所以蓝图最终停在吸附点上（不会悬在格子之间），玩家可以腾出手去点 ×/√
+            if (pointer.press.wasReleasedThisFrame)
+            {
+                dragging = false;
+            }
+
+            // 没有按住时不再更新吸附目标。这就是「拖拽」与「跟随指针」的关键区别：
+            // 如果蓝图一直跟着指针，×/√ 也会跟着跑，指针永远追不上按钮
+            if (!pointer.press.isPressed && !pointer.press.wasPressedThisFrame)
+            {
+                dragging = false;
+                return;
+            }
+
+            Vector2 screenPosition = pointer.position.ReadValue();
+
+            if (!dragging)
+            {
+                // 只有从地面上按下才进入拖动；按在 UI 上交给 Button，不拖蓝图
+                if (!pointer.press.wasPressedThisFrame || IsPointerOverUI(screenPosition))
+                {
+                    return;
+                }
+
+                dragging = true;
+            }
+
+            // 拖动途中指针经过 UI（例如从地面滑到 ×/√）时冻结蓝图。
+            // 保留上一帧的吸附位置，手指松开后按钮仍可点
+            if (IsPointerOverUI(screenPosition))
             {
                 return;
             }
 
             if (!TryGetGroundPoint(screenPosition, out Vector3 point))
             {
-                // 相机没看向地面（例如鼠标在屏幕上半部分、射线朝天）时保留蓝图上一次的位置
+                // 相机没看向地面（例如鼠标在屏幕上半部分、射线朝天）时保留蓝图上一次的位置，
+                // 但不再允许落位——玩家已经离开地面目标了
+                currentPlacementValid = false;
+                currentPlacementReason = "指针没有落在地面上";
+                blueprint.SetState(BlueprintState.Invalid);
                 return;
             }
 
@@ -213,15 +257,26 @@ namespace Yujian.Building
                 !grid.TryGetSnappedPose(point, blueprint.Footprint, out Vector3 snappedCenter, out RectInt cellRect))
             {
                 // 指针在网格外：蓝图上一次的位置保留，只把它标红，避免视觉上突然消失
+                hasSnappedPose = false;
+                currentPlacementValid = false;
+                currentPlacementReason = "指针不在建筑网格内";
                 blueprint.SetState(BlueprintState.Invalid);
                 HideGridPreview();
                 return;
             }
 
-            // 先吸附再赋值。吸附后的位置才是蓝图与实体建筑共同的权威坐标
-            blueprint.transform.position = snappedCenter;
+            // 吸附后的位置才是蓝图与实体建筑共同的权威坐标。这里只更新视觉目标，
+            // 蓝图由 TickVisual 平滑追过去（与迁移系统一致），不会在格线附近硬跳
+            visualTarget = snappedCenter;
 
             bool valid = IsPlacementValid(snappedCenter, cellRect, blueprint, out string reason);
+
+            currentSnappedCenter = snappedCenter;
+            currentSnappedRect = cellRect;
+            currentPlacementReason = reason;
+            currentPlacementValid = valid;
+            hasSnappedPose = true;
+
             blueprint.SetState(valid ? BlueprintState.Valid : BlueprintState.Invalid);
 
             if (gridVisualizer != null)
@@ -230,7 +285,45 @@ namespace Yujian.Building
             }
 
             // 这里不打印 reason：指针每帧移动，失败是常态，打印会刷屏。
-            // 点击时会在 OnConfirmPerformed 里把具体原因打出来。
+            // 点 √ 时会在 TryAnchorCurrentBlueprint 里把具体原因打出来。
+        }
+
+        /// <summary>
+        /// 推进吸附过渡：蓝图朝 <see cref="visualTarget"/> 移动，离得越远越快、贴得越近越慢
+        /// （曲线见 <see cref="SnapFollowMotion"/>，与建筑迁移同一套）。
+        /// 由 <see cref="Update"/> 每帧调用；批处理验证里没有 Update，可以用它手动推进。
+        /// </summary>
+        public void TickVisual(float deltaTime)
+        {
+            if (buildingManager == null || !buildingManager.IsPlacing)
+            {
+                return;
+            }
+
+            BuildingBlueprint blueprint = buildingManager.CurrentBlueprint;
+
+            if (blueprint == null)
+            {
+                return;
+            }
+
+            blueprint.transform.position = SnapFollowMotion.Advance(
+                blueprint.transform.position,
+                visualTarget,
+                snapMoveSpeed,
+                snapMaxSpeed,
+                snapCatchUpDistance,
+                snapNearSpeedRatio,
+                deltaTime);
+        }
+
+        /// <summary>丢掉吸附位置。没有蓝图 / 已落位 / 换蓝图时调用。</summary>
+        private void ClearSnappedPose()
+        {
+            posedBlueprint = null;
+            hasSnappedPose = false;
+            currentPlacementValid = false;
+            currentPlacementReason = null;
         }
 
         /// <summary>隐藏占地高亮。visualizer 未配置时是空操作。</summary>
@@ -242,74 +335,73 @@ namespace Yujian.Building
             }
         }
 
-        private void OnConfirmPerformed(InputAction.CallbackContext context)
+        /// <summary>
+        /// 把当前蓝图落位到最近一次吸附的位置。由蓝图旁的 √ 按钮调用。
+        ///
+        /// 这里不重新读指针：玩家为了点 √ 已经把光标移到 UI 上了，
+        /// 若重新读指针，蓝图会跑到按钮背后的地面上。用 Update 冻结下来的位置是正确的。
+        /// </summary>
+        /// <returns>是否落位成功。</returns>
+        public bool TryAnchorCurrentBlueprint()
         {
-            if (buildingManager == null || !buildingManager.IsPlacing)
+            if (buildingManager == null)
             {
-                // 没在放置模式时，这次点击归 MiningInput 管，这里直接放行
-                return;
+                Debug.LogError("[BuildingPlacement] BuildingManager 未配置，无法落位。", this);
+                return false;
             }
 
-            // 已落位的蓝图不该再被点击挪动；建造由材料面板的「确认建造」按钮触发
+            if (!buildingManager.IsPlacing)
+            {
+                Debug.LogWarning("[BuildingPlacement] 当前没有蓝图，√ 被忽略。", this);
+                return false;
+            }
+
             if (buildingManager.Phase == BuildingPhase.Filling)
             {
-                return;
-            }
-
-            if (!TryGetPointerScreenPosition(out Vector2 screenPosition))
-            {
-                return;
-            }
-
-            // 点在 UI 上不确认放置。选中建筑的那一次点击也走这条路被挡掉，
-            // 否则点了按钮会立刻在按钮背后的地面上放一座建筑
-            if (IsPointerOverUI(screenPosition))
-            {
-                return;
+                Debug.LogWarning("[BuildingPlacement] 蓝图已经落位，不能重复落位。", this);
+                return false;
             }
 
             BuildingBlueprint blueprint = buildingManager.CurrentBlueprint;
 
             if (blueprint == null)
             {
-                return;
+                Debug.LogWarning("[BuildingPlacement] 当前没有蓝图，√ 被忽略。", this);
+                return false;
             }
 
-            if (!TryGetGroundPoint(screenPosition, out Vector3 point))
-            {
-                Debug.LogWarning("[BuildingPlacement] 点击位置转换不到地面上的点，本次放置取消。", this);
-                return;
-            }
-
-            if (grid == null ||
-                !grid.TryGetSnappedPose(point, blueprint.Footprint, out Vector3 snappedCenter, out RectInt cellRect))
+            if (!HasCurrentSnappedPose)
             {
                 if (logBlockedPlacements)
                 {
-                    Debug.LogWarning("[BuildingPlacement] 点击位置在建筑网格之外，本次点击被忽略。" +
-                                     "蓝图保持跟随鼠标。");
+                    Debug.LogWarning("[BuildingPlacement] 蓝图还没有吸附到网格上（指针可能不在可建区域），" +
+                                     "本次落位被忽略。");
                 }
 
-                return;
+                return false;
             }
 
-            if (!IsPlacementValid(snappedCenter, cellRect, blueprint, out string reason))
+            // 再判一次：从最后一帧到点击之间，场景里的占用状态可能已经变了
+            if (!IsPlacementValid(currentSnappedCenter, currentSnappedRect, blueprint, out string reason))
             {
+                currentPlacementValid = false;
+                currentPlacementReason = reason;
+
                 if (logBlockedPlacements)
                 {
-                    Debug.LogWarning($"[BuildingPlacement] 格子 {cellRect} 处不可放置：{reason}。" +
-                                     "本次点击被忽略，蓝图保持跟随鼠标。");
+                    Debug.LogWarning($"[BuildingPlacement] 格子 {currentSnappedRect} 处不可放置：{reason}。" +
+                                     "本次落位被忽略，蓝图保持跟随鼠标。");
                 }
 
-                return;
+                return false;
             }
 
             if (logPlacementFlow)
             {
-                Debug.Log($"[BuildingPlacement] 在 {snappedCenter} 确认落位，占地格子 {cellRect}。");
+                Debug.Log($"[BuildingPlacement] 在 {currentSnappedCenter} 落位，占地格子 {currentSnappedRect}。");
             }
 
-            buildingManager.AnchorBlueprint(snappedCenter, cellRect);
+            return buildingManager.AnchorBlueprint(currentSnappedCenter, currentSnappedRect);
         }
 
         /// <summary>
@@ -454,24 +546,6 @@ namespace Yujian.Building
             }
 
             return false;
-        }
-
-        /// <summary>
-        /// 取当前指针的屏幕坐标。用 Pointer 而不是 Mouse，
-        /// 这样触摸、触控笔与鼠标走的是同一套逻辑，为将来多指触摸留出空间。
-        /// </summary>
-        private static bool TryGetPointerScreenPosition(out Vector2 screenPosition)
-        {
-            Pointer pointer = Pointer.current;
-
-            if (pointer == null)
-            {
-                screenPosition = default;
-                return false;
-            }
-
-            screenPosition = pointer.position.ReadValue();
-            return true;
         }
 
         /// <summary>

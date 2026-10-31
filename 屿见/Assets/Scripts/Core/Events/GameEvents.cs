@@ -127,6 +127,38 @@ namespace Yujian.Core.Events
         }
     }
 
+    /// <summary>一座已建成的建筑被迁移到新位置（占格已改登记）。</summary>
+    public readonly struct BuildingMoved
+    {
+        public readonly BuildingData Data;
+        public readonly RectInt FromRect;
+        public readonly RectInt ToRect;
+        public readonly Vector3 Position;
+
+        public BuildingMoved(BuildingData data, RectInt fromRect, RectInt toRect, Vector3 position)
+        {
+            Data = data;
+            FromRect = fromRect;
+            ToRect = toRect;
+            Position = position;
+        }
+    }
+
+    /// <summary>一座建筑的等级发生变化（升级成功）。</summary>
+    public readonly struct BuildingUpgraded
+    {
+        public readonly BuildingData Data;
+        public readonly int PreviousLevel;
+        public readonly int NewLevel;
+
+        public BuildingUpgraded(BuildingData data, int previousLevel, int newLevel)
+        {
+            Data = data;
+            PreviousLevel = previousLevel;
+            NewLevel = newLevel;
+        }
+    }
+
     /// <summary>一块材料放入蓝图。</summary>
     public readonly struct MaterialPlaced
     {

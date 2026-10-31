@@ -23,8 +23,8 @@ namespace Yujian.Shop
         [SerializeField] private int price = 2;
 
         [Header("效果")]
-        [Tooltip("该原料为伤害倍率提供的加成，可正可负；0 表示无额外效果。" +
-                 "具体何时生效（购买入包时 / 建造消耗时）尚未拍板，阶段 2 只存不算")]
+        [Tooltip("该原料被建成消耗后为伤害倍率提供的加成，可正可负；0 表示无额外效果。" +
+                 "买进背包、拖进蓝图都不生效，只有建筑建成才计入（2026-10-29 已拍板 D1=B）")]
         [SerializeField] private float damageMultiplierBonus = 0.1f;
 
         [Header("颜色")]
@@ -118,7 +118,11 @@ namespace Yujian.Shop
             return false;
         }
 
-        /// <summary>效果的可读描述，供商店 UI 直接显示。例如 "伤害倍率 +0.1"。</summary>
+        /// <summary>
+        /// 效果的可读描述，供商店 UI 直接显示。
+        /// D1=B 起不再写「伤害倍率 +0.1」——那句话会被理解成购买即生效。
+        /// 加成改成建成后才计入，这里统一显示为「建材属性」。
+        /// </summary>
         public string EffectDescription
         {
             get
@@ -128,8 +132,7 @@ namespace Yujian.Shop
                     return "无额外效果";
                 }
 
-                string sign = damageMultiplierBonus > 0f ? "+" : "-";
-                return $"伤害倍率 {sign}{Mathf.Abs(damageMultiplierBonus):0.##}";
+                return "建材属性";
             }
         }
 

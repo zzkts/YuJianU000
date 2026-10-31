@@ -14,3 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Save.SaveCatalog
   materials:
   - {fileID: 11400000, guid: 9f1a5c65d730e014daa9213d786dea96, type: 2}
+  buildings:
+  - {fileID: 11400000, guid: 22fc90caaae44117b4f61129e1901377, type: 2}
+  - {fileID: 11400000, guid: fd3074d5927b429c98e75f48101130dd, type: 2}
+  - {fileID: 11400000, guid: 8f982c5722d94d829a89e6e9eea393eb, type: 2}
+  - {fileID: 11400000, guid: edf5bd059cb594140a3e9171684ddc03, type: 2}

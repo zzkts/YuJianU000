@@ -143,6 +143,11 @@ namespace Yujian.Save
 
         /// <summary>自下而上的楼层颜色（MaterialColor 的整数值）。</summary>
         public List<int> layerColors = new List<int>();
+
+        /// <summary>
+        /// 建筑等级（策划案 3.4）。旧存档没有该字段时为 0，读档按 1 级处理。
+        /// </summary>
+        public int level;
     }
 
     /// <summary>矿石生成进度：当前档位 + 每个档位已经抽过的条目。</summary>
@@ -151,6 +156,12 @@ namespace Yujian.Save
     {
         public int tier;
         public List<MiningTierSave> tiers = new List<MiningTierSave>();
+
+        /// <summary>
+        /// 照明工具等级（D17=A）：0 未拥有、1 火把、2 手电。
+        /// 旧存档没有该字段时保持 0，等价于未购买。
+        /// </summary>
+        public int lightToolLevel;
     }
 
     /// <summary>单个矿石档位的抽取记录。entryIds 对应 OreEntry 的稳定 ID。</summary>

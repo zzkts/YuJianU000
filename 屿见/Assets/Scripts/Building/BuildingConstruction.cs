@@ -9,6 +9,7 @@ namespace Yujian.Building
 {
     /// <summary>
     /// 阶段 4 的建造结算：把材料放进蓝图、撤回、确认建造。
+    /// 2026-10-26 起，撤回与建成由蓝图旁的 BuildingBlueprintActionUI 按钮调用本类。
     ///
     /// 职责边界：
     ///   · 记住「蓝图里已经放了哪几块材料」，维护可撤回的顺序（后进先出）；

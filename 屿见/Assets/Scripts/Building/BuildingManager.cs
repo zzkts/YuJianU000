@@ -12,10 +12,10 @@ namespace Yujian.Building
     /// </summary>
     public enum BuildingPhase
     {
-        /// <summary>蓝图跟着鼠标走，等玩家点击地面落位。阶段 3 的行为。</summary>
+        /// <summary>蓝图跟着指针走，等玩家点蓝图右侧的 √ 落位。</summary>
         Placing = 0,
 
-        /// <summary>蓝图已落位冻结，等玩家放入材料、再确认建造。阶段 4 新增。</summary>
+        /// <summary>蓝图已落位冻结，等玩家放入材料、再点 √ 建成。阶段 4 新增。</summary>
         Filling = 1,
     }
 
@@ -28,15 +28,16 @@ namespace Yujian.Building
     ///
     /// 不做坐标换算与重叠检测（BuildingPlacement 负责），不决定该放哪几块料（BuildingConstruction 负责）。
     ///
-    /// 阶段 4 的流程：SelectBuilding（蓝图跟鼠标）→ AnchorBlueprint（落位冻结）→
-    /// BuildingConstruction 往蓝图里放材料 → BuildAtAnchor（生成实体建筑）。
+    /// 阶段 4 的流程：SelectBuilding（按住左键拖动蓝图）→ 蓝图旁的 √ 调 AnchorBlueprint（落位冻结）→
+    /// BuildingConstruction 往蓝图里放材料 → 材料齐后 √ 调 BuildAtAnchor（生成实体建筑）。
     /// "点地面"不再是"立刻建出来"，中间多了填料这一步，这是阶段 4 与阶段 3 最大的区别。
+    /// 2026-10-26 起，落位与建成都走 BuildingBlueprintActionUI 的按钮，不再复用 Player/Attack。
     /// </summary>
     public class BuildingManager : MonoBehaviour
     {
         [Header("依赖")]
-        [Tooltip("挖矿输入。放置蓝图期间会被临时禁用，" +
-                 "否则同一次左键点击会同时触发「放置建筑」和「挖矿」")]
+        [Tooltip("挖矿输入。蓝图在场期间会被临时禁用，" +
+                 "避免玩家在建筑区点击时误挖矿石")]
         [SerializeField] private MiningInput miningInput;
 
         [Tooltip("建筑网格。落位时记录占地矩形，建成时登记占用，移除时释放。留空会报错")]
@@ -242,7 +243,7 @@ namespace Yujian.Building
                           $"占地 {data.FootprintCells.x}×{data.FootprintCells.y} 格" +
                           $"（世界尺寸 {worldFootprint.x}×{worldFootprint.y}），蓝图出现在 {defaultSpawnPosition}。" +
                           $"所需材料 {data.GetRequirementText()}。" +
-                          "移动鼠标调整位置，点击地面落位，然后在材料面板里把材料拖到蓝图上。");
+                          "按住左键拖动蓝图到目标位置，松开后点蓝图右侧的 √ 落位，再把材料拖到蓝图上。");
             }
         }
 
@@ -347,7 +348,7 @@ namespace Yujian.Building
             {
                 Debug.Log($"[BuildingManager] 蓝图已落位在 {snappedCenter}，占地格子 {footprintRect}，" +
                           $"所需材料 {selectedBuilding.GetRequirementText()}。" +
-                          "现在把材料拖到蓝图上，凑齐后点「确认建造」。");
+                          "现在把材料拖到蓝图上，凑齐后点蓝图右侧的 √ 建成。");
             }
 
             EventBus.Publish(new BlueprintAnchored(snappedCenter, footprintRect));
@@ -371,7 +372,7 @@ namespace Yujian.Building
 
             if (phase != BuildingPhase.Filling || !hasAnchor)
             {
-                Debug.LogWarning("[BuildingManager] 蓝图还没有落位，不能建造。请先点击地面把蓝图放下。", this);
+                Debug.LogWarning("[BuildingManager] 蓝图还没有落位，不能建造。请先点蓝图右侧的 √ 把蓝图放下。", this);
                 return false;
             }
 
@@ -420,7 +421,7 @@ namespace Yujian.Building
             placedBuildings.Add(instance);
 
             ApplyLayerColors(instance, layerColors);
-            AttachPlacedBuildingInfo(instance, data, anchoredFootprintRect, layerColors);
+            AttachPlacedBuildingInfo(instance, data, anchoredFootprintRect, layerColors, 1);
 
             if (instance.GetComponentInChildren<Collider>() == null)
             {
@@ -461,9 +462,11 @@ namespace Yujian.Building
         /// <param name="data">建筑静态数据。</param>
         /// <param name="rect">存档里的占地格子矩形。</param>
         /// <param name="layerColors">自下而上的楼层颜色。</param>
+        /// <param name="level">存档里的建筑等级，旧存档传 0 或 1 都按 1 级处理。</param>
         /// <param name="error">失败原因，供存档参与者写日志。</param>
         public bool RestoreBuilding(
-            BuildingData data, RectInt rect, IReadOnlyList<MaterialColor> layerColors, out string error)
+            BuildingData data, RectInt rect, IReadOnlyList<MaterialColor> layerColors,
+            int level, out string error)
         {
             error = null;
 
@@ -525,7 +528,7 @@ namespace Yujian.Building
 
             placedBuildings.Add(instance);
             ApplyLayerColors(instance, layerColors);
-            AttachPlacedBuildingInfo(instance, data, rect, layerColors);
+            AttachPlacedBuildingInfo(instance, data, rect, layerColors, level);
 
             if (instance.GetComponentInChildren<Collider>() == null)
             {
@@ -586,9 +589,10 @@ namespace Yujian.Building
             return removed;
         }
 
-        /// <summary>把「属于哪座建筑、占哪几格、每层什么颜色」写到实例上，供存档参与者读取。</summary>
+        /// <summary>把「属于哪座建筑、占哪几格、每层什么颜色、几级」写到实例上，供存档与升级读取。</summary>
         private static void AttachPlacedBuildingInfo(
-            GameObject instance, BuildingData data, RectInt rect, IReadOnlyList<MaterialColor> layerColors)
+            GameObject instance, BuildingData data, RectInt rect,
+            IReadOnlyList<MaterialColor> layerColors, int level)
         {
             PlacedBuildingInfo info = instance.GetComponent<PlacedBuildingInfo>();
 
@@ -597,7 +601,97 @@ namespace Yujian.Building
                 info = instance.AddComponent<PlacedBuildingInfo>();
             }
 
-            info.Initialize(data, rect, layerColors);
+            info.Initialize(data, rect, layerColors, level);
+        }
+
+        /// <summary>
+        /// 把一座已建成的建筑迁移到新位置（策划案 3.3）。
+        ///
+        /// 顺序：校验新占格（把自己的旧占格排除）→ 释放旧占格 → 登记新占格 →
+        /// 更新实例信息与 transform → 广播 <see cref="BuildingMoved"/>。
+        /// 任何一步失败都保持建筑在原位、占格不变。
+        /// </summary>
+        /// <param name="building">已放置在列表里的建筑实例。</param>
+        /// <param name="snappedCenter">吸附后的新中心世界坐标。</param>
+        /// <param name="newRect">新的占地格子矩形。</param>
+        /// <param name="error">失败原因。</param>
+        /// <returns>是否迁移成功。</returns>
+        public bool TryMoveBuilding(
+            GameObject building, Vector3 snappedCenter, RectInt newRect, out string error)
+        {
+            error = null;
+
+            if (building == null)
+            {
+                error = "建筑为空。";
+                return false;
+            }
+
+            if (!placedBuildings.Contains(building))
+            {
+                error = $"「{building.name}」不在已放置建筑列表里。";
+                return false;
+            }
+
+            if (grid == null)
+            {
+                error = "BuildingGrid 未配置。";
+                return false;
+            }
+
+            PlacedBuildingInfo info = building.GetComponent<PlacedBuildingInfo>();
+
+            if (info == null || info.Data == null)
+            {
+                error = $"「{building.name}」上没有 PlacedBuildingInfo 或建筑数据为空。";
+                return false;
+            }
+
+            Vector2Int expectedCells = info.Data.FootprintCells;
+
+            if (newRect.width != expectedCells.x || newRect.height != expectedCells.y)
+            {
+                error = $"新占格 {newRect.width}×{newRect.height} 与「{info.Data.BuildingName}」" +
+                        $"配置的 {expectedCells.x}×{expectedCells.y} 不一致。";
+                return false;
+            }
+
+            int ownerId = building.GetInstanceID();
+
+            if (!grid.CanPlaceIgnoringOwner(newRect, ownerId, out GridPlacementFailure failure))
+            {
+                error = $"新位置不可放置：{failure.ToChineseName()}。";
+                return false;
+            }
+
+            RectInt previousRect = info.FootprintRect;
+
+            if (!grid.Release(ownerId))
+            {
+                Debug.LogWarning($"[BuildingManager] 建筑「{building.name}」没有网格占用记录，" +
+                                 "迁移时跳过释放步骤。", this);
+            }
+
+            if (!grid.Occupy(newRect, ownerId))
+            {
+                // 恢复旧占格，别让建筑变成"看得见但网格里没记录"
+                grid.Occupy(previousRect, ownerId);
+                error = $"新占格 {newRect} 登记失败，已回滚到原位置。";
+                return false;
+            }
+
+            info.SetFootprintRect(newRect);
+            building.transform.position = snappedCenter;
+
+            if (logBuildingFlow)
+            {
+                Debug.Log($"[BuildingManager] 已迁移「{building.name}」：{previousRect} → {newRect}，" +
+                          $"新位置 {snappedCenter}。");
+            }
+
+            EventBus.Publish(new BuildingMoved(info.Data, previousRect, newRect, snappedCenter));
+
+            return true;
         }
 
         /// <summary>
@@ -767,15 +861,12 @@ namespace Yujian.Building
         }
 
         /// <summary>
-        /// 放置期间临时关掉挖矿输入。
+        /// 蓝图在场期间临时关掉挖矿输入。
         /// 用组件的 enabled 而不是去改 MiningInput 的代码：MiningInput 的 OnEnable/OnDisable
         /// 会自行订阅、退订 InputAction，禁用组件就等价于"它不再响应点击"，已有脚本零改动。
         ///
-        /// ⚠ 代价：MiningInput.OnDisable() 还会调用那个共享动作的 Disable()，而 InputAction
-        /// 的 Enable/Disable **不是引用计数**的（Enable() 内部就是 `if (enabled) return;`）。
-        /// 所以这一关会把 BuildingPlacement 对同一个 Player/Attack 动作的订阅一并关掉——
-        /// 由 BuildingPlacement.EnsureConfirmActionEnabled() 在 LateUpdate 里补回来。
-        /// 这是一处真实的耦合：改这里之前先看那个方法。
+        /// 2026-10-26 之后建筑落位不再复用 Player/Attack（改为蓝图旁的 √），
+        /// 因此这里禁用的就只是挖矿本身，不再有共享 InputAction 被连带关掉的问题。
         /// </summary>
         private void SetMiningSuppressed(bool suppress)
         {
@@ -809,11 +900,10 @@ namespace Yujian.Building
                 return;
             }
 
-            // 不在这里立刻恢复：本方法可能是从 Player/Attack 的一次 performed 回调里被调用的
-            // （BuildingPlacement 确认落位 → AnchorBlueprint → 这里）。当场重新启用会让 MiningInput
-            // 在同一次回调派发过程中重新订阅该动作，"同一次点击会不会再挖一次矿"取决于 Input System
-            // 内部的派发快照实现——这条我无法在本地实证，所以统一延到本帧末尾恢复，
-            // 让"确认放置的那一次点击"在时序上不可能同时触发挖矿。
+            // 不在这里立刻恢复：本方法通常是在 UI 点击回调里被调用的
+            // （蓝图旁的 √ → AnchorBlueprint → 这里）。当场重新启用会让 MiningInput
+            // 在同一次输入事件派发过程中重新订阅 Player/Attack，可能让这次点击又落成一次挖矿。
+            // 统一延到本帧末尾恢复，时序上就不可能"同一次点击既落位又挖矿"。
             miningSuppressed = false;
 
             // 只有“屏蔽时它本来是开着的”才需要由本类打开。

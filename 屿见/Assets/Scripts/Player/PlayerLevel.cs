@@ -31,6 +31,38 @@ namespace Yujian.Player
         /// <summary>当前玩家等级。Start 之前为 0。</summary>
         public int CurrentLevel => currentLevel;
 
+        /// <summary>当前场上已建成的建筑总数。</summary>
+        public int BuildingCount => buildingManager != null ? buildingManager.PlacedBuildings.Count : 0;
+
+        /// <summary>
+        /// 下一个等级所需的建筑总数（建筑进度 UI 的 N）。
+        /// 已满级或等级表未配置时返回 false。
+        /// </summary>
+        public bool TryGetNextLevel(out int nextBuildingCount, out int nextLevel)
+        {
+            nextBuildingCount = 0;
+            nextLevel = 0;
+
+            if (levelTable == null)
+            {
+                return false;
+            }
+
+            return levelTable.TryGetNextThreshold(BuildingCount, out nextBuildingCount, out nextLevel);
+        }
+
+        /// <summary>是否已到等级表最高级。等级表未配置时恒为 false。</summary>
+        public bool IsMaxLevel => levelTable != null && !TryGetNextLevel(out _, out _);
+
+        /// <summary>
+        /// 按指定建筑总数查等级，不改变当前状态。
+        /// 供进度 UI 判断「这次建造是否升级」用（拿当前建筑数 - 1 反查上一级）。
+        /// </summary>
+        public int GetLevelForBuildingCount(int buildingCount)
+        {
+            return levelTable != null ? levelTable.Evaluate(buildingCount) : 0;
+        }
+
         /// <summary>等级变化时广播（参数是**新**等级）。</summary>
         public event Action<int> OnLevelChanged;
 

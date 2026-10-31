@@ -13,7 +13,6 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class CritSetupWizard
     {
-        private const float DefaultChancePercent = 20f;
         private const float DefaultDamageMultiplier = 2f;
 
         [MenuItem("屿见/挖矿/配置暴击（阶段 10）", false, 335)]
@@ -37,17 +36,17 @@ namespace Yujian.EditorTools
                 DamageSystem system = systems[i];
                 Undo.RecordObject(system, "配置挖矿暴击");
 
-                // 旧场景里新增字段可能反序列化成 0 / 1，视为「还没配置」，补成默认值；
-                // 只要有一项被改过，就完全尊重手动配置。
-                if (system.CriticalChancePercent <= 0f && system.CriticalDamageMultiplier <= 1f)
+                // D3=A 起没有随机暴击概率，只保留暴击点伤害倍数。
+                // 旧场景里新增字段可能反序列化成 1，视为「还没配置」，补成默认值。
+                if (system.CriticalDamageMultiplier <= 1f)
                 {
-                    system.ConfigureCriticalHit(DefaultChancePercent, DefaultDamageMultiplier);
+                    system.ConfigureCriticalHit(DefaultDamageMultiplier);
                 }
 
                 EditorUtility.SetDirty(system);
 
-                Debug.Log($"[暴击] {system.name}：暴击概率 {system.CriticalChancePercent:0.#}%，" +
-                          $"暴击伤害 ×{system.CriticalDamageMultiplier:0.##}。", system);
+                Debug.Log($"[暴击] {system.name}：暴击点伤害 ×{system.CriticalDamageMultiplier:0.##}" +
+                          "（随机暴击已移除）。", system);
             }
 
             Undo.CollapseUndoOperations(undoGroup);

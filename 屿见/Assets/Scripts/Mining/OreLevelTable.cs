@@ -40,8 +40,53 @@ namespace Yujian.Mining
         [Tooltip("按等级配置矿石组。等级不必连续，但不要重复")]
         [SerializeField] private List<OreLevelDefinition> levels = new List<OreLevelDefinition>();
 
+        [Header("逐层成长（D7=A 几何曲线）")]
+        [Tooltip("矿石生命值每升一层的倍数。2.2 表示第 2 层是第 1 层的 2.2 倍，第 3 层是 4.84 倍。" +
+                 "矿石组里填的是第 1 层的基准值，生成时按等级乘上去")]
+        [SerializeField, Min(1f)] private float healthGrowthPerTier = 2.2f;
+
+        [Tooltip("矿石击碎奖励每升一层的倍数，规则同生命值")]
+        [SerializeField, Min(1f)] private float rewardGrowthPerTier = 2.2f;
+
         /// <summary>全部等级配置。</summary>
         public IReadOnlyList<OreLevelDefinition> Levels => levels;
+
+        /// <summary>生命值逐层成长倍数。</summary>
+        public float HealthGrowthPerTier => Mathf.Max(1f, healthGrowthPerTier);
+
+        /// <summary>奖励逐层成长倍数。</summary>
+        public float RewardGrowthPerTier => Mathf.Max(1f, rewardGrowthPerTier);
+
+        /// <summary>
+        /// 指定矿层相对第 1 层的生命值倍数。
+        /// 第 1 层返回 1，第 2 层返回 2.2，第 3 层返回 4.84……
+        /// </summary>
+        public float GetHealthMultiplier(int tier)
+        {
+            int safeTier = Mathf.Max(1, tier);
+            return Mathf.Pow(HealthGrowthPerTier, safeTier - 1);
+        }
+
+        /// <summary>
+        /// 把矿石组里填的「第 1 层基准奖励」换算成指定矿层的实际奖励（四舍五入）。
+        /// </summary>
+        public int GetRewardAtTier(int baseReward, int tier)
+        {
+            if (baseReward <= 0)
+            {
+                return Mathf.Max(0, baseReward);
+            }
+
+            double scaled = baseReward * (double)Mathf.Pow(RewardGrowthPerTier, Mathf.Max(1, tier) - 1);
+
+            if (scaled >= int.MaxValue)
+            {
+                Debug.LogWarning($"[OreLevelTable] 第 {tier} 层的奖励超出 int 上限，已按 {int.MaxValue} 处理。", this);
+                return int.MaxValue;
+            }
+
+            return Mathf.RoundToInt((float)scaled);
+        }
 
         /// <summary>表里配置过的最高等级；空表返回 0。</summary>
         public int MaxLevel
