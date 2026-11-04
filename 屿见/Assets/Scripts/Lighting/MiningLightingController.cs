@@ -71,6 +71,7 @@ namespace Yujian.Lighting
 
         private void Awake()
         {
+            ResolveReferences();
             noiseSeed = Random.value * 100f;
 
             // 矿灯与灯笼都放在本物体下面，自动收集，不需要逐个拖引用
@@ -264,7 +265,35 @@ namespace Yujian.Lighting
 
             warnedMissingSetup = true;
             Debug.LogWarning("[MiningLighting] GameAreaController 未配置，矿洞照明不会切换。" +
-                             "请运行菜单「屿见/挖矿/配置矿洞照明（阶段 12）」。", this);
+                             "请运行菜单「屿见/挖矿/一键修复矿洞入口与照明」。", this);
+        }
+
+        private void ResolveReferences()
+        {
+            if (areaController == null)
+            {
+                areaController = FindFirstObjectByType<GameAreaController>(FindObjectsInactive.Include);
+            }
+
+            if (viewCamera == null)
+            {
+                viewCamera = Camera.main;
+            }
+
+            if (sunLight == null)
+            {
+                Light[] sceneLights = FindObjectsByType<Light>(
+                    FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+                for (int i = 0; i < sceneLights.Length; i++)
+                {
+                    if (sceneLights[i] != null && sceneLights[i].type == LightType.Directional)
+                    {
+                        sunLight = sceneLights[i];
+                        break;
+                    }
+                }
+            }
         }
 
         /// <summary>编辑器向导调用，一次接好区域控制器、太阳和相机。</summary>

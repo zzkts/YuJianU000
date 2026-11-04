@@ -42,8 +42,14 @@ namespace Yujian.Mining
         /// </summary>
         private InputAction clickAction;
 
+        private void Awake()
+        {
+            ResolveDependencies();
+        }
+
         private void OnEnable()
         {
+            ResolveDependencies();
             clickAction = new InputAction("MiningEntranceClick", InputActionType.Button, "<Pointer>/press");
             clickAction.performed += HandleClick;
             clickAction.Enable();
@@ -64,6 +70,8 @@ namespace Yujian.Mining
 
         private void HandleClick(InputAction.CallbackContext context)
         {
+            ResolveDependencies();
+
             if (areaController == null || viewCamera == null)
             {
                 WarnMissingSetupOnce();
@@ -119,6 +127,19 @@ namespace Yujian.Mining
             areaController = controller;
         }
 
+        private void ResolveDependencies()
+        {
+            if (areaController == null)
+            {
+                areaController = FindFirstObjectByType<GameAreaController>(FindObjectsInactive.Include);
+            }
+
+            if (viewCamera == null)
+            {
+                viewCamera = Camera.main;
+            }
+        }
+
         private void WarnMissingSetupOnce()
         {
             if (warnedAboutMissingSetup)
@@ -128,7 +149,7 @@ namespace Yujian.Mining
 
             warnedAboutMissingSetup = true;
             Debug.LogWarning("[MiningEntranceRouter] 相机 / 区域控制器未接好，" +
-                             "矿山点了不会进矿区。请运行菜单「屿见/挖矿/配置矿洞入口（阶段 11）」。", this);
+                             "矿山点了不会进矿区。请运行菜单「屿见/挖矿/一键修复矿洞入口与照明」。", this);
         }
     }
 }

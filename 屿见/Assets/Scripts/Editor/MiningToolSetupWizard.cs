@@ -3,6 +3,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using Yujian.Mining;
 using Yujian.Player;
+using Yujian.Save;
 
 namespace Yujian.EditorTools
 {
@@ -75,6 +76,7 @@ namespace Yujian.EditorTools
             }
 
             MiningToolUpgradeSetupWizard.ConfigureCard(false);
+            EnsureSaveParticipant(progress);
 
             EditorSceneManager.MarkSceneDirty(playerObject.scene);
             EditorSceneManager.SaveOpenScenes();
@@ -83,6 +85,62 @@ namespace Yujian.EditorTools
 
             Debug.Log("[挖矿工具] 配置完成：石头 mine_01，1 级攻击 1，每级 +1，每级 15 金币。\n" +
                       "商店面板已加入正式的「升级」按钮；进入 Play 后打开底部「商店」即可使用。", progress);
+        }
+
+        private static void EnsureSaveParticipant(MiningToolProgress progress)
+        {
+            SaveSystem saveSystem = Object.FindFirstObjectByType<SaveSystem>(FindObjectsInactive.Include);
+
+            if (saveSystem == null)
+            {
+                Debug.LogWarning("[挖矿工具] 场景里没有 SaveSystem，挖矿工具等级暂时不会写档。" +
+                                 "运行一次「屿见/通用模块/配置存档系统」后重跑本向导即可。");
+                return;
+            }
+
+            GameObject host = saveSystem.gameObject;
+            MiningToolProgressSaveParticipant participant =
+                host.GetComponent<MiningToolProgressSaveParticipant>();
+
+            if (participant == null)
+            {
+                participant = Undo.AddComponent<MiningToolProgressSaveParticipant>(host);
+            }
+
+            SerializedObject serializedParticipant = new SerializedObject(participant);
+            SerializedProperty progressProperty = serializedParticipant.FindProperty("toolProgress");
+
+            if (progressProperty != null)
+            {
+                progressProperty.objectReferenceValue = progress;
+                serializedParticipant.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            SerializedObject serializedSave = new SerializedObject(saveSystem);
+            SerializedProperty list = serializedSave.FindProperty("participants");
+
+            if (list == null)
+            {
+                Debug.LogError("[挖矿工具] SaveSystem 上找不到 participants 字段。", saveSystem);
+                return;
+            }
+
+            for (int i = 0; i < list.arraySize; i++)
+            {
+                if (list.GetArrayElementAtIndex(i).objectReferenceValue == participant)
+                {
+                    return;
+                }
+            }
+
+            int index = list.arraySize;
+            list.InsertArrayElementAtIndex(index);
+            list.GetArrayElementAtIndex(index).objectReferenceValue = participant;
+            serializedSave.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(saveSystem);
+            EditorUtility.SetDirty(participant);
+
+            Debug.Log("[挖矿工具] 已把 MiningToolProgressSaveParticipant 加入存档执行列表。");
         }
 
         private static MiningToolData LoadOrCreate(out bool created)

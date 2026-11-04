@@ -80,14 +80,32 @@ namespace Yujian.EditorTools
                 Debug.Log("[矿洞入口] 检测到入口仍在矿石旁，已移动到岛上的独立位置。", root);
             }
 
-            if (root.GetComponent<BoxCollider>() == null)
+            if (!root.activeSelf)
             {
-                BoxCollider box = Undo.AddComponent<BoxCollider>(root);
-                box.center = new Vector3(0f, 1.9f, 1.2f);
-                box.size = new Vector3(8.4f, 4.6f, 5.2f);
+                Undo.RecordObject(root, "启用矿洞入口");
+                root.SetActive(true);
+            }
+
+            if (!entrance.enabled)
+            {
+                Undo.RecordObject(entrance, "启用矿洞入口组件");
+                entrance.enabled = true;
             }
 
             BuildPlaceholderModel(root.transform);
+
+            BoxCollider box = root.GetComponent<BoxCollider>();
+
+            if (box == null)
+            {
+                box = Undo.AddComponent<BoxCollider>(root);
+            }
+            else
+            {
+                Undo.RecordObject(box, "适配矿洞入口碰撞框");
+            }
+
+            entrance.RebuildClickCollider();
             entrance.ConfigureForSetup(areaController);
             EditorUtility.SetDirty(entrance);
 
@@ -152,7 +170,7 @@ namespace Yujian.EditorTools
             Debug.Log((created ? "[矿洞入口] 已创建「" : "[矿洞入口] 已更新「") + RootName +
                       "」，位置 " + root.transform.position +
                       "。观察模式下点击矿山即可进入挖矿区。" +
-                      "美术换模型时，替换 Model 下的占位物体，然后右键 MiningEntrance 组件执行" +
+                      "美术换模型时，替换 Model 下的占位物体，然后重新运行本菜单或右键组件执行" +
                       "「按子物体重新适配碰撞框」。", root);
         }
 
@@ -207,7 +225,8 @@ namespace Yujian.EditorTools
 
             if (model.childCount > 0)
             {
-                // 已经有模型了（占位或美术版），不覆盖
+                // 已经有模型了（占位或美术版），不覆盖，只恢复可见状态
+                EnsureModelVisible(model);
                 return;
             }
 
@@ -246,6 +265,27 @@ namespace Yujian.EditorTools
             AddPrimitive(model, PrimitiveType.Cube, "Marker",
                 new Vector3(0f, 4.9f, 0.4f), new Vector3(0.55f, 0.55f, 0.55f),
                 Quaternion.Euler(45f, 45f, 0f), marker);
+            EnsureModelVisible(model);
+        }
+
+        private static void EnsureModelVisible(Transform model)
+        {
+            if (!model.gameObject.activeSelf)
+            {
+                Undo.RecordObject(model.gameObject, "显示矿洞入口模型");
+                model.gameObject.SetActive(true);
+            }
+
+            Renderer[] renderers = model.GetComponentsInChildren<Renderer>(true);
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null && !renderers[i].enabled)
+                {
+                    Undo.RecordObject(renderers[i], "显示矿洞入口模型");
+                    renderers[i].enabled = true;
+                }
+            }
         }
 
         private static void AddPrimitive(Transform parent, PrimitiveType type, string objectName,

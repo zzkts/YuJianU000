@@ -36,6 +36,57 @@ namespace Yujian.Mining
 
         public int NextUpgradeCost => toolData != null ? toolData.GetUpgradeCost(CurrentLevel) : 0;
 
+        /// <summary>工具显示名（石头 / 后续的镐子等）。</summary>
+        public string ToolName => toolData != null ? toolData.DisplayName : "石头";
+
+        /// <summary>当前等级的攻击力，供界面直接显示。</summary>
+        public float NextAttack => toolData != null ? toolData.GetAttackAtLevel(CurrentLevel + 1) : CurrentAttack;
+
+        /// <summary>从当前等级连续升 count 级需要的总金币。</summary>
+        public int GetUpgradeCostForLevels(int count)
+        {
+            if (toolData == null || count <= 0)
+            {
+                return 0;
+            }
+
+            int total = 0;
+
+            for (int i = 0; i < count; i++)
+            {
+                total += toolData.GetUpgradeCost(CurrentLevel + i);
+            }
+
+            return total;
+        }
+
+        /// <summary>用当前金币一次性能升多少级（Max 模式用）。</summary>
+        public int GetAffordableUpgradeCount(int money)
+        {
+            if (toolData == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            int spent = 0;
+
+            while (count < 9999)
+            {
+                int cost = toolData.GetUpgradeCost(CurrentLevel + count);
+
+                if (spent + cost > money)
+                {
+                    break;
+                }
+
+                spent += cost;
+                count++;
+            }
+
+            return count;
+        }
+
         /// <summary>等级或攻击力变化时触发，后续 UI 订阅它刷新显示。</summary>
         public event Action<MiningToolProgress> OnToolChanged;
 
@@ -64,8 +115,34 @@ namespace Yujian.Mining
             currentLevel = startingLevel;
         }
 
+        /// <summary>
+        /// 读档恢复用：直接设置等级，不扣金币。
+        /// 旧存档没有该字段时由调用方按 1 级处理。
+        /// </summary>
+        public void SetLevel(int level)
+        {
+            int restored = Mathf.Max(1, level);
+
+            if (restored == currentLevel)
+            {
+                return;
+            }
+
+            currentLevel = restored;
+            OnToolChanged?.Invoke(this);
+        }
+
         /// <summary>尝试升一级。金币不足或数据缺失时返回 false，不改变等级。</summary>
         public bool TryUpgrade()
+        {
+            return TryUpgrade(1);
+        }
+
+        /// <summary>
+        /// 连续升 count 级（x1 / Max 共用）。金币按实际级数一次性扣，
+        /// 金币不足或数据缺失时返回 false，不改变等级。
+        /// </summary>
+        public bool TryUpgrade(int count)
         {
             if (toolData == null)
             {
@@ -79,18 +156,23 @@ namespace Yujian.Mining
                 return false;
             }
 
-            int cost = NextUpgradeCost;
+            if (count <= 0)
+            {
+                return false;
+            }
+
+            int cost = GetUpgradeCostForLevels(count);
             if (cost > 0 && !playerCurrency.TrySpendMoney(cost))
             {
                 if (logUpgradeFlow)
                 {
-                    Debug.Log($"[MiningToolProgress] 金币不足，升级「{toolData.DisplayName}」需要 {cost}，当前 {playerCurrency.CurrentMoney}。", this);
+                    Debug.Log($"[MiningToolProgress] 金币不足，升级 {count} 级需要 {cost}，当前 {playerCurrency.CurrentMoney}。", this);
                 }
 
                 return false;
             }
 
-            currentLevel++;
+            currentLevel += count;
             OnToolChanged?.Invoke(this);
 
             if (logUpgradeFlow)

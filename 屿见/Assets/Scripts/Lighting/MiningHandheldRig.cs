@@ -1,6 +1,7 @@
 using UnityEngine;
 using Yujian.Core;
 using Yujian.Core.Events;
+using Yujian.Mining;
 
 namespace Yujian.Lighting
 {
@@ -29,6 +30,9 @@ namespace Yujian.Lighting
         [Tooltip("左手提灯的根节点。位置由本类按屏幕比例摆放")]
         [SerializeField] private Transform lanternPivot;
 
+        [Tooltip("小型手电的根节点。照明等级达到 2 后替换提灯")]
+        [SerializeField] private Transform flashlightPivot;
+
         [Tooltip("右手镐的根节点。点矿石时绕它做挥动")]
         [SerializeField] private Transform toolPivot;
 
@@ -37,6 +41,15 @@ namespace Yujian.Lighting
 
         [Tooltip("提灯发光核心，会随火光轻微呼吸")]
         [SerializeField] private Transform lanternGlow;
+
+        [Tooltip("小型手电里的点光")]
+        [SerializeField] private Light flashlightLight;
+
+        [Tooltip("小型手电镜片，会轻微呼吸")]
+        [SerializeField] private Transform flashlightGlow;
+
+        [Tooltip("照明工具。未拥有照明工具时左手不显示提灯；留空会自动查找")]
+        [SerializeField] private MiningLightTool lightTool;
 
         [Header("屏幕位置")]
         [Tooltip("提灯在画面中的位置。X / Y 是相对半屏的比例，Z 是离相机的距离（米）")]
@@ -86,9 +99,12 @@ namespace Yujian.Lighting
 
         private Renderer[] propRenderers;
         private Quaternion lanternBaseRotation;
+        private Quaternion flashlightBaseRotation;
         private Quaternion toolBaseRotation;
         private Vector3 glowBaseScale;
+        private Vector3 flashlightGlowBaseScale;
         private float baseLightIntensity;
+        private float flashlightBaseIntensity;
 
         private float blend;
         private float targetBlend;
@@ -101,6 +117,7 @@ namespace Yujian.Lighting
 
         private void Awake()
         {
+            ResolveReferences();
             noiseSeed = Random.value * 100f;
 
             if (viewCamera == null)
@@ -111,6 +128,11 @@ namespace Yujian.Lighting
             if (lanternPivot != null)
             {
                 lanternBaseRotation = lanternPivot.localRotation;
+            }
+
+            if (flashlightPivot != null)
+            {
+                flashlightBaseRotation = flashlightPivot.localRotation;
             }
 
             if (toolPivot != null)
@@ -130,17 +152,35 @@ namespace Yujian.Lighting
                 handLight.enabled = false;
             }
 
+            if (flashlightGlow != null)
+            {
+                flashlightGlowBaseScale = flashlightGlow.localScale;
+            }
+
+            if (flashlightLight != null)
+            {
+                flashlightBaseIntensity = flashlightLight.intensity;
+                flashlightLight.intensity = 0f;
+                flashlightLight.enabled = false;
+            }
+
             propRenderers = GetComponentsInChildren<Renderer>(true);
 
             // 先假设可见，再关一次：SetPropsVisible 内部有“状态没变就跳过”的短路，
             // 若从默认 false 直接调 false，场景里的模型会一直亮着。
             propsVisible = true;
             SetPropsVisible(false);
+            ApplyLightToolPresence();
         }
 
         private void OnEnable()
         {
             EventBus.Subscribe<OreHit>(HandleOreHit);
+
+            if (lightTool != null)
+            {
+                lightTool.OnToolChanged += HandleLightToolChanged;
+            }
 
             if (areaController != null)
             {
@@ -162,6 +202,7 @@ namespace Yujian.Lighting
             }
 
             LayoutProps();
+            ApplyLightToolPresence();
 
             if (areaController == null)
             {
@@ -185,6 +226,11 @@ namespace Yujian.Lighting
         {
             EventBus.Unsubscribe<OreHit>(HandleOreHit);
 
+            if (lightTool != null)
+            {
+                lightTool.OnToolChanged -= HandleLightToolChanged;
+            }
+
             if (areaController != null)
             {
                 areaController.OnAreaChanged -= HandleAreaChanged;
@@ -198,6 +244,11 @@ namespace Yujian.Lighting
             if (lanternPivot != null)
             {
                 lanternPivot.localRotation = lanternBaseRotation;
+            }
+
+            if (flashlightPivot != null)
+            {
+                flashlightPivot.localRotation = flashlightBaseRotation;
             }
 
             if (toolPivot != null)
@@ -293,6 +344,15 @@ namespace Yujian.Lighting
                 lanternPivot.localRotation = lanternBaseRotation *
                     Quaternion.Euler(0f, 0f, sway - swingArc * 2.5f);
             }
+
+            if (flashlightPivot != null)
+            {
+                float sway = (Mathf.PerlinNoise(noiseSeed + 8.4f, Time.time * idleSwaySpeed) - 0.5f)
+                    * 1.2f * idleSwayDegrees;
+
+                flashlightPivot.localRotation = flashlightBaseRotation *
+                    Quaternion.Euler(0f, sway, sway * 0.65f - swingArc * 2.5f);
+            }
         }
 
         private void ApplyBlend(float value)
@@ -300,33 +360,94 @@ namespace Yujian.Lighting
             float clamped = Mathf.Clamp01(value);
             SetPropsVisible(clamped >= showThreshold);
 
-            if (handLight == null)
+            int level = lightTool != null ? lightTool.Level : 1;
+            ApplyHandHeldLight(handLight, lanternGlow, baseLightIntensity, glowBaseScale,
+                level == 1, clamped, true);
+            ApplyHandHeldLight(flashlightLight, flashlightGlow, flashlightBaseIntensity,
+                flashlightGlowBaseScale, level >= 2, clamped, false);
+        }
+
+        private void ApplyHandHeldLight(Light light, Transform glow, float baseIntensity,
+            Vector3 baseGlowScale, bool active, float clamped, bool useFireFlicker)
+        {
+            if (light == null)
             {
                 return;
             }
 
-            bool lightOn = clamped > 0.001f;
+            bool lightOn = active && clamped > 0.001f;
 
-            if (handLight.enabled != lightOn)
+            if (light.enabled != lightOn)
             {
-                handLight.enabled = lightOn;
+                light.enabled = lightOn;
             }
 
             if (!lightOn)
             {
-                handLight.intensity = 0f;
+                light.intensity = 0f;
                 return;
             }
 
-            float flicker = 1f + (Mathf.PerlinNoise(noiseSeed + 11.7f, Time.time * flickerSpeed) - 0.5f)
-                * 2f * flickerAmount;
-            handLight.intensity = baseLightIntensity * clamped * flicker;
+            float flicker = 1f;
 
-            if (lanternGlow != null)
+            if (useFireFlicker)
             {
-                float breathe = 1f + (Mathf.PerlinNoise(noiseSeed + 5.1f, Time.time * flickerSpeed * 0.6f)
-                    - 0.5f) * 0.12f;
-                lanternGlow.localScale = glowBaseScale * (breathe * Mathf.Lerp(0.85f, 1f, clamped));
+                flicker = 1f + (Mathf.PerlinNoise(noiseSeed + 11.7f, Time.time * flickerSpeed) - 0.5f)
+                    * 2f * flickerAmount;
+            }
+            else
+            {
+                flicker = 1f + (Mathf.PerlinNoise(noiseSeed + 17.3f, Time.time * flickerSpeed * 0.35f) - 0.5f)
+                    * 0.04f;
+            }
+
+            light.intensity = baseIntensity * clamped * flicker;
+
+            if (glow == null)
+            {
+                return;
+            }
+
+            float breatheAmount = useFireFlicker ? 0.12f : 0.06f;
+            float breathe = 1f + (Mathf.PerlinNoise(noiseSeed + 5.1f, Time.time * flickerSpeed * 0.6f)
+                - 0.5f) * breatheAmount;
+            glow.localScale = baseGlowScale * (breathe * Mathf.Lerp(0.86f, 1f, clamped));
+        }
+
+        private void HandleLightToolChanged(MiningLightTool _)
+        {
+            ApplyLightToolPresence();
+        }
+
+        private void ApplyLightToolPresence()
+        {
+            int level = lightTool != null ? lightTool.Level : 1;
+            bool showLantern = level == 1;
+            bool showFlashlight = level >= 2;
+
+            SetActiveIfNeeded(lanternPivot, showLantern);
+            SetActiveIfNeeded(flashlightPivot, showFlashlight);
+
+            if (!showLantern && handLight != null)
+            {
+                handLight.enabled = false;
+                handLight.intensity = 0f;
+            }
+
+            if (!showFlashlight && flashlightLight != null)
+            {
+                flashlightLight.enabled = false;
+                flashlightLight.intensity = 0f;
+            }
+
+            ApplyBlend(blend);
+        }
+
+        private static void SetActiveIfNeeded(Transform target, bool active)
+        {
+            if (target != null && target.gameObject.activeSelf != active)
+            {
+                target.gameObject.SetActive(active);
             }
         }
 
@@ -374,6 +495,15 @@ namespace Yujian.Lighting
                     lanternAnchor.x * halfWidth, lanternAnchor.y * halfHeight, lanternDistance);
             }
 
+            if (flashlightPivot != null)
+            {
+                float halfHeight = Mathf.Tan(viewCamera.fieldOfView * 0.5f * Mathf.Deg2Rad)
+                    * lanternDistance;
+                float halfWidth = halfHeight * aspect;
+                flashlightPivot.localPosition = new Vector3(
+                    lanternAnchor.x * halfWidth, lanternAnchor.y * halfHeight, lanternDistance);
+            }
+
             if (toolPivot != null)
             {
                 float halfHeight = Mathf.Tan(viewCamera.fieldOfView * 0.5f * Mathf.Deg2Rad)
@@ -393,7 +523,95 @@ namespace Yujian.Lighting
 
             warnedMissingSetup = true;
             Debug.LogWarning("[MiningHandheld] GameAreaController 未配置，手持提灯不会随区域显隐。" +
-                             "请运行菜单「屿见/挖矿/配置手持提灯与挖矿工具（阶段 13）」。", this);
+                             "请运行菜单「屿见/挖矿/一键修复矿洞入口与照明」。", this);
+        }
+
+        private void ResolveReferences()
+        {
+            if (areaController == null)
+            {
+                areaController = FindFirstObjectByType<GameAreaController>(FindObjectsInactive.Include);
+            }
+
+            if (viewCamera == null)
+            {
+                viewCamera = Camera.main;
+            }
+
+            if (lightTool == null)
+            {
+                lightTool = FindFirstObjectByType<MiningLightTool>(FindObjectsInactive.Include);
+            }
+
+            if (lanternPivot == null)
+            {
+                lanternPivot = transform.Find("LanternPivot");
+            }
+
+            if (flashlightPivot == null)
+            {
+                flashlightPivot = transform.Find("FlashlightPivot");
+            }
+
+            if (toolPivot == null)
+            {
+                toolPivot = transform.Find("ToolPivot");
+            }
+
+            if (lanternPivot != null)
+            {
+                if (handLight == null)
+                {
+                    handLight = lanternPivot.Find("Lantern Light")?.GetComponent<Light>();
+                }
+
+                if (lanternGlow == null)
+                {
+                    lanternGlow = lanternPivot.Find("Glow");
+                }
+            }
+
+            if (flashlightPivot != null)
+            {
+                if (flashlightLight == null)
+                {
+                    flashlightLight = flashlightPivot.Find("Flashlight Light")?.GetComponent<Light>();
+                }
+
+                if (flashlightGlow == null)
+                {
+                    flashlightGlow = flashlightPivot.Find("Glow");
+                }
+            }
+        }
+
+        /// <summary>编辑器向导调用：接上照明工具，未拥有时隐藏提灯。</summary>
+        public void ConfigureLightTool(MiningLightTool tool)
+        {
+            if (lightTool != null)
+            {
+                lightTool.OnToolChanged -= HandleLightToolChanged;
+            }
+
+            lightTool = tool;
+
+            if (isActiveAndEnabled && lightTool != null)
+            {
+                lightTool.OnToolChanged += HandleLightToolChanged;
+            }
+
+            if (Application.isPlaying)
+            {
+                ApplyLightToolPresence();
+            }
+        }
+
+        /// <summary>编辑器向导调用：接好小型手电的模型、灯光和镜片。</summary>
+        public void ConfigureFlashlightForSetup(Transform pivot, Light light, Transform glow)
+        {
+            flashlightPivot = pivot;
+            flashlightLight = light;
+            flashlightGlow = glow;
         }
 
         /// <summary>编辑器向导调用：一次性接好区域、相机和道具引用。</summary>

@@ -49,6 +49,9 @@ namespace Yujian.EditorTools
             }
 
             system.ConfigureForSetup(ore, lightTool);
+            system.ConfigureVisualSize(0.16f);
+            damageSystem.ConfigureLightTool(lightTool);
+            EditorUtility.SetDirty(damageSystem);
             EditorUtility.SetDirty(system);
 
             bool inputWired = false;

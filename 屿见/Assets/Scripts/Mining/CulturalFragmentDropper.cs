@@ -40,6 +40,9 @@ namespace Yujian.Mining
         public static string LastUnlockedTitle { get; private set; }
         public static string LastUnlockedText { get; private set; }
 
+        /// <summary>已解锁的碎片下标，供存档只读遍历。</summary>
+        public static IReadOnlyList<int> UnlockedIndices => unlocked;
+
         private static readonly List<int> unlocked = new List<int>();
 
         // 鼓浪屿冷知识。文案同学可以直接改这里，不影响其他代码。
@@ -116,6 +119,33 @@ namespace Yujian.Mining
             unlocked.Clear();
             LastUnlockedTitle = null;
             LastUnlockedText = null;
+        }
+
+        /// <summary>
+        /// 读档恢复用：覆盖累计数量与已解锁列表。
+        /// 非法下标会被跳过，不会让旧存档或手改文件把图鉴读坏。
+        /// </summary>
+        public static void RestoreProgress(int totalCollected, IReadOnlyList<int> unlockedIndices)
+        {
+            TotalCollected = Mathf.Max(0, totalCollected);
+            unlocked.Clear();
+
+            if (unlockedIndices != null)
+            {
+                for (int i = 0; i < unlockedIndices.Count; i++)
+                {
+                    int index = unlockedIndices[i];
+
+                    if (index >= 0 && index < fragments.Length && !unlocked.Contains(index))
+                    {
+                        unlocked.Add(index);
+                    }
+                }
+            }
+
+            LastUnlockedTitle = null;
+            LastUnlockedText = null;
+            OnCollected?.Invoke(TotalCollected);
         }
 
         private bool IsRareOre()

@@ -162,6 +162,12 @@ namespace Yujian.Save
         /// 旧存档没有该字段时保持 0，等价于未购买。
         /// </summary>
         public int lightToolLevel;
+
+        /// <summary>
+        /// 挖矿工具等级（D7=A）。最低 1 级。
+        /// 旧存档没有该字段时保持 0，读档时按 1 级处理。
+        /// </summary>
+        public int toolLevel;
     }
 
     /// <summary>单个矿石档位的抽取记录。entryIds 对应 OreEntry 的稳定 ID。</summary>

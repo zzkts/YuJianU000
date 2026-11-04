@@ -12,8 +12,8 @@ namespace Yujian.EditorTools
     /// 阶段 12 一键配置：矿洞照明。
     ///
     /// 做四件事：
-    ///   1. 在矿石旁生成一盏矿灯（灯柱 + 发光灯泡 + 主光）；
-    ///   2. 再加补光与轮廓光，让矿石在黑暗里仍有层次；
+    ///   1. 在矿石旁生成矿灯外观；主光、补光、轮廓光挂在「矿洞灯光」根下；
+    ///   2. 重复运行不会重复生成灯，已有手持提灯时不再生成落地灯；
     ///   3. 给「矿洞灯光」根物体加 MiningLightingController，接好区域、太阳和相机；
     ///   4. 保存场景。
     ///
@@ -138,7 +138,8 @@ namespace Yujian.EditorTools
 
             Debug.Log((created ? "[矿洞照明] 已创建「" : "[矿洞照明] 已更新「") + RootName +
                       "」，位置 " + root.transform.position +
-                      "。进入挖矿区后太阳变暗、背景变黑、矿灯亮起；离开后恢复白天。");
+                      "。主光 5.0、补光 1.5、轮廓光 2.5；重复灯已清理。" +
+                      "进入挖矿区后太阳变暗、背景变黑、矿灯亮起；离开后恢复白天。");
         }
 
         private static void BuildLightRig(Transform root)
@@ -148,11 +149,11 @@ namespace Yujian.EditorTools
             Material glow = LoadOrCreateMaterial(GlowMaterialPath,
                 new Color(1f, 0.82f, 0.45f, 1f), 0f, 0f, true);
 
-            // 灯笼：立在矿石与相机之间，主光就放在灯泡位置
+            // 只生成落地灯的模型。真正的灯光统一放在「矿洞灯光」根下，
+            // 这样阶段 13 删除落地灯时不会把主光一起删掉。
             GameObject lantern = new GameObject("Lantern");
             Undo.RegisterCreatedObjectUndo(lantern, "创建矿灯");
             lantern.transform.SetParent(root, false);
-            // 放在矿石右后方，避免灯柱挡在相机与矿石之间
             lantern.transform.localPosition = new Vector3(1.8f, 0f, 0.6f);
 
             AddPrimitive(lantern.transform, PrimitiveType.Cylinder, "Post",
@@ -165,7 +166,6 @@ namespace Yujian.EditorTools
                 new Vector3(0f, 2.3f, 0f), new Vector3(0.38f, 0.38f, 0.38f),
                 Quaternion.Euler(0f, 45f, 0f), glow);
 
-            // 灯泡自己不投影，否则会把主光挡在灯罩里
             Renderer glowRenderer = glowObject.GetComponent<Renderer>();
 
             if (glowRenderer != null)
@@ -173,54 +173,115 @@ namespace Yujian.EditorTools
                 glowRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 glowRenderer.receiveShadows = false;
             }
-
-            // 主光放在灯泡上方，避免被灯柱 / 灯罩包住
-            CreatePointLight(lantern.transform, "Key Light", new Vector3(0f, 3.2f, 0f),
-                new Color(1f, 0.78f, 0.5f, 1f), 5f, 10f, LightShadows.Soft);
-            CreatePointLight(root, "Fill Light", new Vector3(-3.5f, 1.8f, 1.0f),
-                new Color(0.45f, 0.6f, 0.9f, 1f), 1.5f, 10f, LightShadows.None);
-            CreatePointLight(root, "Rim Light", new Vector3(3.0f, 2.2f, 2.2f),
-                new Color(0.95f, 0.55f, 0.3f, 1f), 2.5f, 8f, LightShadows.None);
         }
 
         /// <summary>
-        /// 灯架已存在时做增量修正：旧版本的灯柱可能挡镜头、主光可能被灯泡包住。
-        /// 已经正确摆放的不动，避免覆盖手动调整。
+        /// 保证灯架只生成一次：有手持提灯时不再生成落地灯；
+        /// 主光、补光、轮廓光统一放在「矿洞灯光」根下。
+        /// 同名灯重复时只保留一盏，避免一键修复越跑越乱。
         /// </summary>
         private static void EnsureLanternRig(Transform root)
         {
-            Transform lantern = root.Find("Lantern");
+            bool usesHandheldLantern =
+                Object.FindFirstObjectByType<MiningHandheldRig>(FindObjectsInactive.Include) != null;
 
-            if (lantern == null)
+            Transform oldNestedKey = root.Find("Lantern/Key Light");
+
+            if (oldNestedKey != null)
             {
-                BuildLightRig(root);
+                Undo.SetTransformParent(oldNestedKey, root, "迁移矿洞主光");
+                oldNestedKey.localPosition = new Vector3(1.8f, 3.2f, 0.6f);
+            }
+
+            if (usesHandheldLantern)
+            {
+                RemoveGroundLantern(root);
+            }
+            else
+            {
+                EnsureGroundLantern(root);
+            }
+
+            EnsureUniquePointLight(root, "Key Light", new Vector3(1.8f, 3.2f, 0.6f),
+                new Color(1f, 0.78f, 0.5f, 1f), 5f, 10f, LightShadows.Soft);
+            EnsureUniquePointLight(root, "Fill Light", new Vector3(-3.5f, 1.8f, 1.0f),
+                new Color(0.45f, 0.6f, 0.9f, 1f), 1.5f, 10f, LightShadows.None);
+            EnsureUniquePointLight(root, "Rim Light", new Vector3(3.0f, 2.2f, 2.2f),
+                new Color(0.95f, 0.55f, 0.3f, 1f), 2.5f, 8f, LightShadows.None);
+        }
+
+        private static void EnsureGroundLantern(Transform root)
+        {
+            if (root.Find("Lantern") != null)
+            {
                 return;
             }
 
-            if (lantern.localPosition.z < -1f)
+            BuildLightRig(root);
+        }
+
+        private static void RemoveGroundLantern(Transform root)
+        {
+            Transform lantern = root.Find("Lantern");
+
+            if (lantern != null)
             {
-                lantern.localPosition = new Vector3(1.8f, 0f, 0.6f);
+                Undo.DestroyObjectImmediate(lantern.gameObject);
             }
+        }
 
-            Transform keyLight = lantern.Find("Key Light");
+        private static void EnsureUniquePointLight(Transform root, string objectName,
+            Vector3 localPosition, Color color, float intensity, float range, LightShadows shadows)
+        {
+            Transform kept = null;
 
-            if (keyLight != null && keyLight.localPosition.y < 3f)
+            for (int i = root.childCount - 1; i >= 0; i--)
             {
-                keyLight.localPosition = new Vector3(0f, 3.2f, 0f);
-            }
+                Transform child = root.GetChild(i);
 
-            Transform glow = lantern.Find("Glow");
-
-            if (glow != null)
-            {
-                Renderer glowRenderer = glow.GetComponent<Renderer>();
-
-                if (glowRenderer != null)
+                if (child.name != objectName)
                 {
-                    glowRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                    glowRenderer.receiveShadows = false;
+                    continue;
+                }
+
+                if (kept == null)
+                {
+                    kept = child;
+                }
+                else
+                {
+                    Undo.DestroyObjectImmediate(child.gameObject);
                 }
             }
+
+            if (kept == null)
+            {
+                GameObject lightObject = new GameObject(objectName);
+                Undo.RegisterCreatedObjectUndo(lightObject, "创建矿洞灯光");
+                lightObject.transform.SetParent(root, false);
+                kept = lightObject.transform;
+            }
+
+            kept.localPosition = localPosition;
+            kept.localRotation = Quaternion.identity;
+            kept.localScale = Vector3.one;
+
+            Light light = kept.GetComponent<Light>();
+
+            if (light == null)
+            {
+                light = Undo.AddComponent<Light>(kept.gameObject);
+            }
+
+            Undo.RecordObject(light, "恢复矿洞灯光");
+            light.type = LightType.Point;
+            light.color = color;
+            light.intensity = intensity;
+            light.range = range;
+            light.shadows = shadows;
+            light.shadowStrength = 0.8f;
+            light.enabled = true;
+            EditorUtility.SetDirty(light);
         }
 
         /// <summary>
@@ -267,24 +328,6 @@ namespace Yujian.EditorTools
             AddPrimitive(cave.transform, PrimitiveType.Sphere, "Rock_D",
                 new Vector3(7.2f, 0.8f, 2.0f), new Vector3(2.2f, 2.4f, 2.0f),
                 Quaternion.Euler(0f, 0f, -12f), rock);
-        }
-
-        private static Light CreatePointLight(Transform parent, string objectName, Vector3 localPosition,
-            Color color, float intensity, float range, LightShadows shadows)
-        {
-            GameObject lightObject = new GameObject(objectName);
-            Undo.RegisterCreatedObjectUndo(lightObject, "创建矿灯");
-            lightObject.transform.SetParent(parent, false);
-            lightObject.transform.localPosition = localPosition;
-
-            Light light = Undo.AddComponent<Light>(lightObject);
-            light.type = LightType.Point;
-            light.color = color;
-            light.intensity = intensity;
-            light.range = range;
-            light.shadows = shadows;
-            light.shadowStrength = 0.8f;
-            return light;
         }
 
         private static GameObject AddPrimitive(Transform parent, PrimitiveType type, string objectName,

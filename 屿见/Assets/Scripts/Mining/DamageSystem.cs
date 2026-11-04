@@ -18,6 +18,9 @@ namespace Yujian.Mining
         [Tooltip("挖矿工具升级进度。配置后优先使用工具的当前攻击力")]
         [SerializeField] private MiningToolProgress miningTool;
 
+        [Tooltip("照明工具。配置后暴击倍率从当前照明工具读取（飞书 2.1.4）")]
+        [SerializeField] private MiningLightTool miningLightTool;
+
         [Header("暴击")]
         [Tooltip("暴击伤害倍数。2 表示点中暴击点造成双倍伤害；不会低于 1 倍。" +
                  "D3=A 起暴击只来自矿石上的暴击点，不再有随机暴击")]
@@ -28,8 +31,12 @@ namespace Yujian.Mining
         [Tooltip("是否在 Console 打印每次伤害计算结果")]
         [SerializeField] private bool logCalculatedDamage = false;
 
-        /// <summary>暴击伤害倍数。</summary>
-        public float CriticalDamageMultiplier => criticalDamageMultiplier;
+        /// <summary>
+        /// 当前暴击伤害倍数：优先读当前照明工具，未拥有照明工具时回退到本组件的默认值。
+        /// </summary>
+        public float CriticalDamageMultiplier => miningLightTool != null && miningLightTool.IsUnlocked
+            ? Mathf.Max(1f, miningLightTool.CritPointDamageMultiplier)
+            : Mathf.Max(1f, criticalDamageMultiplier);
 
         /// <summary>
         /// 计算玩家当前的单次伤害（不判定暴击）。
@@ -75,11 +82,12 @@ namespace Yujian.Mining
         /// </summary>
         public float CalculateCritPointDamage()
         {
-            float damage = CalculatePlayerDamage() * Mathf.Max(1f, criticalDamageMultiplier);
+            float multiplier = CriticalDamageMultiplier;
+            float damage = CalculatePlayerDamage() * multiplier;
 
             if (logCalculatedDamage)
             {
-                Debug.Log($"[DamageSystem] 暴击点伤害 = 普通伤害 × {criticalDamageMultiplier} = {damage}");
+                Debug.Log($"[DamageSystem] 暴击点伤害 = 普通伤害 × {multiplier} = {damage}");
             }
 
             return damage;
@@ -91,7 +99,13 @@ namespace Yujian.Mining
             miningTool = tool;
         }
 
-        /// <summary>编辑器向导调用，配置暴击点伤害倍数。</summary>
+        /// <summary>编辑器向导调用，把照明工具接进来（暴击倍率由它决定）。</summary>
+        public void ConfigureLightTool(MiningLightTool light)
+        {
+            miningLightTool = light;
+        }
+
+        /// <summary>编辑器向导调用，配置没有照明工具时的兜底暴击倍数。</summary>
         public void ConfigureCriticalHit(float multiplier)
         {
             criticalDamageMultiplier = Mathf.Max(1f, multiplier);

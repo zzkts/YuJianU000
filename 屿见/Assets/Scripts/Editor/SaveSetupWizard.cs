@@ -3,6 +3,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using Yujian.Building;
+using Yujian.Mining;
 using Yujian.Player;
 using Yujian.Save;
 using Yujian.Shop;
@@ -41,6 +42,7 @@ namespace Yujian.EditorTools
             UpdateCatalog(catalog, materials);
             UpdateBuildingCatalog(catalog, buildings);
             EnsureSaveSystem(catalog);
+            EnsureMiningParticipants();
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -350,6 +352,65 @@ namespace Yujian.EditorTools
             EditorUtility.SetDirty(blueprintParticipant);
             EditorUtility.SetDirty(buildingParticipant);
             EditorSceneManager.MarkSceneDirty(saveObject.scene);
+        }
+
+        /// <summary>
+        /// 给挖矿工具与照明工具补存档适配器。
+        /// 「配置存档系统」和「配置挖矿界面」都调用这一处，避免两套接线各写一遍。
+        /// </summary>
+        public static bool EnsureMiningParticipants()
+        {
+            SaveSystem saveSystem = Object.FindFirstObjectByType<SaveSystem>(FindObjectsInactive.Include);
+
+            if (saveSystem == null)
+            {
+                Debug.LogWarning("[存档配置] 场景里没有 SaveSystem，挖矿进度暂时不会写档。");
+                return false;
+            }
+
+            GameObject host = saveSystem.gameObject;
+            List<SaveParticipant> required = new List<SaveParticipant>();
+
+            MiningToolProgress toolProgress =
+                Object.FindFirstObjectByType<MiningToolProgress>(FindObjectsInactive.Include);
+
+            if (toolProgress != null)
+            {
+                MiningToolProgressSaveParticipant toolParticipant =
+                    EnsureComponent<MiningToolProgressSaveParticipant>(host);
+                SetReference(toolParticipant, "toolProgress", toolProgress);
+                required.Add(toolParticipant);
+                EditorUtility.SetDirty(toolParticipant);
+            }
+            else
+            {
+                Debug.Log("[存档配置] 场景里没有 MiningToolProgress，跳过挖矿工具等级存档。");
+            }
+
+            MiningLightTool lightTool =
+                Object.FindFirstObjectByType<MiningLightTool>(FindObjectsInactive.Include);
+
+            if (lightTool != null)
+            {
+                MiningLightToolSaveParticipant lightParticipant =
+                    EnsureComponent<MiningLightToolSaveParticipant>(host);
+                SetReference(lightParticipant, "lightTool", lightTool);
+                required.Add(lightParticipant);
+                EditorUtility.SetDirty(lightParticipant);
+            }
+            else
+            {
+                Debug.Log("[存档配置] 场景里没有 MiningLightTool，跳过照明工具等级存档。");
+            }
+
+            CulturalFragmentSaveParticipant fragmentParticipant =
+                EnsureComponent<CulturalFragmentSaveParticipant>(host);
+            required.Add(fragmentParticipant);
+            EditorUtility.SetDirty(fragmentParticipant);
+
+            EnsureParticipants(saveSystem, required.ToArray());
+            EditorUtility.SetDirty(saveSystem);
+            return true;
         }
 
         private static T EnsureComponent<T>(GameObject target) where T : Component

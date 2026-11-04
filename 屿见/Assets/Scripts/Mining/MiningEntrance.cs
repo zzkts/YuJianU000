@@ -24,12 +24,21 @@ namespace Yujian.Mining
 
         private void Awake()
         {
+            ResolveAreaController();
+
+            if (GetComponent<BoxCollider>() == null)
+            {
+                RebuildClickCollider();
+            }
+
             cachedRenderers = GetComponentsInChildren<Renderer>(true);
             cachedColliders = GetComponentsInChildren<Collider>(true);
         }
 
         private void OnEnable()
         {
+            ResolveAreaController();
+
             if (areaController != null)
             {
                 areaController.OnAreaChanged += HandleAreaChanged;
@@ -38,6 +47,8 @@ namespace Yujian.Mining
 
         private void Start()
         {
+            ResolveAreaController();
+
             if (areaController != null)
             {
                 ApplyVisibility(areaController.CurrentArea);
@@ -81,10 +92,12 @@ namespace Yujian.Mining
         /// <summary>进入挖矿区。重复点击或已经在挖矿区时不做任何事。</summary>
         public void Activate()
         {
+            ResolveAreaController();
+
             if (areaController == null)
             {
                 Debug.LogError("[MiningEntrance] GameAreaController 未配置，无法进入挖矿区。" +
-                               "请运行菜单「屿见/挖矿/配置矿洞入口（阶段 11）」。", this);
+                               "请运行菜单「屿见/挖矿/一键修复矿洞入口与照明」。", this);
                 return;
             }
 
@@ -103,12 +116,24 @@ namespace Yujian.Mining
         [ContextMenu("按子物体重新适配碰撞框")]
         private void FitColliderToRenderers()
         {
+            RebuildClickCollider();
+        }
+
+        /// <summary>按当前模型重新计算入口点击范围。美术换模型后也可直接调用。</summary>
+        public void RebuildClickCollider()
+        {
             BoxCollider box = GetComponent<BoxCollider>();
+
+            if (box == null)
+            {
+                box = gameObject.AddComponent<BoxCollider>();
+            }
+
             Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
 
-            if (box == null || renderers.Length == 0)
+            if (renderers.Length == 0)
             {
-                Debug.LogWarning("[MiningEntrance] 没有 BoxCollider 或子物体渲染器，无法适配碰撞框。", this);
+                Debug.LogWarning("[MiningEntrance] 没有子物体渲染器，无法适配碰撞框。", this);
                 return;
             }
 
@@ -125,11 +150,21 @@ namespace Yujian.Mining
             Vector3 lossyScale = transform.lossyScale;
             Vector3 localCenter = transform.InverseTransformPoint(bounds.center);
 
+            box.enabled = true;
+            box.isTrigger = false;
             box.center = localCenter;
             box.size = new Vector3(
                 SafeDivide(bounds.size.x, lossyScale.x),
                 SafeDivide(bounds.size.y, lossyScale.y),
                 SafeDivide(bounds.size.z, lossyScale.z));
+        }
+
+        private void ResolveAreaController()
+        {
+            if (areaController == null)
+            {
+                areaController = FindFirstObjectByType<GameAreaController>(FindObjectsInactive.Include);
+            }
         }
 
         private static float SafeDivide(float value, float divisor)

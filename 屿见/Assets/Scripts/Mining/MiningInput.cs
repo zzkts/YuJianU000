@@ -77,6 +77,19 @@ namespace Yujian.Mining
                 Debug.LogError("[MiningInput] DamageSystem 未配置，点击无法造成伤害。", this);
             }
 
+            // 飞书 2.1.4 的暴击点依赖 CritPointSystem。
+            // 场景若还没跑过配置向导，运行时自动补一个，避免暴击玩法完全缺失。
+            if (critPointSystem == null && damageSystem != null)
+            {
+                critPointSystem = damageSystem.GetComponent<CritPointSystem>();
+
+                if (critPointSystem == null)
+                {
+                    critPointSystem = damageSystem.gameObject.AddComponent<CritPointSystem>();
+                    Debug.Log("[MiningInput] 场景里没有 CritPointSystem，已自动补到 DamageSystem 所在物体上。", this);
+                }
+            }
+
             if (playerCurrency == null)
             {
                 Debug.LogError("[MiningInput] PlayerCurrency 未配置，击碎奖励无法发放。", this);

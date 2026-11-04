@@ -222,7 +222,7 @@ namespace Yujian.UI
 
             if (tool.IsMaxed)
             {
-                SetText(statsText, $"暴击点上限 {tool.CritPointCapacity}　停留 {tool.CritPointLifetime:0.#} 秒");
+                SetText(statsText, $"冷却 {tool.RefreshCooldown:0.#} 秒　上限 {tool.CritPointCapacity}　暴击 {tool.CritPointDamageMultiplier * 100f:0}%");
                 SetText(costText, "已满级");
                 SetText(buyButtonText, "已满级");
                 SetCostColor(true);
@@ -230,8 +230,9 @@ namespace Yujian.UI
                 return;
             }
 
-            SetText(statsText, $"暴击点上限 {tool.CritPointCapacity} → {tool.NextCritPointCapacity}　" +
-                               $"停留 {tool.CritPointLifetime:0.#} → {tool.NextCritPointLifetime:0.#} 秒");
+            SetText(statsText, $"冷却 {tool.RefreshCooldown:0.#} → {tool.NextRefreshCooldown:0.#} 秒　" +
+                               $"上限 {tool.CritPointCapacity} → {tool.NextCritPointCapacity}　" +
+                               $"暴击 {tool.CritPointDamageMultiplier * 100f:0}% → {tool.NextCritPointDamageMultiplier * 100f:0}%");
 
             if (currency == null)
             {

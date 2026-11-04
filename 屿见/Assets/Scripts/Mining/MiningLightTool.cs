@@ -5,15 +5,16 @@ using Yujian.Player;
 namespace Yujian.Mining
 {
     /// <summary>
-    /// 照明工具（D17=A：商店购买）。
+    /// 照明工具（飞书 2.1.4 照明系统）。
     ///
     /// 它本身不发光——矿洞氛围由 MiningLightingController 负责。
-    /// 这里只做玩法层的事：玩家买到的等级 → 暴击点同时存在上限 + 暴击点停留时长。
+    /// 这里只做玩法层的事：玩家买到的等级 → 暴击点刷新冷却 / 半径 / 数量 / 暴击倍率。
     ///
-    /// 等级：
-    ///   0 未拥有：上限 1，停留 2.5 秒
-    ///   1 火把：  上限 3，停留 4 秒
-    ///   2 手电：  上限 5，停留 6 秒
+    /// 等级（下标 = Level）：
+    ///   0 未拥有：不生成暴击点
+    ///   1 火把 light_01：冷却 5 秒、半径 3、暴击 200%
+    ///   2 小型手电 light_02：冷却 / 半径沿用火把（策划表这两格为空，后续在 Inspector 补），
+    ///     暴击伤害区间 200%~1000%，当前满级按 1000% 处理
     ///
     /// 数值全部在 Inspector 上可调，代码不写死。扣钱与升级入口与 MiningToolProgress 同一套规则。
     /// </summary>
@@ -29,12 +30,31 @@ namespace Yujian.Mining
         [SerializeField, Min(0)] private int startingLevel;
 
         [Header("等级名称（下标 = 等级）")]
-        [SerializeField] private string[] levelNames = { "未拥有", "火把", "手电" };
+        [SerializeField] private string[] levelNames = { "未拥有", "火把", "小型手电" };
 
-        [Header("暴击点上限（下标 = 等级）")]
-        [SerializeField] private int[] capacityByLevel = { 1, 3, 5 };
+        [Header("物品 ID（下标 = 等级）")]
+        [SerializeField] private string[] itemIds = { "none", "light_01", "light_02" };
 
-        [Header("暴击点停留时长，秒（下标 = 等级）")]
+        [Header("暴击点上限（下标 = 等级；0 = 不生成）")]
+        [SerializeField] private int[] capacityByLevel = { 0, 2, 3 };
+
+        [Header("刷新冷却，秒（下标 = 等级；0 = 不生成）")]
+        [Tooltip("该等级的照明工具每多少秒刷新一个暴击点。飞书：火把 5 秒")]
+        [SerializeField] private float[] refreshCooldownByLevel = { 0f, 5f, 5f };
+
+        [Header("暴击点半径（下标 = 等级）")]
+        [Tooltip("暴击点在矿石平面中心附近随机生成的最大半径。飞书：火把 3")]
+        [SerializeField] private float[] critPointRadiusByLevel = { 0f, 3f, 3f };
+
+        [Header("暴击伤害倍率（下标 = 等级）")]
+        [Tooltip("2 = 200%。飞书：火把 200%，小型手电 200%~1000%")]
+        [SerializeField] private float[] criticalDamageMultiplierByLevel = { 1f, 2f, 10f };
+
+        [Header("暴击点停留")]
+        [Tooltip("勾选后暴击点一直保留到被点击（飞书规则）。取消勾选则回到旧的倒计时逻辑")]
+        [SerializeField] private bool critPointsPersist = true;
+
+        [Header("暴击点停留时长，秒（下标 = 等级；仅倒计时模式使用）")]
         [SerializeField] private float[] lifetimeByLevel = { 2.5f, 4f, 6f };
 
         [Header("购买价格")]
@@ -55,16 +75,51 @@ namespace Yujian.Mining
         /// <summary>是否已经买满。</summary>
         public bool IsMaxed => Level >= MaxLevel;
 
-        /// <summary>当前等级下的暴击点同时存在上限。</summary>
-        public int CritPointCapacity => LookupInt(capacityByLevel, Level, 1);
+        /// <summary>是否已经解锁（拥有任意照明工具）。</summary>
+        public bool IsUnlocked => Level > 0;
 
-        /// <summary>当前等级下的暴击点停留时长（秒）。</summary>
-        public float CritPointLifetime => LookupFloat(lifetimeByLevel, Level, 2.5f);
+        /// <summary>当前等级的物品 ID。</summary>
+        public string ItemId => LookupId(Level);
+
+        /// <summary>下一等级的物品 ID；已满级时返回当前 ID。</summary>
+        public string NextItemId => IsMaxed ? ItemId : LookupId(Level + 1);
+
+        /// <summary>当前等级下的暴击点同时存在上限。未拥有时为 0。</summary>
+        public int CritPointCapacity => Level <= 0 ? 0 : Mathf.Max(1, LookupInt(capacityByLevel, Level, 1));
 
         /// <summary>下一级的暴击点上限；已满级时返回当前值。</summary>
-        public int NextCritPointCapacity => IsMaxed
-            ? CritPointCapacity
-            : LookupInt(capacityByLevel, Level + 1, CritPointCapacity);
+        public int NextCritPointCapacity => IsMaxed ? CritPointCapacity : LookupInt(capacityByLevel, Level + 1, CritPointCapacity);
+
+        /// <summary>当前照明工具的刷新冷却（秒）。0 表示不生成暴击点。</summary>
+        public float RefreshCooldown => Level <= 0 ? 0f : Mathf.Max(0f, LookupFloat(refreshCooldownByLevel, Level, 0f));
+
+        /// <summary>下一级的刷新冷却；已满级时返回当前值。</summary>
+        public float NextRefreshCooldown => IsMaxed ? RefreshCooldown : LookupFloat(refreshCooldownByLevel, Level + 1, RefreshCooldown);
+
+        /// <summary>当前等级的暴击点生成半径。</summary>
+        public float CritPointRadius => Level <= 0 ? 0f : Mathf.Max(0f, LookupFloat(critPointRadiusByLevel, Level, 0f));
+
+        /// <summary>下一级的暴击点半径；已满级时返回当前值。</summary>
+        public float NextCritPointRadius => IsMaxed ? CritPointRadius : LookupFloat(critPointRadiusByLevel, Level + 1, CritPointRadius);
+
+        /// <summary>当前等级的暴击伤害倍率（2 = 200%）。未拥有时为 1。</summary>
+        public float CritPointDamageMultiplier => Level <= 0
+            ? 1f
+            : Mathf.Max(1f, LookupFloat(criticalDamageMultiplierByLevel, Level, 2f));
+
+        /// <summary>下一级的暴击伤害倍率；已满级时返回当前值。</summary>
+        public float NextCritPointDamageMultiplier => IsMaxed
+            ? CritPointDamageMultiplier
+            : Mathf.Max(1f, LookupFloat(criticalDamageMultiplierByLevel, Level + 1, CritPointDamageMultiplier));
+
+        /// <summary>暴击点是否一直保留到被点击。</summary>
+        public bool CritPointsPersist => critPointsPersist;
+
+        /// <summary>当前是否具备刷新暴击点的条件。</summary>
+        public bool CanSpawnCritPoints => Level > 0 && RefreshCooldown > 0f && CritPointCapacity > 0;
+
+        /// <summary>当前等级下的暴击点停留时长（秒）。仅倒计时模式使用。</summary>
+        public float CritPointLifetime => LookupFloat(lifetimeByLevel, Level, 2.5f);
 
         /// <summary>下一级的停留时长；已满级时返回当前值。</summary>
         public float NextCritPointLifetime => IsMaxed
@@ -78,17 +133,95 @@ namespace Yujian.Mining
         public string NextLevelName => IsMaxed ? LevelName : LookupName(Level + 1);
 
         /// <summary>升到下一级需要的金币；已满级返回 0。</summary>
-        public int NextUpgradeCost
+        public int NextUpgradeCost => GetUpgradeCostAt(Level);
+
+        /// <summary>指定等级升到下一级需要的金币；越界返回 0。</summary>
+        public int GetUpgradeCostAt(int level)
         {
-            get
+            if (MaxLevel <= 0 || level < 0 || level >= MaxLevel ||
+                upgradeCosts == null || level >= upgradeCosts.Length)
             {
-                if (IsMaxed || upgradeCosts == null || Level >= upgradeCosts.Length)
+                return 0;
+            }
+
+            return Mathf.Max(0, upgradeCosts[level]);
+        }
+
+        /// <summary>指定等级的刷新冷却，供界面逐行查看。</summary>
+        public float GetRefreshCooldownAt(int level)
+        {
+            return Mathf.Max(0f, LookupFloat(refreshCooldownByLevel,
+                Mathf.Clamp(level, 0, MaxLevel), 0f));
+        }
+
+        /// <summary>指定等级的暴击点上限，供界面逐行查看。</summary>
+        public int GetCritPointCapacityAt(int level)
+        {
+            return Mathf.Max(0, LookupInt(capacityByLevel, Mathf.Clamp(level, 0, MaxLevel), 0));
+        }
+
+        /// <summary>指定等级的暴击伤害倍率，供界面逐行查看。</summary>
+        public float GetCritPointMultiplierAt(int level)
+        {
+            return Mathf.Max(1f, LookupFloat(criticalDamageMultiplierByLevel,
+                Mathf.Clamp(level, 0, MaxLevel), 1f));
+        }
+
+        /// <summary>指定等级的暴击点半径，供界面逐行查看。</summary>
+        public float GetCritPointRadiusAt(int level)
+        {
+            return Mathf.Max(0f, LookupFloat(critPointRadiusByLevel,
+                Mathf.Clamp(level, 0, MaxLevel), 0f));
+        }
+
+        /// <summary>指定等级的工具名，用于界面上逐行显示。</summary>
+        public string GetLevelName(int level)
+        {
+            return LookupName(Mathf.Clamp(level, 0, MaxLevel));
+        }
+
+        /// <summary>指定等级的物品 id，用于界面上逐行显示。</summary>
+        public string GetItemId(int level)
+        {
+            return LookupId(Mathf.Clamp(level, 0, MaxLevel));
+        }
+
+        /// <summary>从当前等级连续升 count 级需要的总金币，超过最高等级时按实际级数算。</summary>
+        public int GetUpgradeCostForLevels(int count)
+        {
+            int total = 0;
+            int level = Level;
+
+            for (int i = 0; i < count && level < MaxLevel; i++, level++)
+            {
+                total += GetUpgradeCostAt(level);
+            }
+
+            return total;
+        }
+
+        /// <summary>用当前金币一次性能升多少级（Max 模式用）。</summary>
+        public int GetAffordableUpgradeCount(int money)
+        {
+            int count = 0;
+            int level = Level;
+            int spent = 0;
+
+            while (level < MaxLevel)
+            {
+                int cost = GetUpgradeCostAt(level);
+
+                if (spent + cost > money)
                 {
-                    return 0;
+                    break;
                 }
 
-                return Mathf.Max(0, upgradeCosts[Level]);
+                spent += cost;
+                count++;
+                level++;
             }
+
+            return count;
         }
 
         /// <summary>等级变化时广播。</summary>
@@ -97,10 +230,33 @@ namespace Yujian.Mining
         private void Awake()
         {
             currentLevel = Mathf.Clamp(startingLevel, 0, MaxLevel);
+            ClampLegacyCapacityValues();
 
             if (playerCurrency == null)
             {
                 playerCurrency = FindFirstObjectByType<PlayerCurrency>(FindObjectsInactive.Include);
+            }
+        }
+
+        /// <summary>
+        /// 兼容旧场景：之前写入的 3 / 5 上限自动压到当前策划需要的 2 / 3。
+        /// 数组后续如果要重新调大，删掉这段兼容即可。
+        /// </summary>
+        private void ClampLegacyCapacityValues()
+        {
+            if (capacityByLevel == null)
+            {
+                return;
+            }
+
+            if (capacityByLevel.Length > 1 && capacityByLevel[1] > 2)
+            {
+                capacityByLevel[1] = 2;
+            }
+
+            if (capacityByLevel.Length > 2 && capacityByLevel[2] > 3)
+            {
+                capacityByLevel[2] = 3;
             }
         }
 
@@ -111,10 +267,29 @@ namespace Yujian.Mining
         }
 
         /// <summary>
+        /// 编辑器向导调用：设置开局等级。
+        /// 1 = 开局直接装备火把；0 = 开局未拥有，需要先花金币解锁。
+        /// </summary>
+        public void ConfigureStartingLevel(int level)
+        {
+            startingLevel = Mathf.Clamp(level, 0, MaxLevel);
+            currentLevel = startingLevel;
+        }
+
+        /// <summary>
         /// 尝试买到下一级。金币不足 / 已满级时返回 false，状态不变。
         /// 价格为 0 表示免费发放。
         /// </summary>
         public bool TryUpgrade()
+        {
+            return TryUpgrade(1);
+        }
+
+        /// <summary>
+        /// 连续升 count 级（x1 / Max 共用）。金币按实际级数一次性扣，
+        /// 金币不足、count <= 0 或已满级时返回 false，状态不变。
+        /// </summary>
+        public bool TryUpgrade(int count)
         {
             if (IsMaxed)
             {
@@ -126,32 +301,40 @@ namespace Yujian.Mining
                 return false;
             }
 
+            if (count <= 0)
+            {
+                return false;
+            }
+
+            int targetLevel = Mathf.Min(MaxLevel, Level + count);
+            int actualCount = targetLevel - Level;
+            int cost = GetUpgradeCostForLevels(actualCount);
+
             if (playerCurrency == null)
             {
                 Debug.LogError("[MiningLightTool] 没有 PlayerCurrency，无法扣金币。", this);
                 return false;
             }
 
-            int cost = NextUpgradeCost;
-
             if (cost > 0 && !playerCurrency.TrySpendMoney(cost))
             {
                 if (logUpgradeFlow)
                 {
-                    Debug.Log($"[MiningLightTool] 金币不足，购买「{NextLevelName}」需要 {cost}，" +
+                    Debug.Log($"[MiningLightTool] 金币不足，升级 {actualCount} 级需要 {cost}，" +
                               $"当前 {playerCurrency.CurrentMoney}。", this);
                 }
 
                 return false;
             }
 
-            currentLevel++;
+            currentLevel = targetLevel;
             OnToolChanged?.Invoke(this);
 
             if (logUpgradeFlow)
             {
-                Debug.Log($"[MiningLightTool] 获得「{LevelName}」：暴击点上限 {CritPointCapacity}，" +
-                          $"停留 {CritPointLifetime:0.#} 秒。", this);
+                Debug.Log($"[MiningLightTool] 升到「{LevelName}」（{ItemId}）：" +
+                          $"冷却 {RefreshCooldown:0.#} 秒，半径 {CritPointRadius:0.#}，" +
+                          $"上限 {CritPointCapacity}，暴击 {CritPointDamageMultiplier:0.##} 倍。", this);
             }
 
             return true;
@@ -169,6 +352,17 @@ namespace Yujian.Mining
 
             currentLevel = clamped;
             OnToolChanged?.Invoke(this);
+        }
+
+        private string LookupId(int level)
+        {
+            if (itemIds == null || itemIds.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            int index = Mathf.Clamp(level, 0, itemIds.Length - 1);
+            return itemIds[index] ?? string.Empty;
         }
 
         private string LookupName(int level)

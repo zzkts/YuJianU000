@@ -70,6 +70,9 @@ namespace Yujian.EditorTools
             }
 
             tool.ConfigureForSetup(currency);
+            // MVP 演示：开局直接装备火把，进矿洞就能看到暴击点。
+            // 想做「先花 40 金币解锁火把」的话，把 Starting Level 改回 0。
+            tool.ConfigureStartingLevel(1);
             EditorUtility.SetDirty(tool);
 
             if (!CreateCard(showDialog, tool))

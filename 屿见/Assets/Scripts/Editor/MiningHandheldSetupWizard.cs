@@ -15,7 +15,7 @@ namespace Yujian.EditorTools
     ///   1. 在主相机下创建「矿洞手持道具」，左手提灯、右手镐；
     ///   2. 给提灯加一盏暖色点光，并接好区域控制器与相机；
     ///   3. 删除旧的落地灯柱（阶段 12 生成在「矿洞灯光/Lantern」）；
-    ///   4. 把补光 / 轮廓光调低，只做环境补充；
+    ///   4. 把补光 / 轮廓光恢复成阶段 12 的亮度，保留手持提灯；
     ///   5. 保存场景。
     ///
     /// 不直接改 .unity，由 Unity 自己写盘（项目规则 13）。
@@ -32,6 +32,8 @@ namespace Yujian.EditorTools
         private const string ToolMetalMaterialPath = "Assets/Materials/Mining/HandTool_Metal.mat";
         private const string GloveMaterialPath = "Assets/Materials/Mining/Hand_Glove.mat";
         private const string SleeveMaterialPath = "Assets/Materials/Mining/Hand_Sleeve.mat";
+        private const string FlashlightBodyMaterialPath = "Assets/Materials/Mining/HandFlashlight_Body.mat";
+        private const string FlashlightLensMaterialPath = "Assets/Materials/Mining/HandFlashlight_Lens.mat";
 
         [MenuItem("屿见/挖矿/配置手持提灯与挖矿工具（阶段 13）", false, 351)]
         public static void Configure()
@@ -75,15 +77,36 @@ namespace Yujian.EditorTools
             }
 
             EnsureLantern(root.transform);
+            EnsureFlashlight(root.transform);
             EnsureTool(root.transform);
             RemoveGroundLantern();
 
             Transform lanternPivot = root.transform.Find("LanternPivot");
+            Transform flashlightPivot = root.transform.Find("FlashlightPivot");
             Transform toolPivot = root.transform.Find("ToolPivot");
             Light handLight = lanternPivot != null
                 ? lanternPivot.Find("Lantern Light")?.GetComponent<Light>()
                 : null;
+            Light flashlightLight = flashlightPivot != null
+                ? flashlightPivot.Find("Flashlight Light")?.GetComponent<Light>()
+                : null;
+
+            if (handLight != null)
+            {
+                handLight.intensity = 4.6f;
+                handLight.range = 13f;
+                EditorUtility.SetDirty(handLight);
+            }
+
+            if (flashlightLight != null)
+            {
+                flashlightLight.intensity = 4.4f;
+                flashlightLight.range = 13f;
+                EditorUtility.SetDirty(flashlightLight);
+            }
+
             Transform lanternGlow = lanternPivot != null ? lanternPivot.Find("Glow") : null;
+            Transform flashlightGlow = flashlightPivot != null ? flashlightPivot.Find("Glow") : null;
 
             if (handLight == null)
             {
@@ -92,14 +115,22 @@ namespace Yujian.EditorTools
 
             rig.ConfigureForSetup(areaController, viewCamera, lanternPivot, toolPivot,
                 handLight, lanternGlow);
+            rig.ConfigureFlashlightForSetup(flashlightPivot, flashlightLight, flashlightGlow);
+            rig.ConfigureLightTool(Object.FindFirstObjectByType<MiningLightTool>(
+                FindObjectsInactive.Include));
 
             SerializedObject rigSo = new SerializedObject(rig);
             SetObjectReference(rigSo, "areaController", areaController);
             SetObjectReference(rigSo, "viewCamera", viewCamera);
             SetObjectReference(rigSo, "lanternPivot", lanternPivot);
+            SetObjectReference(rigSo, "flashlightPivot", flashlightPivot);
             SetObjectReference(rigSo, "toolPivot", toolPivot);
             SetObjectReference(rigSo, "handLight", handLight);
             SetObjectReference(rigSo, "lanternGlow", lanternGlow);
+            SetObjectReference(rigSo, "flashlightLight", flashlightLight);
+            SetObjectReference(rigSo, "flashlightGlow", flashlightGlow);
+            SetObjectReference(rigSo, "lightTool",
+                Object.FindFirstObjectByType<MiningLightTool>(FindObjectsInactive.Include));
             rigSo.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(rig);
 
@@ -113,7 +144,7 @@ namespace Yujian.EditorTools
 
             Debug.Log("[手持提灯] 已配置「" + RootName + "」：挂在 " + viewCamera.name +
                       " 下，进入挖矿区后左手提灯、右手镐出现；旧的落地灯柱已移除，" +
-                      "补光与轮廓光已调低。");
+                      "补光与轮廓光已恢复上一版亮度。");
         }
 
         private static Camera ResolveCamera(MiningInput miningInput)
@@ -250,10 +281,82 @@ namespace Yujian.EditorTools
             Light light = Undo.AddComponent<Light>(lightObject);
             light.type = LightType.Point;
             light.color = new Color(1f, 0.76f, 0.45f, 1f);
-            light.intensity = 3.8f;
-            light.range = 12f;
+            light.intensity = 4.6f;
+            light.range = 13f;
             light.shadows = LightShadows.Soft;
             light.shadowStrength = 0.7f;
+
+            Renderer glowRenderer = glowObject.GetComponent<Renderer>();
+
+            if (glowRenderer != null)
+            {
+                glowRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                glowRenderer.receiveShadows = false;
+            }
+        }
+
+        private static void EnsureFlashlight(Transform root)
+        {
+            Transform existing = root.Find("FlashlightPivot");
+
+            if (existing != null && existing.Find("Body") != null &&
+                existing.Find("Glow") != null && existing.Find("Flashlight Light") != null)
+            {
+                return;
+            }
+
+            if (existing != null)
+            {
+                Undo.DestroyObjectImmediate(existing.gameObject);
+            }
+
+            Material body = LoadOrCreateMaterial(FlashlightBodyMaterialPath,
+                new Color(0.13f, 0.17f, 0.20f, 1f), 0.55f, 0.75f, false);
+            Material lens = LoadOrCreateMaterial(FlashlightLensMaterialPath,
+                new Color(0.72f, 0.90f, 1f, 1f), 0f, 0f, true);
+            Material glove = LoadOrCreateMaterial(GloveMaterialPath,
+                new Color(0.42f, 0.29f, 0.20f, 1f), 0.2f, 0f, false);
+            Material sleeve = LoadOrCreateMaterial(SleeveMaterialPath,
+                new Color(0.22f, 0.36f, 0.38f, 1f), 0.15f, 0f, false);
+
+            GameObject pivot = new GameObject("FlashlightPivot");
+            Undo.RegisterCreatedObjectUndo(pivot, "创建小型手电");
+            pivot.transform.SetParent(root, false);
+            pivot.transform.localPosition = DefaultAnchor(new Vector2(-0.56f, -0.92f), 0.92f);
+            pivot.transform.localRotation = Quaternion.Euler(8f, -18f, 12f);
+
+            AddPrimitive(pivot.transform, PrimitiveType.Cylinder, "Body",
+                new Vector3(0f, 0f, -0.055f), new Vector3(0.038f, 0.155f, 0.038f),
+                Quaternion.Euler(90f, 0f, 0f), body);
+            AddPrimitive(pivot.transform, PrimitiveType.Cylinder, "TailCap",
+                new Vector3(0f, 0f, -0.205f), new Vector3(0.043f, 0.016f, 0.043f),
+                Quaternion.Euler(90f, 0f, 0f), body);
+            AddPrimitive(pivot.transform, PrimitiveType.Cylinder, "HeadRing",
+                new Vector3(0f, 0f, 0.095f), new Vector3(0.055f, 0.022f, 0.055f),
+                Quaternion.Euler(90f, 0f, 0f), body);
+            GameObject glowObject = AddPrimitive(pivot.transform, PrimitiveType.Sphere, "Glow",
+                new Vector3(0f, 0f, 0.126f), new Vector3(0.046f, 0.046f, 0.020f),
+                Quaternion.identity, lens);
+
+            AddPrimitive(pivot.transform, PrimitiveType.Sphere, "LeftHand",
+                new Vector3(0f, -0.070f, -0.018f), new Vector3(0.082f, 0.075f, 0.082f),
+                Quaternion.identity, glove);
+            AddPrimitive(pivot.transform, PrimitiveType.Capsule, "LeftForearm",
+                new Vector3(-0.105f, -0.185f, -0.008f), new Vector3(0.075f, 0.17f, 0.075f),
+                Quaternion.Euler(0f, 0f, -34f), sleeve);
+
+            GameObject lightObject = new GameObject("Flashlight Light");
+            Undo.RegisterCreatedObjectUndo(lightObject, "创建手电灯光");
+            lightObject.transform.SetParent(pivot.transform, false);
+            lightObject.transform.localPosition = new Vector3(0f, 0f, 0.17f);
+
+            Light light = Undo.AddComponent<Light>(lightObject);
+            light.type = LightType.Point;
+            light.color = new Color(0.78f, 0.92f, 1f, 1f);
+            light.intensity = 4.4f;
+            light.range = 13f;
+            light.shadows = LightShadows.Soft;
+            light.shadowStrength = 0.62f;
 
             Renderer glowRenderer = glowObject.GetComponent<Renderer>();
 
@@ -344,8 +447,8 @@ namespace Yujian.EditorTools
                 Undo.DestroyObjectImmediate(oldLantern.gameObject);
             }
 
-            SetLightIntensity(lighting.transform.Find("Fill Light"), 0.8f);
-            SetLightIntensity(lighting.transform.Find("Rim Light"), 1.0f);
+            SetLightIntensity(lighting.transform.Find("Fill Light"), 1.5f);
+            SetLightIntensity(lighting.transform.Find("Rim Light"), 2.5f);
         }
 
         private static void SetLightIntensity(Transform target, float intensity)
