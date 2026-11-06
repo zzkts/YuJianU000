@@ -21,4 +21,6 @@ MonoBehaviour:
   requiredMaterials:
   - material: {fileID: 11400000, guid: 9f1a5c65d730e014daa9213d786dea96, type: 2}
     amount: 3
+  - material: {fileID: 11400000, guid: 0c6697fa64393b840a51614123571426, type: 2}
+    amount: 1
   saveId: edf5bd059cb594140a3e9171684ddc03

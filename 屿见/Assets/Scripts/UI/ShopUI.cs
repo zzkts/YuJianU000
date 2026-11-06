@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -7,32 +6,22 @@ using Yujian.Shop;
 namespace Yujian.UI
 {
     /// <summary>
-    /// 原料商店面板。
+    /// 轻量化原料商店面板（2026-11-05 商店策划案）。
     ///
-    /// 职责：按「商品目录」为每种原料克隆一个 ShopItemUI 条目，显示金币与状态行，
-    /// 并把条目的购买请求转交给 Shop.TryBuy()。
-    /// 严格只读：显示的金币与持有数量都从 Shop 暴露的只读属性取，本类不修改任何数值。
+    /// 职责：按「商品目录」为每种原料克隆一个 ShopItemUI 条目，维护当前选中的原料，
+    /// 在右侧显示单价 / 总价，并把购买请求转交给 Shop.TryBuy()。
+    /// 严格只读：金币从 Shop 暴露的只读属性取，本类不直接修改任何数值。
     ///
-    /// 条目的克隆、订阅与刷新都只有这一处：条目自己**不**订阅 OnInventoryChanged，
-    /// 否则每次重建条目都要小心退订，很容易漏。这里订阅一次，收到通知后挨个推给条目。
+    /// 布局是 240×90 的固定小窗：
+    ///   标题 / 金币（顶部）
+    ///   ├─ 左侧：可滚轮浏览的原料列表（名称、样式、说明、颜色、数量）
+    ///   └─ 右侧：单价、总价、购买
+    ///   底部：成功 / 余量不足提示
+    ///
+    /// 颜色只展示不可选；购买时按原料默认色入库（颜色选择功能留给后续建筑系统）。
     /// </summary>
     public class ShopUI : MonoBehaviour
     {
-        /// <summary>
-        /// 颜色 → 色块贴图。沿用原先 ColorButtonBinding 的写法：
-        /// [Serializable] struct + 数组挂在组件上，Inspector 里直接调，不新建资产类型。
-        /// 放在面板上而不是条目上：条目是克隆出来的，放在条目上会让每份克隆各存一份副本。
-        /// </summary>
-        [Serializable]
-        private struct ColorSpriteBinding
-        {
-            [SerializeField] private MaterialColor color;
-            [SerializeField] private Sprite sprite;
-
-            public MaterialColor Color => color;
-            public Sprite Sprite => sprite;
-        }
-
         [Header("依赖")]
         [Tooltip("购买入口。UI 只通过它下单")]
         // 必须写全限定名：类 Shop 与命名空间 Yujian.Shop 同名，在 Yujian.UI 里直接写 Shop
@@ -46,24 +35,28 @@ namespace Yujian.UI
         [Header("文本")]
         [SerializeField] private Text titleText;
         [SerializeField] private Text moneyText;
-        [Tooltip("状态行：成功购买 / 当前货币不足")]
+
+        [Tooltip("右侧价格：两行，单价与本次总价")]
+        [SerializeField] private Text priceText;
+
+        [Tooltip("底部状态行：成功购买 / 当前货币不足")]
         [SerializeField] private Text statusText;
 
         [Header("条目列表")]
-        [Tooltip("克隆出来的条目的父物体")]
+        [Tooltip("克隆出来的条目的父物体（ScrollRect 的 Content）")]
         [SerializeField] private Transform itemContainer;
 
         [Tooltip("条目模板。运行时按目录克隆，本物体应当保持隐藏")]
         [SerializeField] private RectTransform itemTemplate;
 
-        [Header("颜色贴图")]
-        [Tooltip("每个颜色配一张色块贴图。没配的颜色会退化成纯色块并给出警告")]
-        [SerializeField] private ColorSpriteBinding[] colorSprites = new ColorSpriteBinding[0];
+        [Header("购买")]
+        [SerializeField] private Button buyButton;
 
         [Header("文案")]
         [SerializeField] private string title = "原料商店";
         [SerializeField] private string successMessage = "成功购买";
         [SerializeField] private string insufficientMessage = "当前货币不足";
+        [SerializeField] private string failureMessage = "购买失败";
         [Tooltip("状态行自动清空的秒数。<=0 表示一直保留")]
         [SerializeField] private float statusClearDelay = 2f;
 
@@ -73,12 +66,17 @@ namespace Yujian.UI
 
         private readonly List<ShopItemUI> items = new List<ShopItemUI>();
 
-        /// <summary>已经为哪些颜色提示过「没配贴图」。每种只提示一次，免得每次刷新都刷屏。</summary>
-        private readonly HashSet<MaterialColor> warnedMissingSprites = new HashSet<MaterialColor>();
+        /// <summary>当前选中的条目。目录为空时为 null。</summary>
+        private ShopItemUI selected;
 
         private float statusClearTime = -1f;
         private bool warnedMissingMoneySource;
-        private bool warnedMissingInventorySource;
+
+        /// <summary>当前选中的原料，可能为 null。</summary>
+        public MaterialData SelectedMaterial => selected != null ? selected.Material : null;
+
+        /// <summary>当前选中的单次购买数量。</summary>
+        public int SelectedQuantity => selected != null ? selected.Quantity : 0;
 
         private void Awake()
         {
@@ -93,46 +91,42 @@ namespace Yujian.UI
             else
             {
                 Debug.LogError("[ShopUI] 条目模板未配置，商店不会显示任何原料。" +
-                               "请重跑菜单「屿见/商店/配置原料商店（阶段 2 重构）」。", this);
+                               "请重跑菜单「屿见/商店/重建轻量化商店窗口」。", this);
             }
 
             BuildItems();
             RefreshStaticText();
+            RefreshMoney();
+            RefreshPrice();
         }
 
         private void OnEnable()
         {
-            if (shop != null)
+            if (shop != null && shop.Currency != null)
             {
-                if (shop.Currency != null)
-                {
-                    shop.Currency.OnMoneyChanged += HandleMoneyChanged;
-                }
+                shop.Currency.OnMoneyChanged += HandleMoneyChanged;
+            }
 
-                if (shop.Inventory != null)
-                {
-                    shop.Inventory.OnInventoryChanged += HandleInventoryChanged;
-                }
+            if (buyButton != null)
+            {
+                buyButton.onClick.AddListener(HandleBuyClicked);
             }
 
             ClearStatus();
             RefreshMoney();
-            RefreshItems();
+            RefreshPrice();
         }
 
         private void OnDisable()
         {
-            if (shop != null)
+            if (shop != null && shop.Currency != null)
             {
-                if (shop.Currency != null)
-                {
-                    shop.Currency.OnMoneyChanged -= HandleMoneyChanged;
-                }
+                shop.Currency.OnMoneyChanged -= HandleMoneyChanged;
+            }
 
-                if (shop.Inventory != null)
-                {
-                    shop.Inventory.OnInventoryChanged -= HandleInventoryChanged;
-                }
+            if (buyButton != null)
+            {
+                buyButton.onClick.RemoveListener(HandleBuyClicked);
             }
         }
 
@@ -147,78 +141,31 @@ namespace Yujian.UI
             ClearStatus();
         }
 
-        /// <summary>
-        /// 某种原料某种颜色当前持有多少。给条目显示用——条目自己不认识 MaterialInventory。
-        /// 面板不负责显示这个数字，但负责提供它。
-        /// </summary>
-        public int GetOwnedCount(MaterialData material, MaterialColor color)
+        /// <summary>选中某个原料条目。价格与购买都跟随当前选中项。</summary>
+        public void SelectItem(ShopItemUI item)
         {
-            if (shop == null || material == null)
+            if (item == null || item.Material == null)
             {
-                return 0;
-            }
-
-            if (shop.Inventory == null)
-            {
-                if (!warnedMissingInventorySource)
-                {
-                    warnedMissingInventorySource = true;
-                    Debug.LogWarning("[ShopUI] 拿不到 MaterialInventory，持有数量将一直显示 0。", this);
-                }
-
-                return 0;
-            }
-
-            return shop.Inventory.GetMaterialCount(material, color);
-        }
-
-        /// <summary>
-        /// 取某种颜色对应的色块贴图，没配就返回 null，由条目自己退化成纯色块。
-        /// 每缺一种颜色只提示一次（规则 5：不允许静默失败，但也不允许刷屏）。
-        /// </summary>
-        public Sprite GetColorSprite(MaterialColor color)
-        {
-            if (colorSprites != null)
-            {
-                for (int i = 0; i < colorSprites.Length; i++)
-                {
-                    ColorSpriteBinding entry = colorSprites[i];
-
-                    if (entry.Color == color && entry.Sprite != null)
-                    {
-                        return entry.Sprite;
-                    }
-                }
-            }
-
-            if (warnedMissingSprites.Add(color))
-            {
-                Debug.LogWarning($"[ShopUI] 颜色「{color.ToChineseName()}」没有配色块贴图，已退化成纯色块显示。" +
-                                 "跑一次菜单「屿见/商店/配置原料商店（阶段 2 重构）」可以自动生成占位贴图。", this);
-            }
-
-            return null;
-        }
-
-        /// <summary>条目的唯一购买入口 —— 条目自己不认识 Shop。</summary>
-        public void RequestBuy(MaterialData material, MaterialColor color)
-        {
-            if (material == null)
-            {
-                Debug.LogError("[ShopUI] 购买请求里没有原料数据，已忽略。", this);
                 return;
             }
 
-            if (shop == null)
+            selected = item;
+
+            for (int i = 0; i < items.Count; i++)
             {
-                Debug.LogError("[ShopUI] Shop 未配置，无法购买。", this);
-                return;
+                items[i].SetSelected(items[i] == item);
             }
 
-            bool success = shop.TryBuy(material, color);
+            RefreshPrice();
+        }
 
-            ShowStatus(success ? successMessage : insufficientMessage, success);
-            RefreshItems();
+        /// <summary>条目数量变化时由条目调用：如果它是当前选中项，刷新右侧总价。</summary>
+        public void NotifyQuantityChanged(ShopItemUI item)
+        {
+            if (item == selected)
+            {
+                RefreshPrice();
+            }
         }
 
         /// <summary>按目录重建条目。幂等：先清掉上次克隆出来的，再按目录重新克隆。</summary>
@@ -233,6 +180,7 @@ namespace Yujian.UI
             }
 
             items.Clear();
+            selected = null;
 
             if (itemContainer == null || itemTemplate == null)
             {
@@ -263,25 +211,18 @@ namespace Yujian.UI
 
                 if (item == null)
                 {
-                    Debug.LogWarning($"[ShopUI] 条目模板上没有 ShopItemUI 组件，已自动补上。" +
-                                     "请重跑菜单「屿见/商店/配置原料商店（阶段 2 重构）」把引用接好。", this);
+                    Debug.LogWarning("[ShopUI] 条目模板上没有 ShopItemUI 组件，已自动补上。" +
+                                     "请重跑菜单「屿见/商店/重建轻量化商店窗口」把引用接好。", this);
                     item = clone.gameObject.AddComponent<ShopItemUI>();
                 }
 
                 item.Initialize(this, data);
                 items.Add(item);
             }
-        }
 
-        /// <summary>把库存变化推给每个条目。条目自己不订阅事件，避免重建时漏退订。</summary>
-        private void RefreshItems()
-        {
-            for (int i = 0; i < items.Count; i++)
+            if (items.Count > 0)
             {
-                if (items[i] != null)
-                {
-                    items[i].RefreshOwned();
-                }
+                SelectItem(items[0]);
             }
         }
 
@@ -305,14 +246,74 @@ namespace Yujian.UI
                 if (!warnedMissingMoneySource)
                 {
                     warnedMissingMoneySource = true;
-                    Debug.LogWarning("[ShopUI] 拿不到 PlayerCurrency，金币显示将一直为 0。", this);
+                    Debug.LogWarning("[ShopUI] 拿不到 PlayerCurrency，金币显示将一直为 ?。", this);
                 }
 
-                moneyText.text = "金币：?";
+                moneyText.text = "金币 ?";
                 return;
             }
 
-            moneyText.text = $"金币：{shop.Currency.CurrentMoney}";
+            moneyText.text = $"金币 {shop.Currency.CurrentMoney}";
+        }
+
+        /// <summary>
+        /// 刷新右侧价格：同时显示单价和「单价 × 当前数量」的总价。
+        /// 没有选中项时禁用购买键，避免点了才知道没选。
+        /// </summary>
+        private void RefreshPrice()
+        {
+            bool hasSelection = selected != null && selected.Material != null;
+
+            if (buyButton != null)
+            {
+                buyButton.interactable = hasSelection;
+            }
+
+            if (priceText == null)
+            {
+                return;
+            }
+
+            if (!hasSelection)
+            {
+                priceText.text = "单价 —\n总价 —";
+                return;
+            }
+
+            int unitPrice = selected.Material.Price;
+            int total = unitPrice * selected.Quantity;
+            priceText.text = $"单价 {unitPrice}\n总价 {total}";
+        }
+
+        private void HandleBuyClicked()
+        {
+            if (selected == null || selected.Material == null)
+            {
+                ShowStatus("请先选择原料", false);
+                return;
+            }
+
+            if (shop == null)
+            {
+                Debug.LogError("[ShopUI] Shop 未配置，无法购买。", this);
+                ShowStatus(failureMessage, false);
+                return;
+            }
+
+            int total = selected.Material.Price * selected.Quantity;
+
+            if (shop.Currency != null && shop.Currency.CurrentMoney < total)
+            {
+                ShowStatus(insufficientMessage, false);
+                return;
+            }
+
+            // 颜色选择已从商店移除：购买统一按原料默认色入库。
+            bool success = shop.TryBuy(selected.Material, selected.Material.DefaultColor, selected.Quantity);
+
+            ShowStatus(success ? successMessage : failureMessage, success);
+            RefreshMoney();
+            RefreshPrice();
         }
 
         private void ShowStatus(string message, bool success)
@@ -340,11 +341,6 @@ namespace Yujian.UI
         private void HandleMoneyChanged(int _)
         {
             RefreshMoney();
-        }
-
-        private void HandleInventoryChanged()
-        {
-            RefreshItems();
         }
 
         /// <summary>

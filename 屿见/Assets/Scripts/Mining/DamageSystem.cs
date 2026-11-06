@@ -63,6 +63,33 @@ namespace Yujian.Mining
         }
 
         /// <summary>
+        /// 计算建筑自动攻击的单次伤害：玩家最终伤害 × 建筑伤害倍率。
+        /// 2026-11-05 商店策划案：木板等材料提供建筑伤害加成，
+        /// 建筑倍率由 <see cref="PlayerStats.BuildingDamageMultiplier"/> 汇总（基础 1 + 附加）。
+        /// 建筑自动攻击必须走这个入口，不能直接调用 <see cref="CalculatePlayerDamage"/>。
+        /// </summary>
+        /// <returns>玩家最终伤害 × 建筑伤害倍率；PlayerStats 未配置时返回 0 并报错。</returns>
+        public float CalculateBuildingDamage()
+        {
+            if (playerStats == null)
+            {
+                Debug.LogError("[DamageSystem] PlayerStats 未配置，无法计算建筑伤害。", this);
+                return 0f;
+            }
+
+            float playerDamage = CalculatePlayerDamage();
+            float damage = playerDamage * playerStats.BuildingDamageMultiplier;
+
+            if (logCalculatedDamage)
+            {
+                Debug.Log($"[DamageSystem] 建筑伤害 = 玩家 {playerDamage} × 建筑倍率 " +
+                          $"{playerStats.BuildingDamageMultiplier} = {damage}");
+            }
+
+            return damage;
+        }
+
+        /// <summary>
         /// 计算玩家当前的单次伤害。
         /// 保留 out 参数只是为了不改动既有调用方：D3=A 起普通攻击**永不**随机暴击，
         /// isCritical 恒为 false。暴击只由玩家点中矿石上的暴击点触发，

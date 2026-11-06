@@ -5,7 +5,9 @@ using Yujian.Core;
 namespace Yujian.UI
 {
     /// <summary>
-    /// 阶段 6：屏幕底部的 [挖矿] [建筑] [商店] 导航条。
+    /// 阶段 6：屏幕底部的 [挖矿] [建筑] 导航条。
+    /// 2026-11-05 商店策划案：商店不再是底部主系统，改由建筑区右下角的入口打开浮窗，
+    /// 因此这里移除了「商店」按钮。
     ///
     /// 它**只做转发**：点哪个按钮就调 <see cref="GameAreaController.SetArea"/>，
     /// 相机与面板由订阅了区域事件的系统各自负责。本类不持有任何状态，
@@ -16,7 +18,7 @@ namespace Yujian.UI
     ///
     /// 按钮的 OnClick 由编辑器向导「屿见/整合/配置 MVP 整合（阶段 6）」接成持久监听
     /// （决策 15 的老做法：接线在场景里看得见、改得动）。
-    /// 三个 Show* 方法就是给 UnityEvent 用的，所以必须是 public 且无参数。
+    /// 两个 Show* 方法就是给 UnityEvent 用的，所以必须是 public 且无参数。
     /// </summary>
     public class BottomNavUI : MonoBehaviour
     {
@@ -27,7 +29,6 @@ namespace Yujian.UI
         [Header("按钮")]
         [SerializeField] private Button miningButton;
         [SerializeField] private Button buildingButton;
-        [SerializeField] private Button shopButton;
 
         [Header("高亮配色")]
         [Tooltip("不在当前区域时的按钮底色")]
@@ -54,7 +55,6 @@ namespace Yujian.UI
 
             WarnIfMissingButton(miningButton, "挖矿");
             WarnIfMissingButton(buildingButton, "建筑");
-            WarnIfMissingButton(shopButton, "商店");
 
             RefreshHighlight(areas != null ? areas.CurrentArea : GameArea.Mining);
         }
@@ -80,12 +80,6 @@ namespace Yujian.UI
         public void ShowBuildingArea()
         {
             RequestArea(GameArea.Building);
-        }
-
-        /// <summary>「商店」按钮。</summary>
-        public void ShowShopArea()
-        {
-            RequestArea(GameArea.Shop);
         }
 
         // ---------------- 内部 ----------------
@@ -130,7 +124,6 @@ namespace Yujian.UI
         {
             ApplyTint(miningButton, current == GameArea.Mining);
             ApplyTint(buildingButton, current == GameArea.Building);
-            ApplyTint(shopButton, current == GameArea.Shop);
         }
 
         /// <summary>

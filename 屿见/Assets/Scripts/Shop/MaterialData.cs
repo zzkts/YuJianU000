@@ -23,9 +23,13 @@ namespace Yujian.Shop
         [SerializeField] private int price = 2;
 
         [Header("效果")]
-        [Tooltip("该原料被建成消耗后为伤害倍率提供的加成，可正可负；0 表示无额外效果。" +
+        [Tooltip("该原料被建成消耗后为**玩家**伤害倍率提供的加成，可正可负；0 表示无额外效果。" +
                  "买进背包、拖进蓝图都不生效，只有建筑建成才计入（2026-10-29 已拍板 D1=B）")]
         [SerializeField] private float damageMultiplierBonus = 0.1f;
+
+        [Tooltip("该原料被建成消耗后为**建筑**伤害倍率提供的加成（风琴博物馆自动攻击等），可正可负；" +
+                 "0 表示无额外效果。与玩家伤害倍率是两条独立的加成")]
+        [SerializeField] private float buildingDamageMultiplierBonus;
 
         [Header("颜色")]
         [Tooltip("默认颜色。购买时未指定颜色则用它")]
@@ -58,8 +62,11 @@ namespace Yujian.Shop
         /// <summary>单价（金币）。</summary>
         public int Price => price;
 
-        /// <summary>伤害倍率加成。</summary>
+        /// <summary>玩家伤害倍率加成。</summary>
         public float DamageMultiplierBonus => damageMultiplierBonus;
+
+        /// <summary>建筑伤害倍率加成。</summary>
+        public float BuildingDamageMultiplierBonus => buildingDamageMultiplierBonus;
 
         /// <summary>默认颜色。</summary>
         public MaterialColor DefaultColor => defaultColor;
@@ -120,20 +127,41 @@ namespace Yujian.Shop
 
         /// <summary>
         /// 效果的可读描述，供商店 UI 直接显示。
-        /// D1=B 起不再写「伤害倍率 +0.1」——那句话会被理解成购买即生效。
-        /// 加成改成建成后才计入，这里统一显示为「建材属性」。
+        /// D1=B 起加成只有建成后才计入，所以结尾统一标注「建成后生效」，
+        /// 避免玩家理解成购买即生效。
         /// </summary>
         public string EffectDescription
         {
             get
             {
-                if (Mathf.Approximately(damageMultiplierBonus, 0f))
+                bool hasPlayerBonus = !Mathf.Approximately(damageMultiplierBonus, 0f);
+                bool hasBuildingBonus = !Mathf.Approximately(buildingDamageMultiplierBonus, 0f);
+
+                if (!hasPlayerBonus && !hasBuildingBonus)
                 {
                     return "无额外效果";
                 }
 
-                return "建材属性";
+                var parts = new List<string>();
+
+                if (hasPlayerBonus)
+                {
+                    parts.Add($"玩家伤害倍率 {FormatBonus(damageMultiplierBonus)}");
+                }
+
+                if (hasBuildingBonus)
+                {
+                    parts.Add($"建筑伤害倍率 {FormatBonus(buildingDamageMultiplierBonus)}");
+                }
+
+                return string.Join("，", parts) + "（建成后生效）";
             }
+        }
+
+        /// <summary>把加成格式化成「+0.1」/「-0.1」/「0」。</summary>
+        private static string FormatBonus(float value)
+        {
+            return value > 0f ? $"+{value:0.##}" : value.ToString("0.##");
         }
 
         private void OnValidate()

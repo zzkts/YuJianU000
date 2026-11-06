@@ -6,11 +6,14 @@ using Yujian.Shop;
 namespace Yujian.Building.Effects
 {
     /// <summary>
-    /// 把「建筑消耗掉的材料」翻译成玩家伤害倍率加成（D1=B，2026-10-29 拍板）。
+    /// 把「建筑消耗掉的材料」翻译成玩家伤害倍率与建筑伤害倍率加成
+    /// （玩家部分为 D1=B，2026-10-29 拍板；建筑部分为 2026-11-05 商店改版新增）。
     ///
     /// 规则：
     ///   · 只有材料被建成消耗才计入——买进背包、拖进蓝图都不加倍率；
-    ///   · 每座建筑的加成 = 它的材料需求里每条 <see cref="MaterialData.DamageMultiplierBonus"/> × 数量；
+    ///   · 每座建筑的加成 = 它的材料需求里每条
+    ///     <see cref="MaterialData.DamageMultiplierBonus"/>（玩家）或
+    ///     <see cref="MaterialData.BuildingDamageMultiplierBonus"/>（建筑）× 数量；
     ///   · 同一座建筑建两遍算两份（与建筑本身一致）；
     ///   · 拆除建筑后加成自动回落。
     ///
@@ -35,8 +38,11 @@ namespace Yujian.Building.Effects
 
         private bool subscribed;
 
-        /// <summary>当前建筑带来的附加倍率。</summary>
+        /// <summary>当前建筑带来的附加玩家伤害倍率。</summary>
         public float CurrentBonus { get; private set; }
+
+        /// <summary>当前建筑带来的附加建筑伤害倍率。</summary>
+        public float CurrentBuildingBonus { get; private set; }
 
         private void Awake()
         {
@@ -75,7 +81,8 @@ namespace Yujian.Building.Effects
                 return;
             }
 
-            float total = 0f;
+            float playerTotal = 0f;
+            float buildingTotal = 0f;
             System.Collections.Generic.IReadOnlyList<GameObject> placed = buildingManager.PlacedBuildings;
 
             for (int i = 0; i < placed.Count; i++)
@@ -94,24 +101,33 @@ namespace Yujian.Building.Effects
                     continue;
                 }
 
-                total += CalculateBonus(info.Data);
+                playerTotal += CalculateBonus(info.Data);
+                buildingTotal += CalculateBuildingBonus(info.Data);
             }
 
-            if (Mathf.Approximately(total, CurrentBonus))
+            if (Mathf.Approximately(playerTotal, CurrentBonus) &&
+                Mathf.Approximately(buildingTotal, CurrentBuildingBonus))
             {
                 // 数值没变也要保证 PlayerStats 上是这个值（例如刚被别的系统清零）
-                playerStats.SetBonusDamageMultiplier(total);
+                playerStats.SetBonusDamageMultiplier(playerTotal);
+                playerStats.SetBonusBuildingDamageMultiplier(buildingTotal);
                 return;
             }
 
-            float previous = CurrentBonus;
-            CurrentBonus = total;
-            playerStats.SetBonusDamageMultiplier(total);
+            float previousPlayer = CurrentBonus;
+            float previousBuilding = CurrentBuildingBonus;
+            CurrentBonus = playerTotal;
+            CurrentBuildingBonus = buildingTotal;
+            playerStats.SetBonusDamageMultiplier(playerTotal);
+            playerStats.SetBonusBuildingDamageMultiplier(buildingTotal);
 
             if (logBonusFlow)
             {
-                Debug.Log($"[BuildingDamageBonus] 建筑 {placed.Count} 座，伤害倍率加成 " +
-                          $"{previous:0.##} → {CurrentBonus:0.##}，最终倍率 {playerStats.DamageMultiplier:0.##}");
+                Debug.Log($"[BuildingDamageBonus] 建筑 {placed.Count} 座，" +
+                          $"玩家伤害倍率加成 {previousPlayer:0.##} → {CurrentBonus:0.##}，" +
+                          $"建筑伤害倍率加成 {previousBuilding:0.##} → {CurrentBuildingBonus:0.##}；" +
+                          $"最终倍率 玩家 {playerStats.DamageMultiplier:0.##} / " +
+                          $"建筑 {playerStats.BuildingDamageMultiplier:0.##}");
             }
         }
 
@@ -140,6 +156,36 @@ namespace Yujian.Building.Effects
                 }
 
                 total += requirement.Material.DamageMultiplierBonus * requirement.Amount;
+            }
+
+            return total;
+        }
+
+        /// <summary>
+        /// 单座建筑的**建筑伤害**倍率加成。没有需求时返回 0。
+        /// 与 <see cref="CalculateBonus"/> 是两条独立公式：砖块加玩家伤害，木板加建筑伤害。
+        /// </summary>
+        public static float CalculateBuildingBonus(BuildingData data)
+        {
+            if (data == null)
+            {
+                return 0f;
+            }
+
+            System.Collections.Generic.IReadOnlyList<BuildingMaterialRequirement> requirements =
+                data.RequiredMaterials;
+            float total = 0f;
+
+            for (int i = 0; i < requirements.Count; i++)
+            {
+                BuildingMaterialRequirement requirement = requirements[i];
+
+                if (!requirement.IsValid)
+                {
+                    continue;
+                }
+
+                total += requirement.Material.BuildingDamageMultiplierBonus * requirement.Amount;
             }
 
             return total;

@@ -55,8 +55,9 @@ namespace Yujian.EditorTools
         private const float NavButtonWidth = 300f;
         private const float NavButtonHeight = 90f;
 
-        /// <summary>三个按钮相对导航条中心的横向位置。</summary>
-        private static readonly float[] NavButtonOffsetsX = { -340f, 0f, 340f };
+        /// <summary>底部按钮相对导航条中心的横向位置。</summary>
+        // 2026-11-05 商店改版后底部只剩 [挖矿] [建筑]，两个按钮以中心对称摆放。
+        private static readonly float[] NavButtonOffsetsX = { -170f, 170f };
 
         private static readonly Color NavBarColor = new Color(0f, 0f, 0f, 0.55f);
         private static readonly Color NavLabelColor = new Color(0.15f, 0.15f, 0.15f, 1f);
@@ -130,13 +131,15 @@ namespace Yujian.EditorTools
             SerializedObject areaSo = new SerializedObject(areaController);
             WriteIfEmpty(areaSo, "miningInput", miningInput);
             WritePanelArray(areaSo, "buildingAreaPanels", BuildingPanelName, FindPanel(canvas, BuildingPanelName));
-            WritePanelArray(areaSo, "shopAreaPanels", ShopPanelName, FindPanel(canvas, ShopPanelName));
             areaSo.ApplyModifiedPropertiesWithoutUndo();
 
             // 写完立刻回读：数组是空的（或整条是空引用）时，运行时切过去**什么都不会发生、
             // 也不会有任何报错** —— SetPanelsActive 对空数组是静默的。只能在这里当场拦下来（规则 5）
             VerifyPanelArray(areaSo, "buildingAreaPanels", BuildingPanelName);
-            VerifyPanelArray(areaSo, "shopAreaPanels", ShopPanelName);
+
+            // 2026-11-05 商店改版：商店不再是独立主区域，ShopPanel 的显隐交给
+            // ShopWindowController（只在建筑区点入口时打开），所以 shopAreaPanels 必须保持为空。
+            ClearPanelArray(areaSo, "shopAreaPanels");
 
             SerializedObject cameraSo = new SerializedObject(areaCamera);
             WriteIfEmpty(cameraSo, "areas", areaController);
@@ -192,14 +195,14 @@ namespace Yujian.EditorTools
 
             Debug.Log("[MvpSetupWizard] 配置完成：\n" +
                       $"  · 区域系统：{AreaSystemObjectName}（GameAreaController + AreaCameraDirector）\n" +
-                      "  · 导航条：Canvas/BottomNav = [挖矿] [建筑] [商店]，已接 BottomNavUI\n" +
+                      "  · 导航条：Canvas/BottomNav = [挖矿] [建筑]，已接 BottomNavUI\n" +
                       $"  · 金币 HUD：{coinText.name}（事件驱动，没有 Update）\n" +
                       $"  · 建筑预制体：{prefabReport}\n" +
                       $"  · 面板让位：{panelReport}\n" +
                       $"  · 面板按钮：{buttonReport}\n" +
                       $"  · GameManager.CurrentArea：{managerReport}\n" +
                       "\n请按 Ctrl+S 保存场景。\n" +
-                      "接着：开 Play Mode，用底部的 [挖矿] [建筑] [商店] 切区域。\n" +
+                      "接着：开 Play Mode，用底部的 [挖矿] [建筑] 切区域；商店在建筑区右下角的「商店」按钮里。\n" +
                       "机位是**推算值**：想换成你摆好的镜头，选中 GameAreaSystem 上的 AreaCameraDirector，" +
                       "摆好 Scene 视图后右键组件 →「把相机当前位置记录为挖矿机位 / 商店机位」。\n" +
                       "建筑区的机位仍归 BuildingCameraDirector 管（阶段 3 那套），本命令不碰它。");
@@ -236,7 +239,8 @@ namespace Yujian.EditorTools
 
             BottomNavUI nav = EnsureComponent<BottomNavUI>(navObject);
 
-            // 每次重建三个按钮：旧按钮留着会越跑越多，而且接的监听会指向旧组件
+            // 每次重建按钮：旧按钮留着会越跑越多，而且接的监听会指向旧组件。
+            // 2026-11-05 商店改版后只剩 [挖矿] [建筑]，商店入口在建筑区右下角。
             for (int i = navObject.transform.childCount - 1; i >= 0; i--)
             {
                 Undo.DestroyObjectImmediate(navObject.transform.GetChild(i).gameObject);
@@ -248,14 +252,10 @@ namespace Yujian.EditorTools
             Button buildingButton = CreateNavButton(navObject.transform, templateButton, "Button_建筑", "建筑", 1,
                 button => UnityEventTools.AddPersistentListener(button.onClick, nav.ShowBuildingArea));
 
-            Button shopButton = CreateNavButton(navObject.transform, templateButton, "Button_商店", "商店", 2,
-                button => UnityEventTools.AddPersistentListener(button.onClick, nav.ShowShopArea));
-
             SerializedObject navSo = new SerializedObject(nav);
             SetObject(navSo, "areas", areaController);
             SetObject(navSo, "miningButton", miningButton);
             SetObject(navSo, "buildingButton", buildingButton);
-            SetObject(navSo, "shopButton", shopButton);
             navSo.ApplyModifiedPropertiesWithoutUndo();
 
             // 放在 Canvas 最末：阶段 3/4 的向导是拿 Canvas 下**第一个** Button 当模板的，
@@ -858,6 +858,20 @@ namespace Yujian.EditorTools
             Debug.LogError($"[MvpSetupWizard] {fieldName} 没能写成功（Canvas/{panelName} 找不到，" +
                            "或者它不是 GameObject）：运行时切到对应区域时**面板不会出现，而且不会有别的报错**。" +
                            "请先把这个面板建好，再重跑本命令。");
+        }
+
+        /// <summary>把面板数组清空。商店改版后 shopAreaPanels 必须留空，显隐交给浮窗控制器。</summary>
+        private static void ClearPanelArray(SerializedObject so, string fieldName)
+        {
+            SerializedProperty property = so.FindProperty(fieldName);
+
+            if (property == null)
+            {
+                return;
+            }
+
+            property.arraySize = 0;
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static void SetObject(SerializedObject so, string fieldName, Object value)

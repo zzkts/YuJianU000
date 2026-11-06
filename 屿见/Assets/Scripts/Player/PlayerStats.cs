@@ -21,8 +21,15 @@ namespace Yujian.Player
         [Tooltip("玩家基础伤害倍率，MVP 默认 1。最终伤害 = 基础攻击力 ×（基础倍率 + 建筑加成）")]
         [SerializeField] private float damageMultiplier = 1f;
 
+        [Tooltip("建筑基础伤害倍率，MVP 默认 1。建筑最终伤害 = 玩家最终伤害 ×（基础建筑倍率 + 建筑加成）。" +
+                 "2026-11-05 商店策划案：木板提供建筑伤害倍率 +0.1")]
+        [SerializeField] private float buildingDamageMultiplier = 1f;
+
         /// <summary>运行时由建筑等来源写入的附加倍率（D1=B：只有材料被建成消耗才计入）。</summary>
         private float bonusDamageMultiplier;
+
+        /// <summary>运行时由建筑等来源写入的附加建筑伤害倍率（2026-11-05 商店策划案）。</summary>
+        private float bonusBuildingDamageMultiplier;
 
         /// <summary>基础攻击力。</summary>
         public float BaseAttack => baseAttack;
@@ -36,8 +43,20 @@ namespace Yujian.Player
         /// <summary>最终伤害倍率 = 基础倍率 + 建筑加成，不会低于 0。</summary>
         public float DamageMultiplier => Mathf.Max(0f, damageMultiplier + bonusDamageMultiplier);
 
+        /// <summary>基础建筑伤害倍率（不含材料加成）。</summary>
+        public float BaseBuildingDamageMultiplier => buildingDamageMultiplier;
+
+        /// <summary>材料带来的附加建筑伤害倍率。</summary>
+        public float BonusBuildingDamageMultiplier => bonusBuildingDamageMultiplier;
+
+        /// <summary>最终建筑伤害倍率 = 基础建筑倍率 + 建筑加成，不会低于 0。</summary>
+        public float BuildingDamageMultiplier => Mathf.Max(0f, buildingDamageMultiplier + bonusBuildingDamageMultiplier);
+
         /// <summary>最终伤害倍率变化时广播（参数为新值）。</summary>
         public event Action<float> OnDamageMultiplierChanged;
+
+        /// <summary>最终建筑伤害倍率变化时广播（参数为新值）。</summary>
+        public event Action<float> OnBuildingDamageMultiplierChanged;
 
         /// <summary>
         /// 设置建筑附加倍率。由 <see cref="BuildingDamageBonus"/> 在建筑增删 / 读档后重新汇总。
@@ -56,6 +75,23 @@ namespace Yujian.Player
             OnDamageMultiplierChanged?.Invoke(DamageMultiplier);
         }
 
+        /// <summary>
+        /// 设置材料带来的附加建筑伤害倍率。由 <see cref="BuildingDamageBonus"/> 在建筑增删 / 读档后重新汇总。
+        /// 传 0 就是清空加成。
+        /// </summary>
+        public void SetBonusBuildingDamageMultiplier(float bonus)
+        {
+            float sanitized = Mathf.Max(-buildingDamageMultiplier, bonus);
+
+            if (Mathf.Approximately(sanitized, bonusBuildingDamageMultiplier))
+            {
+                return;
+            }
+
+            bonusBuildingDamageMultiplier = sanitized;
+            OnBuildingDamageMultiplierChanged?.Invoke(BuildingDamageMultiplier);
+        }
+
         private void Awake()
         {
             if (baseAttack < 0f)
@@ -68,6 +104,12 @@ namespace Yujian.Player
             {
                 Debug.LogWarning($"[PlayerStats] 伤害倍率配置为负值({damageMultiplier})，已按 0 处理。", this);
                 damageMultiplier = 0f;
+            }
+
+            if (buildingDamageMultiplier < 0f)
+            {
+                Debug.LogWarning($"[PlayerStats] 建筑伤害倍率配置为负值({buildingDamageMultiplier})，已按 0 处理。", this);
+                buildingDamageMultiplier = 0f;
             }
         }
     }

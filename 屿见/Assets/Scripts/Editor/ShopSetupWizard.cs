@@ -1,73 +1,75 @@
-using System.Collections.Generic;
-using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.UI;
+using Yujian.Building;
+using Yujian.Core;
+using Yujian.Save;
 using Yujian.Shop;
 using Yujian.UI;
 
 namespace Yujian.EditorTools
 {
     /// <summary>
-    /// 原料商店面板的一键重构工具。
+    /// 商店系统 2026-11-05 改版向导：把原来的大商店窗口改建成
+    /// 「建筑区右下角入口 + 240×90 轻量化浮窗」。
     ///
-    /// 把 ShopPanel 从「手接的单原料 + 一个颜色一个按钮」
-    /// 改造成「模板克隆的原料模块列表 + 上一个/下一个 选色」。
+    /// 一次运行会完成：
+    ///   · 重建 Canvas/ShopPanel 的层级（标题 / 金币 / 原料列表 / 价格 / 购买 / 状态）；
+    ///   · 保留并隐藏旧的「照明工具升级卡」，不删除它的引用；
+    ///   · 创建木板原料资产，并把木板加进风琴博物馆的建造需求；
+    ///   · 把木板登记进 SaveCatalog；
+    ///   · 在 Canvas 下创建建筑区「商店」入口按钮；
+    ///   · 删除底部导航的「商店」按钮并把剩余两个按钮居中；
+    ///   · 清空 GameAreaController 的 shopAreaPanels（商店不再随区域自动显示）。
     ///
-    /// 为什么用编辑器脚本而不是直接改 .unity：Unity 打开着场景时从外部改文件会让编辑器整场重载，
-    /// 未保存的改动会一起丢失（见 开发进度.md 踩坑 2 / 项目规则 13）。
+    /// 幂等：重复运行不会重复创建木板、配方或入口按钮。
     ///
-    /// 本工具**幂等**：面板子物体会被整体重建；色块 PNG 已存在就跳过，**绝不覆盖**，
-    /// 所以你以后把占位图换成美术图，重跑本命令不会把图冲掉。
-    ///
-    /// 运行入口：菜单栏 → 屿见 → 配置原料商店（阶段 2 重构）
+    /// 运行入口：菜单栏 → 屿见 → 商店 → 重建轻量化商店窗口
     /// </summary>
     public static class ShopSetupWizard
     {
         private const string PanelName = "ShopPanel";
+        private const string EntryButtonName = "ShopEntryButton";
         private const string ButtonTemplateName = "ButtonTemplate";
+        private const string LightCardName = "MiningToolUpgradeCard";
 
-        /// <summary>旧版「一个颜色一个按钮」里的那个按钮，第一次运行时拿它当按钮模板。</summary>
-        private const string LegacyColorButtonName = "RedButton";
+        private const string BrickPath = "Assets/Data/Materials/Material_砖块.asset";
+        private const string WoodPath = "Assets/Data/Materials/Material_木板.asset";
+        private const string OrganMuseumPath = "Assets/Data/Buildings/Building_风琴博物馆.asset";
+        private const string SaveCatalogPath = "Assets/Data/Save/SaveCatalog.asset";
 
-        private const string SwatchFolder = "Assets/Textures/Materials";
-        private const string MaterialDataPath = "Assets/Data/Materials/Material_砖块.asset";
-
-        private const int SwatchSize = 64;
-        private const int SwatchBorder = 4;
+        private const float ItemHeight = 52f;
 
         // ---------------- 配色 ----------------
-        // 面板底图是半透明黑，深色字在上面基本读不出来，新建的文字一律用浅色。
         private static readonly Color TitleColor = new Color(0.96f, 0.96f, 0.96f, 1f);
         private static readonly Color BodyColor = new Color(0.88f, 0.88f, 0.88f, 1f);
         private static readonly Color DimColor = new Color(0.72f, 0.72f, 0.72f, 1f);
         private static readonly Color PriceColor = new Color(1f, 0.85f, 0.42f, 1f);
-
-        /// <summary>按钮底图是白色，按钮上的字必须用深色。</summary>
         private static readonly Color LabelOnButtonColor = new Color(0.15f, 0.15f, 0.15f, 1f);
+        private static readonly Color SelectionColor = new Color(1f, 0.84f, 0.42f, 0.22f);
+        private static readonly Color PanelColor = new Color(0f, 0f, 0f, 0.80f);
 
-        // ---------------- 尺寸 ----------------
-        private const float TitleHeight = 44f;
-        private const float MoneyHeight = 34f;
-        private const float StatusHeight = 30f;
-        private const float ItemNameHeight = 30f;
-        private const float ItemLineHeight = 22f;
-        private const float ColorRowHeight = 52f;
-        private const float SwatchSide = 48f;
-        private const float SmallButtonWidth = 76f;
-        private const float SmallButtonHeight = 40f;
-        private const float BuyButtonWidth = 160f;
-        private const float BuyButtonHeight = 44f;
+        /// <summary>
+        /// 批处理验证专用：打开主场景 → 配置 → 保存。
+        /// 菜单入口仍然只做配置并留给用户 Ctrl+S，不会自动改场景文件。
+        /// </summary>
+        public static void ConfigureAndSaveForBatch()
+        {
+            EditorSceneManager.OpenScene("Assets/Scenes/SampleScene.unity", OpenSceneMode.Single);
+            Configure();
+            EditorSceneManager.SaveOpenScenes();
+            AssetDatabase.SaveAssets();
+        }
 
-        [MenuItem("屿见/商店/配置原料商店（阶段 2 重构）", false, 410)]
+        [MenuItem("屿见/商店/重建轻量化商店窗口", false, 410)]
         public static void Configure()
         {
             Canvas canvas = Object.FindFirstObjectByType<Canvas>();
 
             if (canvas == null)
             {
-                Fail("场景里找不到 Canvas，无法重建商店面板。");
+                Fail("场景里找不到 Canvas，无法重建商店窗口。");
                 return;
             }
 
@@ -75,7 +77,7 @@ namespace Yujian.EditorTools
 
             if (panel == null)
             {
-                Fail($"Canvas 下找不到「{PanelName}」，无法重建商店面板。");
+                Fail($"Canvas 下找不到「{PanelName}」，无法重建商店窗口。");
                 return;
             }
 
@@ -87,252 +89,341 @@ namespace Yujian.EditorTools
                 return;
             }
 
-            MaterialData materialAsset = AssetDatabase.LoadAssetAtPath<MaterialData>(MaterialDataPath);
+            MaterialData brick = AssetDatabase.LoadAssetAtPath<MaterialData>(BrickPath);
 
-            if (materialAsset == null)
+            if (brick == null)
             {
-                Fail($"找不到原料数据资产 {MaterialDataPath}。");
+                Fail($"找不到砖块原料资产 {BrickPath}。");
                 return;
             }
 
-            // ---------- 1. 按钮模板 ----------
-            // 必须在清空子物体之前克隆出来：旧的颜色按钮马上就会被删掉
-            GameObject buttonProto = CloneButtonPrototype(panel);
+            MaterialData wood = EnsureWoodMaterial();
 
-            if (buttonProto == null)
+            if (wood == null)
             {
-                Fail("商店面板里找不到任何 Button 可以当模板，无法创建按钮。\n\n" +
-                     "请先确认 ShopPanel 下还有按钮，或从别的面板借一个。");
+                Fail($"创建木板原料资产失败：{WoodPath}");
                 return;
             }
 
-            // ---------- 2. 清空旧子物体 ----------
-            // 只清子物体：ShopPanel 本体、它的 Image、VerticalLayoutGroup、ShopUI 都保留，
-            // 这样场景里指向 ShopUI 的引用不会断。
-            for (int i = panel.childCount - 1; i >= 0; i--)
+            EnsureSaveCatalogMaterial(wood);
+            EnsureOrganMuseumWood(wood);
+
+            GameAreaController areas = Object.FindFirstObjectByType<GameAreaController>(
+                FindObjectsInactive.Include);
+
+            if (areas == null)
             {
-                Undo.DestroyObjectImmediate(panel.GetChild(i).gameObject);
+                Fail("场景里找不到 GameAreaController，商店入口无法随建筑区显隐。");
+                return;
             }
 
-            // ---------- 3. 色块贴图 ----------
-            Sprite defaultSwatch = EnsureSwatchSprite(materialAsset.DefaultColor);
+            // 保留照明工具升级卡：它是旧商店里已有的功能，本次只是不显示，不删除引用。
+            Transform lightCard = panel.Find(LightCardName);
 
-            // ---------- 4. 重建层级 ----------
-            Text titleText = CreateText(panel, "TitleText", "原料商店", 22, TextAnchor.MiddleCenter, TitleColor, TitleHeight);
-            titleText.fontStyle = FontStyle.Bold;
+            if (lightCard != null)
+            {
+                lightCard.gameObject.SetActive(false);
+            }
 
-            Transform itemContainer = CreateContainer(panel, "ItemContainer", 8f, 10f);
-            RectTransform itemTemplate = CreateItemTemplate(itemContainer, buttonProto, defaultSwatch);
+            ClearChildrenExcept(panel, lightCard);
+            ShopWindowLayout layout = ConfigurePanelRect(panel, canvas);
 
-            Text moneyText = CreateText(panel, "MoneyText", "金币：0", 16, TextAnchor.MiddleLeft, BodyColor, MoneyHeight);
-            Text statusText = CreateText(panel, "StatusText", string.Empty, 15, TextAnchor.MiddleCenter, BodyColor, StatusHeight);
+            if (layout == null)
+            {
+                return;
+            }
 
-            // 按钮模板挂在最前面并保持隐藏：
-            // 阶段 3/4 的向导用 GetComponentsInChildren<Button>(true) 找模板，那会**遍历到隐藏物体**。
-            // 把全尺寸的模板排在第一个，它们就仍然挑到和以前一样大的按钮，
-            // 不会误挑条目里 40×40 的小按钮（那会把建造面板的按钮缩小）。
-            buttonProto.transform.SetParent(panel, false);
-            buttonProto.name = ButtonTemplateName;
-            buttonProto.transform.SetSiblingIndex(0);
-            buttonProto.SetActive(false);
+            BuildContents(panel, brick, wood, shopUI);
+            layout.ApplyLayout();
+            EditorUtility.SetDirty(layout);
+            EnsureEntryButton(canvas, panel.gameObject, areas);
+            RemoveBottomNavShopButton(canvas);
+            ClearShopAreaPanels(areas);
 
-            // ---------- 5. 接线 ----------
-            WirePanel(shopUI, materialAsset, titleText, moneyText, statusText, itemContainer, itemTemplate);
-            WireColorSprites(shopUI);
+            // 关闭状态进 Play：由 ShopWindowController 在建筑区点入口时再打开。
+            panel.gameObject.SetActive(false);
 
-            // ---------- 6. 收尾 ----------
             EditorSceneManager.MarkSceneDirty(panel.gameObject.scene);
             Selection.activeGameObject = panel.gameObject;
             EditorGUIUtility.PingObject(panel.gameObject);
+            AssetDatabase.SaveAssets();
 
-            Debug.Log("[ShopSetupWizard] 配置完成：\n" +
-                      $"  · {PanelName}：重建为 标题 / 条目容器 / 条目模板 / 金币 / 状态行\n" +
-                      $"  · {ButtonTemplateName}：全尺寸按钮模板（隐藏），放在第一个子物体位置\n" +
-                      $"  · 商品目录：{materialAsset.MaterialName}\n" +
-                      $"  · 色块贴图：{SwatchFolder}/（已存在的文件不会被覆盖）\n" +
-                      "请按 Ctrl+S 保存场景。\n" +
-                      "注意：阶段 3/4 的向导若再运行，会挑 ButtonTemplate 作按钮模板 —— 这是有意为之，" +
-                      "尺寸与以前一致。");
+            Debug.Log("[ShopSetupWizard] 轻量化商店配置完成：\n" +
+                      $"  · {PanelName}：{layout.WindowSize.x:0}×{layout.WindowSize.y:0}，" +
+                      "建筑区右下角浮窗（尺寸可在 ShopWindowLayout 里调）\n" +
+                      $"  · 商品目录：{brick.MaterialName}、{wood.MaterialName}\n" +
+                      $"  · 木板已加入「风琴博物馆」建造需求（1 个）并登记存档目录\n" +
+                      $"  · Canvas/{EntryButtonName}：只在建筑区显示\n" +
+                      "  · 底部导航「商店」已移除\n" +
+                      "  · 照明工具升级卡已保留但隐藏\n" +
+                      "请按 Ctrl+S 保存场景。");
         }
 
-        // ---------------- 按钮 ----------------
+        // ---------------- 场景层级 ----------------
 
-        /// <summary>克隆一个脱离层级的按钮当模板。优先复用上一轮建的 ButtonTemplate，其次旧的 RedButton。</summary>
-        private static GameObject CloneButtonPrototype(Transform panel)
+        private static void ClearChildrenExcept(Transform panel, Transform keep)
         {
-            Transform source = panel.Find(ButtonTemplateName);
-
-            if (source == null)
+            for (int i = panel.childCount - 1; i >= 0; i--)
             {
-                source = panel.Find(LegacyColorButtonName);
-            }
+                Transform child = panel.GetChild(i);
 
-            if (source == null)
-            {
-                Button any = panel.GetComponentInChildren<Button>(true);
-
-                if (any != null)
+                if (keep != null && child == keep)
                 {
-                    source = any.transform;
+                    continue;
                 }
+
+                Undo.DestroyObjectImmediate(child.gameObject);
+            }
+        }
+
+        private static ShopWindowLayout ConfigurePanelRect(Transform panel, Canvas canvas)
+        {
+            VerticalLayoutGroup oldLayout = panel.GetComponent<VerticalLayoutGroup>();
+
+            if (oldLayout != null)
+            {
+                Undo.DestroyObjectImmediate(oldLayout);
             }
 
-            if (source == null)
+            RectTransform rect = panel.GetComponent<RectTransform>();
+
+            if (rect == null)
             {
+                Fail($"「{PanelName}」上没有 RectTransform。");
                 return null;
             }
 
-            GameObject proto = Object.Instantiate(source.gameObject);
-            proto.name = ButtonTemplateName + "（临时）";
+            // 尺寸交给 ShopWindowLayout：已有组件就沿用用户配置，没有就补一个默认 240×90。
+            // 重跑向导不会再把尺寸冲回写死的值。
+            ShopWindowLayout layout = panel.GetComponent<ShopWindowLayout>();
 
-            // 持久监听会跟着克隆过来，必须清掉，否则新按钮会连带触发旧按钮的行为
-            Button protoButton = proto.GetComponent<Button>();
-
-            if (protoButton != null)
+            if (layout == null)
             {
-                SerializedObject so = new SerializedObject(protoButton);
-                SerializedProperty calls = so.FindProperty("m_OnClick.m_PersistentCalls.m_Calls");
-
-                if (calls != null)
-                {
-                    calls.ClearArray();
-                    so.ApplyModifiedPropertiesWithoutUndo();
-                }
+                layout = Undo.AddComponent<ShopWindowLayout>(panel.gameObject);
             }
 
-            return proto;
+            rect.anchorMin = new Vector2(1f, 0f);
+            rect.anchorMax = new Vector2(1f, 0f);
+            rect.pivot = new Vector2(1f, 0f);
+            rect.anchoredPosition = new Vector2(-370f, 240f);
+            rect.sizeDelta = layout.WindowSize;
+
+            Image background = panel.GetComponent<Image>();
+
+            if (background == null)
+            {
+                background = Undo.AddComponent<Image>(panel.gameObject);
+            }
+
+            background.color = PanelColor;
+            background.raycastTarget = true;
+
+            Outline outline = panel.GetComponent<Outline>();
+
+            if (outline == null)
+            {
+                outline = Undo.AddComponent<Outline>(panel.gameObject);
+            }
+
+            outline.effectColor = new Color(1f, 1f, 1f, 0.28f);
+            outline.effectDistance = new Vector2(1f, -1f);
+            outline.useGraphicAlpha = true;
+
+            ShopWindowDrag drag = panel.GetComponent<ShopWindowDrag>();
+
+            if (drag == null)
+            {
+                drag = Undo.AddComponent<ShopWindowDrag>(panel.gameObject);
+            }
+
+            drag.ConfigureForSetup(canvas);
+            EditorUtility.SetDirty(drag);
+            EditorUtility.SetDirty(background);
+            EditorUtility.SetDirty(layout);
+            return layout;
         }
 
-        private static Button CreateButtonFromTemplate(Transform parent, GameObject proto, string name, string label,
-                                                       float width, float height)
+        private static void BuildContents(Transform panel, MaterialData brick, MaterialData wood, ShopUI shopUI)
         {
-            GameObject go = Object.Instantiate(proto, parent);
-            go.name = name;
-            go.SetActive(true);
-            SetPreferredSize(go, width, height);
+            Text titleText = CreateText(panel, "TitleText", "原料商店", 10, TitleColor, TextAnchor.MiddleLeft);
+            titleText.fontStyle = FontStyle.Bold;
+            Place(titleText.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
+                  new Vector2(6f, -4f), new Vector2(120f, 12f));
 
-            Text labelText = go.GetComponentInChildren<Text>(true);
+            Text moneyText = CreateText(panel, "MoneyText", "金币 0", 8, BodyColor, TextAnchor.MiddleRight);
+            Place(moneyText.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f),
+                  new Vector2(-6f, -4f), new Vector2(96f, 12f));
 
-            if (labelText != null)
-            {
-                labelText.text = label;
-                labelText.font = BuiltinFont();
-                labelText.fontSize = 16;
-                labelText.fontStyle = FontStyle.Normal;
-                labelText.alignment = TextAnchor.MiddleCenter;
-                labelText.raycastTarget = false;
-                labelText.color = LabelOnButtonColor;
-            }
-            else
-            {
-                Debug.LogWarning($"[ShopSetupWizard] 按钮模板上没有 Text 子物体，「{label}」按钮会没有文字。");
-            }
+            Text statusText = CreateText(panel, "StatusText", string.Empty, 8, BodyColor, TextAnchor.MiddleLeft);
+            Place(statusText.gameObject, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f),
+                  new Vector2(6f, 4f), new Vector2(144f, 10f));
 
-            Button button = go.GetComponent<Button>();
+            Transform itemContainer;
+            RectTransform itemTemplate = BuildScroll(panel, out itemContainer);
 
-            if (button == null)
-            {
-                Debug.LogWarning($"[ShopSetupWizard] 按钮模板上没有 Button 组件，「{label}」将不可点击。");
-            }
+            Text priceText = CreateText(panel, "PriceText", "单价 —\n总价 —", 9, PriceColor, TextAnchor.MiddleRight);
+            Place(priceText.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f),
+                  new Vector2(-4f, 42f), new Vector2(84f, 30f));
 
-            return button;
+            Button buyButton = CreateButton(panel, "BuyButton", "购买", 10);
+            Place(buyButton.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f),
+                  new Vector2(-4f, 16f), new Vector2(84f, 24f));
+
+            // 给旧向导留一个可复用的隐藏按钮模板（MiningToolUpgradeSetupWizard 等会找它）。
+            Button template = CreateButton(panel, ButtonTemplateName, "按钮", 12);
+            Place(template.gameObject, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                  Vector2.zero, new Vector2(160f, 44f));
+            template.gameObject.SetActive(false);
+
+            WireShopUI(shopUI, brick, wood, titleText, moneyText, priceText, statusText,
+                       itemContainer, itemTemplate, buyButton);
         }
 
-        // ---------------- 条目模板 ----------------
+        private static RectTransform BuildScroll(Transform panel, out Transform itemContainer)
+        {
+            GameObject scrollGo = CreateUIObject("ItemScroll", panel);
+            Place(scrollGo, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f),
+                  new Vector2(4f, 16f), new Vector2(150f, 56f));
 
-        private static RectTransform CreateItemTemplate(Transform parent, GameObject buttonProto, Sprite defaultSwatch)
+            ScrollRect scroll = scrollGo.AddComponent<ScrollRect>();
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.scrollSensitivity = 20f;
+            scroll.inertia = false;
+
+            GameObject viewport = CreateUIObject("Viewport", scrollGo.transform);
+            Place(viewport, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+
+            Image viewportImage = viewport.AddComponent<Image>();
+            viewportImage.color = new Color(0f, 0f, 0f, 0f);
+            viewportImage.raycastTarget = true;
+            viewport.AddComponent<RectMask2D>();
+
+            GameObject content = CreateUIObject("Content", viewport.transform);
+            RectTransform contentRect = Place(content, new Vector2(0f, 1f), new Vector2(1f, 1f),
+                                              new Vector2(0.5f, 1f), Vector2.zero, Vector2.zero);
+
+            VerticalLayoutGroup layout = content.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 2f;
+            layout.childAlignment = TextAnchor.UpperCenter;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+
+            ContentSizeFitter fitter = content.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            scroll.viewport = (RectTransform)viewport.transform;
+            scroll.content = contentRect;
+
+            RectTransform itemTemplate = BuildItemTemplate(content.transform);
+            itemContainer = content.transform;
+            return itemTemplate;
+        }
+
+        private static RectTransform BuildItemTemplate(Transform parent)
         {
             GameObject root = CreateUIObject("ItemTemplate", parent);
-            RectTransform rect = root.GetComponent<RectTransform>();
+            Place(root, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f),
+                  Vector2.zero, new Vector2(0f, ItemHeight));
 
-            // 刻意不给条目根节点挂 LayoutElement：
-            // VerticalLayoutGroup 自己就是 ILayoutElement，会按内容算出首选高度并传给外层；
-            // 一旦挂上 LayoutElement，那个值会反过来覆盖布局组的计算结果。
-            ConfigureVertical(root.AddComponent<VerticalLayoutGroup>(), 10f, 6f);
-            ShopItemUI item = root.AddComponent<ShopItemUI>();
+            LayoutElement rootLayout = root.AddComponent<LayoutElement>();
+            rootLayout.preferredHeight = ItemHeight;
+            rootLayout.minHeight = ItemHeight;
 
-            // 原料名称
-            Text nameText = CreateText(root.transform, "NameText", "原料", 20, TextAnchor.MiddleCenter, TitleColor, ItemNameHeight);
+            Image background = root.AddComponent<Image>();
+            background.color = new Color(1f, 1f, 1f, 0.06f);
+            background.raycastTarget = true;
+
+            Button selectButton = root.AddComponent<Button>();
+            selectButton.targetGraphic = background;
+
+            GameObject highlight = CreateUIObject("SelectionHighlight", root.transform);
+            Place(highlight, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+            Image highlightImage = highlight.AddComponent<Image>();
+            highlightImage.color = SelectionColor;
+            highlightImage.raycastTarget = false;
+            highlightImage.enabled = false;
+
+            Text nameText = CreateText(root.transform, "NameText", "原料", 9, TitleColor, TextAnchor.MiddleLeft);
             nameText.fontStyle = FontStyle.Bold;
+            Place(nameText.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
+                  new Vector2(4f, -3f), new Vector2(92f, 11f));
 
-            // 原料类型
-            Text typeText = CreateText(root.transform, "TypeText", "类型：", 15, TextAnchor.MiddleCenter, DimColor, ItemLineHeight);
+            Text styleText = CreateText(root.transform, "StyleText", "样式：砖块", 7, DimColor, TextAnchor.MiddleLeft);
+            Place(styleText.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
+                  new Vector2(4f, -14f), new Vector2(92f, 9f));
 
-            // ---- 原料说明块：上半部分是颜色选择器，下半部分是效果与持有数量 ----
-            GameObject description = CreateUIObject("DescriptionRoot", root.transform);
-            Image descriptionBackground = description.AddComponent<Image>();
-            descriptionBackground.sprite = null;
-            descriptionBackground.color = new Color(1f, 1f, 1f, 0.06f);
-            descriptionBackground.raycastTarget = false;
-            ConfigureVertical(description.AddComponent<VerticalLayoutGroup>(), 8f, 4f);
+            Text effectText = CreateText(root.transform, "EffectText", "说明", 7, DimColor, TextAnchor.MiddleLeft);
+            Place(effectText.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
+                  new Vector2(4f, -24f), new Vector2(142f, 9f));
 
-            // 颜色选择行：[上一个] [色块] [下一个]
-            GameObject colorRow = CreateUIObject("ColorRow", description.transform);
-            HorizontalLayoutGroup colorRowLayout = colorRow.AddComponent<HorizontalLayoutGroup>();
-            colorRowLayout.padding = new RectOffset(0, 0, 2, 2);
-            colorRowLayout.spacing = 12f;
-            colorRowLayout.childAlignment = TextAnchor.MiddleCenter;
-            colorRowLayout.childControlWidth = true;
-            colorRowLayout.childControlHeight = true;
-            colorRowLayout.childForceExpandWidth = false;
-            colorRowLayout.childForceExpandHeight = false;
-            SetPreferredSize(colorRow, -1f, ColorRowHeight);
+            GameObject colorRow = CreateUIObject("ColorRow", root.transform);
+            Place(colorRow, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f),
+                  new Vector2(4f, 3f), new Vector2(94f, 8f));
 
-            Button previousButton = CreateButtonFromTemplate(colorRow.transform, buttonProto,
-                                                             "PrevButton", "上一个", SmallButtonWidth, SmallButtonHeight);
-            Image swatchImage = CreateSwatch(colorRow.transform, defaultSwatch);
-            Button nextButton = CreateButtonFromTemplate(colorRow.transform, buttonProto,
-                                                         "NextButton", "下一个", SmallButtonWidth, SmallButtonHeight);
+            HorizontalLayoutGroup colorLayout = colorRow.AddComponent<HorizontalLayoutGroup>();
+            colorLayout.spacing = 2f;
+            colorLayout.childAlignment = TextAnchor.MiddleLeft;
+            colorLayout.childControlWidth = true;
+            colorLayout.childControlHeight = true;
+            colorLayout.childForceExpandWidth = false;
+            colorLayout.childForceExpandHeight = false;
 
-            Text colorNameText = CreateText(description.transform, "ColorNameText", "红色", 15, TextAnchor.MiddleCenter, BodyColor, ItemLineHeight);
-            Text effectText = CreateText(description.transform, "EffectText", "效果：", 14, TextAnchor.MiddleCenter, DimColor, ItemLineHeight);
-            Text ownedText = CreateText(description.transform, "OwnedText", "持有：", 14, TextAnchor.MiddleCenter, DimColor, ItemLineHeight);
+            GameObject dotTemplate = CreateUIObject("ColorDotTemplate", colorRow.transform);
+            Image dotImage = dotTemplate.AddComponent<Image>();
+            dotImage.color = Color.white;
+            dotImage.raycastTarget = false;
 
-            // 价格与购买
-            Text priceText = CreateText(root.transform, "PriceText", "价格：", 16, TextAnchor.MiddleCenter, PriceColor, ItemLineHeight + 4f);
-            Button buyButton = CreateButtonFromTemplate(root.transform, buttonProto,
-                                                        "BuyButton", "购买", BuyButtonWidth, BuyButtonHeight);
+            LayoutElement dotLayout = dotTemplate.AddComponent<LayoutElement>();
+            dotLayout.preferredWidth = 8f;
+            dotLayout.preferredHeight = 8f;
+            dotLayout.minWidth = 8f;
+            dotLayout.minHeight = 8f;
+            dotTemplate.SetActive(false);
 
-            // 模板本身不显示，只在运行时被克隆
+            GameObject quantityRoot = CreateUIObject("QuantityRoot", root.transform);
+            Place(quantityRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f),
+                  new Vector2(-4f, -3f), new Vector2(46f, 20f));
+
+            Text quantityLabel = CreateText(quantityRoot.transform, "QuantityLabel", "数量", 7,
+                                            DimColor, TextAnchor.MiddleCenter);
+            Place(quantityLabel.gameObject, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f),
+                  new Vector2(0f, -1f), new Vector2(0f, 8f));
+
+            Button minusButton = CreateButton(quantityRoot.transform, "MinusButton", "-", 11);
+            Place(minusButton.gameObject, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f),
+                  Vector2.zero, new Vector2(14f, 12f));
+
+            Text quantityText = CreateText(quantityRoot.transform, "QuantityText", "1", 8,
+                                           BodyColor, TextAnchor.MiddleCenter);
+            Place(quantityText.gameObject, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f),
+                  new Vector2(14f, 0f), new Vector2(18f, 12f));
+
+            Button plusButton = CreateButton(quantityRoot.transform, "PlusButton", "+", 11);
+            Place(plusButton.gameObject, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f),
+                  new Vector2(32f, 0f), new Vector2(14f, 12f));
+
+            ShopItemUI item = root.AddComponent<ShopItemUI>();
+            WireShopItem(item, nameText, styleText, effectText, quantityText, colorRow.transform,
+                         dotImage, selectButton, highlightImage, minusButton, plusButton);
+
             root.SetActive(false);
-
-            SerializedObject so = new SerializedObject(item);
-            SetObject(so, "nameText", nameText);
-            SetObject(so, "typeText", typeText);
-            SetObject(so, "colorNameText", colorNameText);
-            SetObject(so, "effectText", effectText);
-            SetObject(so, "ownedText", ownedText);
-            SetObject(so, "priceText", priceText);
-            SetObject(so, "swatchImage", swatchImage);
-            SetObject(so, "previousButton", previousButton);
-            SetObject(so, "nextButton", nextButton);
-            SetObject(so, "buyButton", buyButton);
-            so.ApplyModifiedPropertiesWithoutUndo();
-
-            return rect;
+            return (RectTransform)root.transform;
         }
 
-        private static Image CreateSwatch(Transform parent, Sprite sprite)
-        {
-            GameObject go = CreateUIObject("Swatch", parent);
-            Image image = go.AddComponent<Image>();
-            image.sprite = sprite;
-            image.color = Color.white;
-            image.type = Image.Type.Simple;
-            image.preserveAspect = true;
-            image.raycastTarget = false;
-            SetPreferredSize(go, SwatchSide, SwatchSide);
-            return image;
-        }
+        // ---------------- 接线 ----------------
 
-        // ---------------- ShopUI 接线 ----------------
-
-        private static void WirePanel(ShopUI shopUI, MaterialData materialAsset, Text titleText, Text moneyText,
-                                      Text statusText, Transform itemContainer, RectTransform itemTemplate)
+        private static void WireShopUI(ShopUI shopUI, MaterialData brick, MaterialData wood,
+                                       Text titleText, Text moneyText, Text priceText, Text statusText,
+                                       Transform itemContainer, RectTransform itemTemplate, Button buyButton)
         {
             SerializedObject so = new SerializedObject(shopUI);
 
-            // shop 引用保持原样；万一为空就找场景里的补上，别让购买按钮点了才报错
             SerializedProperty shopProperty = so.FindProperty("shop");
 
             if (shopProperty != null && shopProperty.objectReferenceValue == null)
@@ -353,239 +444,272 @@ namespace Yujian.EditorTools
 
             if (materialsProperty != null)
             {
-                materialsProperty.arraySize = 1;
-                materialsProperty.GetArrayElementAtIndex(0).objectReferenceValue = materialAsset;
+                materialsProperty.arraySize = 2;
+                materialsProperty.GetArrayElementAtIndex(0).objectReferenceValue = brick;
+                materialsProperty.GetArrayElementAtIndex(1).objectReferenceValue = wood;
             }
 
             SetObject(so, "titleText", titleText);
             SetObject(so, "moneyText", moneyText);
+            SetObject(so, "priceText", priceText);
             SetObject(so, "statusText", statusText);
             SetObject(so, "itemContainer", itemContainer);
             SetObject(so, "itemTemplate", itemTemplate);
+            SetObject(so, "buyButton", buyButton);
+            SetString(so, "title", "原料商店");
+            SetString(so, "successMessage", "成功购买");
+            SetString(so, "insufficientMessage", "当前货币不足");
+            SetString(so, "failureMessage", "购买失败");
 
             so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(shopUI);
         }
 
-        private static void WireColorSprites(ShopUI shopUI)
+        private static void WireShopItem(ShopItemUI item, Text nameText, Text styleText, Text effectText,
+                                         Text quantityText, Transform colorRow, Image colorDotTemplate,
+                                         Button selectButton, Image selectionHighlight,
+                                         Button minusButton, Button plusButton)
         {
-            SerializedObject so = new SerializedObject(shopUI);
-
-            // 先记下手工配过的贴图，重跑时不能覆盖掉（你可能已经换成美术图了）
-            Dictionary<MaterialColor, Sprite> manual = ReadConfiguredSprites(so);
-            System.Array colors = System.Enum.GetValues(typeof(MaterialColor));
-
-            SerializedProperty spritesProperty = so.FindProperty("colorSprites");
-
-            if (spritesProperty == null)
-            {
-                Debug.LogWarning("[ShopSetupWizard] ShopUI 上找不到 colorSprites 字段，色块贴图未写入。");
-                return;
-            }
-
-            spritesProperty.arraySize = colors.Length;
-
-            for (int i = 0; i < colors.Length; i++)
-            {
-                MaterialColor color = (MaterialColor)colors.GetValue(i);
-                SerializedProperty entry = spritesProperty.GetArrayElementAtIndex(i);
-                entry.FindPropertyRelative("color").intValue = (int)color;
-
-                Sprite sprite;
-
-                if (manual.TryGetValue(color, out Sprite configured) && configured != null)
-                {
-                    sprite = configured;
-                }
-                else
-                {
-                    sprite = EnsureSwatchSprite(color);
-                }
-
-                entry.FindPropertyRelative("sprite").objectReferenceValue = sprite;
-            }
-
+            SerializedObject so = new SerializedObject(item);
+            SetObject(so, "nameText", nameText);
+            SetObject(so, "styleText", styleText);
+            SetObject(so, "effectText", effectText);
+            SetObject(so, "quantityText", quantityText);
+            SetObject(so, "colorRow", colorRow);
+            SetObject(so, "colorDotTemplate", colorDotTemplate);
+            SetObject(so, "selectButton", selectButton);
+            SetObject(so, "selectionHighlight", selectionHighlight);
+            SetObject(so, "minusButton", minusButton);
+            SetObject(so, "plusButton", plusButton);
             so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(item);
         }
 
-        /// <summary>读当前已经配好的颜色 → 贴图，用来判断哪些是手工指定过的。</summary>
-        private static Dictionary<MaterialColor, Sprite> ReadConfiguredSprites(SerializedObject so)
+        // ---------------- 入口与导航 ----------------
+
+        private static void EnsureEntryButton(Canvas canvas, GameObject shopWindow, GameAreaController areas)
         {
-            Dictionary<MaterialColor, Sprite> map = new Dictionary<MaterialColor, Sprite>();
-            SerializedProperty spritesProperty = so.FindProperty("colorSprites");
+            Transform existing = canvas.transform.Find(EntryButtonName);
 
-            if (spritesProperty == null)
+            if (existing != null)
             {
-                return map;
+                Undo.DestroyObjectImmediate(existing.gameObject);
             }
 
-            for (int i = 0; i < spritesProperty.arraySize; i++)
-            {
-                SerializedProperty entry = spritesProperty.GetArrayElementAtIndex(i);
-                int colorValue = entry.FindPropertyRelative("color").intValue;
-                Sprite sprite = entry.FindPropertyRelative("sprite").objectReferenceValue as Sprite;
+            Button entry = CreateButton(canvas.transform, EntryButtonName, "商店", 14);
+            Place(entry.gameObject, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f),
+                  new Vector2(-370f, 160f), new Vector2(120f, 64f));
+            entry.gameObject.SetActive(false);
 
-                if (sprite != null)
-                {
-                    map[(MaterialColor)colorValue] = sprite;
-                }
+            ShopWindowController controller = canvas.GetComponent<ShopWindowController>();
+
+            if (controller == null)
+            {
+                controller = Undo.AddComponent<ShopWindowController>(canvas.gameObject);
             }
 
-            return map;
+            controller.ConfigureForSetup(areas, shopWindow, entry.gameObject);
+            EditorUtility.SetDirty(controller);
+
+            Debug.Log($"[ShopSetupWizard] 已创建建筑区商店入口 Canvas/{EntryButtonName}。");
         }
 
-        // ---------------- 占位色块 ----------------
-
-        /// <summary>
-        /// 保证某种颜色有一张色块贴图。
-        /// **文件已存在就完全不碰它** —— 这是你以后换成美术图后重跑向导不会被冲掉的保证。
-        /// </summary>
-        private static Sprite EnsureSwatchSprite(MaterialColor color)
+        private static void RemoveBottomNavShopButton(Canvas canvas)
         {
-            string path = $"{SwatchFolder}/Color_{color}.png";
+            Transform bottomNav = canvas.transform.Find("BottomNav");
 
-            if (!File.Exists(path))
+            if (bottomNav == null)
             {
-                EnsureFolder(SwatchFolder);
-                WritePlaceholderTexture(path, color);
-                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
-
-                if (File.Exists(path))
-                {
-                    Debug.Log($"[ShopSetupWizard] 生成占位色块 {path}（换成美术图直接替换该文件即可，重跑不会覆盖）。");
-                }
-            }
-
-            ConfigureSwatchImporter(path);
-            return AssetDatabase.LoadAssetAtPath<Sprite>(path);
-        }
-
-        private static void WritePlaceholderTexture(string path, MaterialColor color)
-        {
-            Color fill = color.ToDisplayColor();
-            Color edge = new Color(fill.r * 0.45f, fill.g * 0.45f, fill.b * 0.45f, 1f);
-
-            Texture2D texture = new Texture2D(SwatchSize, SwatchSize, TextureFormat.RGBA32, false);
-            Color[] pixels = new Color[SwatchSize * SwatchSize];
-
-            for (int y = 0; y < SwatchSize; y++)
-            {
-                for (int x = 0; x < SwatchSize; x++)
-                {
-                    bool onBorder = x < SwatchBorder || y < SwatchBorder ||
-                                    x >= SwatchSize - SwatchBorder || y >= SwatchSize - SwatchBorder;
-
-                    // 描边是必须的：深色面板上纯色块和背景容易糊在一起
-                    pixels[y * SwatchSize + x] = onBorder ? edge : fill;
-                }
-            }
-
-            texture.SetPixels(pixels);
-            texture.Apply();
-
-            byte[] png = texture.EncodeToPNG();
-            File.WriteAllBytes(path, png);
-
-            Object.DestroyImmediate(texture);
-        }
-
-        private static void ConfigureSwatchImporter(string path)
-        {
-            TextureImporter importer = AssetImporter.GetAtPath(path) as TextureImporter;
-
-            if (importer == null)
-            {
-                Debug.LogWarning($"[ShopSetupWizard] 取不到 {path} 的贴图导入器，色块可能不是 Sprite 类型。");
+                Debug.LogWarning("[ShopSetupWizard] Canvas 下找不到 BottomNav，底部「商店」按钮未处理。");
                 return;
             }
 
-            bool changed = false;
+            Transform shopButton = bottomNav.Find("Button_商店");
 
-            if (importer.textureType != TextureImporterType.Sprite)
+            if (shopButton != null)
             {
-                importer.textureType = TextureImporterType.Sprite;
-                changed = true;
+                Undo.DestroyObjectImmediate(shopButton.gameObject);
+                Debug.Log("[ShopSetupWizard] 已删除底部导航「商店」按钮。");
+            }
+            else
+            {
+                Debug.Log("[ShopSetupWizard] 底部导航已经没有「商店」按钮（重复运行属正常）。");
             }
 
-            if (importer.spriteImportMode != SpriteImportMode.Single)
+            // 剩余两个按钮居中，避免去掉第三个后整体偏左。
+            MoveBottomButton(bottomNav, "Button_挖矿", -170f);
+            MoveBottomButton(bottomNav, "Button_建筑", 170f);
+        }
+
+        private static void MoveBottomButton(Transform bottomNav, string childName, float x)
+        {
+            Transform child = bottomNav.Find(childName);
+
+            if (child == null)
             {
-                importer.spriteImportMode = SpriteImportMode.Single;
-                changed = true;
+                Debug.LogWarning($"[ShopSetupWizard] BottomNav 下找不到「{childName}」，未调整位置。");
+                return;
             }
 
-            if (importer.mipmapEnabled)
-            {
-                importer.mipmapEnabled = false;
-                changed = true;
-            }
+            RectTransform rect = child.GetComponent<RectTransform>();
 
-            // 占位图是纯平色块，Point 更锐利；换成手绘美术图时可以改回 Bilinear
-            if (importer.filterMode != FilterMode.Point)
+            if (rect != null)
             {
-                importer.filterMode = FilterMode.Point;
-                changed = true;
-            }
-
-            if (!importer.alphaIsTransparency)
-            {
-                importer.alphaIsTransparency = true;
-                changed = true;
-            }
-
-            if (importer.wrapMode != TextureWrapMode.Clamp)
-            {
-                importer.wrapMode = TextureWrapMode.Clamp;
-                changed = true;
-            }
-
-            if (!importer.sRGBTexture)
-            {
-                importer.sRGBTexture = true;
-                changed = true;
-            }
-
-            if (importer.npotScale != TextureImporterNPOTScale.None)
-            {
-                importer.npotScale = TextureImporterNPOTScale.None;
-                changed = true;
-            }
-
-            if (importer.maxTextureSize != 128)
-            {
-                importer.maxTextureSize = 128;
-                changed = true;
-            }
-
-            if (importer.textureCompression != TextureImporterCompression.Uncompressed)
-            {
-                importer.textureCompression = TextureImporterCompression.Uncompressed;
-                changed = true;
-            }
-
-            if (!Mathf.Approximately(importer.spritePixelsPerUnit, 100f))
-            {
-                importer.spritePixelsPerUnit = 100f;
-                changed = true;
-            }
-
-            if (changed)
-            {
-                // 必须存盘重导，否则 AssetDatabase.LoadAssetAtPath<Sprite> 取到的还是 null
-                importer.SaveAndReimport();
+                rect.anchoredPosition = new Vector2(x, rect.anchoredPosition.y);
+                EditorUtility.SetDirty(rect);
             }
         }
 
-        private static void EnsureFolder(string folder)
+        private static void ClearShopAreaPanels(GameAreaController areas)
         {
-            if (AssetDatabase.IsValidFolder(folder))
+            SerializedObject so = new SerializedObject(areas);
+            SerializedProperty panels = so.FindProperty("shopAreaPanels");
+
+            if (panels == null)
+            {
+                Debug.LogWarning("[ShopSetupWizard] GameAreaController 上找不到 shopAreaPanels 字段，" +
+                                 "商店面板仍会随区域自动显隐，可能与浮窗控制冲突。");
+                return;
+            }
+
+            panels.arraySize = 0;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(areas);
+        }
+
+        // ---------------- 数据资产 ----------------
+
+        private static MaterialData EnsureWoodMaterial()
+        {
+            MaterialData wood = AssetDatabase.LoadAssetAtPath<MaterialData>(WoodPath);
+
+            if (wood != null)
+            {
+                EnsureSaveId(wood, WoodPath);
+                return wood;
+            }
+
+            wood = ScriptableObject.CreateInstance<MaterialData>();
+            AssetDatabase.CreateAsset(wood, WoodPath);
+
+            string guid = AssetDatabase.AssetPathToGUID(WoodPath);
+            SerializedObject so = new SerializedObject(wood);
+            SetString(so, "materialName", "木板");
+            SetEnum(so, "materialType", (int)MaterialType.Wood);
+            SetInt(so, "price", 2);
+            SetFloat(so, "damageMultiplierBonus", 0f);
+            SetFloat(so, "buildingDamageMultiplierBonus", 0.1f);
+            SetEnum(so, "defaultColor", (int)MaterialColor.Red);
+
+            SerializedProperty colors = so.FindProperty("allowedColors");
+
+            if (colors != null)
+            {
+                colors.arraySize = 3;
+                colors.GetArrayElementAtIndex(0).enumValueIndex = (int)MaterialColor.Red;
+                colors.GetArrayElementAtIndex(1).enumValueIndex = (int)MaterialColor.Blue;
+                colors.GetArrayElementAtIndex(2).enumValueIndex = (int)MaterialColor.Green;
+            }
+
+            SetString(so, "saveId", guid);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(wood);
+            AssetDatabase.SaveAssets();
+
+            Debug.Log($"[ShopSetupWizard] 已创建木板原料资产 {WoodPath}（价格 2，建筑伤害倍率 +0.1）。");
+            return wood;
+        }
+
+        private static void EnsureSaveId(MaterialData material, string path)
+        {
+            SerializedObject so = new SerializedObject(material);
+            SerializedProperty saveId = so.FindProperty("saveId");
+
+            if (saveId == null || !string.IsNullOrWhiteSpace(saveId.stringValue))
             {
                 return;
             }
 
-            string parent = Path.GetDirectoryName(folder).Replace('\\', '/');
-            string leaf = Path.GetFileName(folder);
+            saveId.stringValue = AssetDatabase.AssetPathToGUID(path);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(material);
+            AssetDatabase.SaveAssets();
+        }
 
-            EnsureFolder(parent);
-            AssetDatabase.CreateFolder(parent, leaf);
+        private static void EnsureSaveCatalogMaterial(MaterialData wood)
+        {
+            SaveCatalog catalog = AssetDatabase.LoadAssetAtPath<SaveCatalog>(SaveCatalogPath);
+
+            if (catalog == null)
+            {
+                Debug.LogWarning($"[ShopSetupWizard] 找不到存档目录 {SaveCatalogPath}，木板暂时不会写进存档。" +
+                                 "请运行菜单「屿见/通用模块/配置存档系统」。");
+                return;
+            }
+
+            SerializedObject so = new SerializedObject(catalog);
+            SerializedProperty materials = so.FindProperty("materials");
+
+            if (materials == null)
+            {
+                Debug.LogWarning("[ShopSetupWizard] SaveCatalog 上找不到 materials 字段，木板未登记。");
+                return;
+            }
+
+            for (int i = 0; i < materials.arraySize; i++)
+            {
+                if (materials.GetArrayElementAtIndex(i).objectReferenceValue == wood)
+                {
+                    return;
+                }
+            }
+
+            materials.arraySize++;
+            materials.GetArrayElementAtIndex(materials.arraySize - 1).objectReferenceValue = wood;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(catalog);
+            AssetDatabase.SaveAssets();
+            Debug.Log("[ShopSetupWizard] 已把木板登记进 SaveCatalog。");
+        }
+
+        private static void EnsureOrganMuseumWood(MaterialData wood)
+        {
+            BuildingData organ = AssetDatabase.LoadAssetAtPath<BuildingData>(OrganMuseumPath);
+
+            if (organ == null)
+            {
+                Debug.LogWarning($"[ShopSetupWizard] 找不到风琴博物馆资产 {OrganMuseumPath}，木板未加入配方。");
+                return;
+            }
+
+            SerializedObject so = new SerializedObject(organ);
+            SerializedProperty requirements = so.FindProperty("requiredMaterials");
+
+            if (requirements == null)
+            {
+                Debug.LogWarning("[ShopSetupWizard] BuildingData 上找不到 requiredMaterials 字段，木板未加入配方。");
+                return;
+            }
+
+            for (int i = 0; i < requirements.arraySize; i++)
+            {
+                SerializedProperty element = requirements.GetArrayElementAtIndex(i);
+
+                if (element.FindPropertyRelative("material").objectReferenceValue == wood)
+                {
+                    return;
+                }
+            }
+
+            requirements.arraySize++;
+            SerializedProperty added = requirements.GetArrayElementAtIndex(requirements.arraySize - 1);
+            added.FindPropertyRelative("material").objectReferenceValue = wood;
+            added.FindPropertyRelative("amount").intValue = 1;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(organ);
+            AssetDatabase.SaveAssets();
+
+            Debug.Log("[ShopSetupWizard] 已把「木板 ×1」加入风琴博物馆的建造需求。");
         }
 
         // ---------------- 通用小工具 ----------------
@@ -596,6 +720,18 @@ namespace Yujian.EditorTools
             return Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         }
 
+        private static Sprite ButtonSprite()
+        {
+            Sprite sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+
+            if (sprite == null)
+            {
+                sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.png");
+            }
+
+            return sprite;
+        }
+
         private static GameObject CreateUIObject(string name, Transform parent)
         {
             GameObject go = new GameObject(name, typeof(RectTransform));
@@ -604,8 +740,20 @@ namespace Yujian.EditorTools
             return go;
         }
 
+        private static RectTransform Place(GameObject go, Vector2 anchorMin, Vector2 anchorMax,
+                                           Vector2 pivot, Vector2 anchoredPosition, Vector2 size)
+        {
+            RectTransform rect = (RectTransform)go.transform;
+            rect.anchorMin = anchorMin;
+            rect.anchorMax = anchorMax;
+            rect.pivot = pivot;
+            rect.anchoredPosition = anchoredPosition;
+            rect.sizeDelta = size;
+            return rect;
+        }
+
         private static Text CreateText(Transform parent, string name, string content, int fontSize,
-                                       TextAnchor alignment, Color color, float preferredHeight)
+                                       Color color, TextAnchor alignment)
         {
             GameObject go = CreateUIObject(name, parent);
             Text text = go.AddComponent<Text>();
@@ -618,62 +766,40 @@ namespace Yujian.EditorTools
             text.raycastTarget = false;
             text.horizontalOverflow = HorizontalWrapMode.Wrap;
             text.verticalOverflow = VerticalWrapMode.Overflow;
+            text.supportRichText = false;
 
-            SetPreferredSize(go, -1f, preferredHeight);
             return text;
         }
 
-        /// <summary>
-        /// 建一个纵向排布的容器。
-        /// **刻意不挂 LayoutElement**：VerticalLayoutGroup 自己会按子物体算出首选高度并向上汇报，
-        /// 挂了 LayoutElement 反而会把这个高度覆盖掉（容器会塌成你写死的那点高度）。
-        /// </summary>
-        private static Transform CreateContainer(Transform parent, string name, float padding, float spacing)
+        private static Button CreateButton(Transform parent, string name, string label, int fontSize)
         {
             GameObject go = CreateUIObject(name, parent);
-            ConfigureVertical(go.AddComponent<VerticalLayoutGroup>(), padding, spacing);
-            return go.transform;
-        }
 
-        private static void ConfigureVertical(VerticalLayoutGroup layout, float padding, float spacing)
-        {
-            int pad = Mathf.RoundToInt(padding);
+            Image image = go.AddComponent<Image>();
+            image.sprite = ButtonSprite();
+            image.type = Image.Type.Sliced;
+            image.color = Color.white;
+            image.raycastTarget = true;
 
-            layout.padding = new RectOffset(pad, pad, pad, pad);
-            layout.spacing = spacing;
-            layout.childAlignment = TextAnchor.UpperCenter;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-        }
+            Button button = go.AddComponent<Button>();
+            button.targetGraphic = image;
 
-        /// <summary>
-        /// 给物体挂上 LayoutElement 并设定首选尺寸。
-        ///
-        /// 这一步不能省：ShopPanel 上的 VerticalLayoutGroup 开了 childControlHeight，
-        /// 子物体由布局驱动；而 Text / Button 不会可靠地提供 preferred height，
-        /// 缺了 LayoutElement 的叶节点会被压成 0 高。
-        /// 传 &lt;= 0 表示该方向不指定。
-        /// </summary>
-        private static void SetPreferredSize(GameObject go, float width, float height)
-        {
-            LayoutElement element = go.GetComponent<LayoutElement>();
+            ColorBlock colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(0.95f, 0.95f, 0.95f, 1f);
+            colors.pressedColor = new Color(0.80f, 0.80f, 0.80f, 1f);
+            colors.selectedColor = Color.white;
+            colors.disabledColor = new Color(0.50f, 0.50f, 0.50f, 0.5f);
+            colors.colorMultiplier = 1f;
+            colors.fadeDuration = 0.1f;
+            button.colors = colors;
 
-            if (element == null)
-            {
-                element = go.AddComponent<LayoutElement>();
-            }
+            Text text = CreateText(go.transform, "Text", label, fontSize,
+                                   LabelOnButtonColor, TextAnchor.MiddleCenter);
+            Place(text.gameObject, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f),
+                  Vector2.zero, Vector2.zero);
 
-            if (width > 0f)
-            {
-                element.preferredWidth = width;
-            }
-
-            if (height > 0f)
-            {
-                element.preferredHeight = height;
-            }
+            return button;
         }
 
         private static void SetObject(SerializedObject so, string fieldName, Object value)
@@ -690,9 +816,49 @@ namespace Yujian.EditorTools
                              "请检查字段名与脚本是否一致。");
         }
 
+        private static void SetString(SerializedObject so, string fieldName, string value)
+        {
+            SerializedProperty property = so.FindProperty(fieldName);
+
+            if (property != null)
+            {
+                property.stringValue = value;
+            }
+        }
+
+        private static void SetInt(SerializedObject so, string fieldName, int value)
+        {
+            SerializedProperty property = so.FindProperty(fieldName);
+
+            if (property != null)
+            {
+                property.intValue = value;
+            }
+        }
+
+        private static void SetFloat(SerializedObject so, string fieldName, float value)
+        {
+            SerializedProperty property = so.FindProperty(fieldName);
+
+            if (property != null)
+            {
+                property.floatValue = value;
+            }
+        }
+
+        private static void SetEnum(SerializedObject so, string fieldName, int enumValue)
+        {
+            SerializedProperty property = so.FindProperty(fieldName);
+
+            if (property != null)
+            {
+                property.enumValueIndex = enumValue;
+            }
+        }
+
         private static void Fail(string message)
         {
-            EditorUtility.DisplayDialog("原料商店配置未执行", message, "知道了");
+            EditorUtility.DisplayDialog("商店配置未执行", message, "知道了");
             Debug.LogError("[ShopSetupWizard] " + message);
         }
     }

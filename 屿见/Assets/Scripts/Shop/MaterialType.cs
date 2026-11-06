@@ -8,6 +8,9 @@ namespace Yujian.Shop
     {
         /// <summary>砖块。</summary>
         Brick = 0,
+
+        /// <summary>木板。2026-11-05 商店策划案新增第二种原料样式。</summary>
+        Wood = 1,
     }
 
     /// <summary>MaterialType 的中文显示名。UI 只读这里，不要在 UI 里散写 switch。</summary>
@@ -20,6 +23,8 @@ namespace Yujian.Shop
             {
                 case MaterialType.Brick:
                     return "砖块";
+                case MaterialType.Wood:
+                    return "木板";
                 default:
                     return type.ToString();
             }

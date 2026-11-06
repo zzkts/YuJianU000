@@ -170,8 +170,9 @@ namespace Yujian.Building.Effects
             currentTarget = target;
 
             // 每发都现算：玩家升级后，建筑的下一发立刻跟着变强（阶段 5 的核心验收点）；
-            // 2026-10-29 起再乘上本建筑的升级倍率（策划案 3.4，1 级 = ×1，不改变原有手感）
-            float baseDamage = Context.DamageSystem.CalculatePlayerDamage();
+            // 2026-10-29 起再乘上本建筑的升级倍率（策划案 3.4，1 级 = ×1，不改变原有手感）；
+            // 2026-11-05 起改用建筑伤害公式：玩家最终伤害 × 建筑伤害倍率（木板提供 +0.1）
+            float baseDamage = Context.DamageSystem.CalculateBuildingDamage();
             float upgradeMultiplier = GetUpgradeMultiplier();
             float damage = baseDamage * upgradeMultiplier;
 
@@ -197,7 +198,7 @@ namespace Yujian.Building.Effects
             {
                 Debug.Log($"[OrganMuseumAutoAttack] {name} 自动攻击 {targetName}，" +
                           $"造成 {damage} 点伤害{(destroyed ? "，已击碎" : string.Empty)}。" +
-                          $"（玩家伤害 {baseDamage:0.##} × 建筑 {CurrentLevel} 级倍率 {upgradeMultiplier:0.##}）", this);
+                          $"（建筑伤害 {baseDamage:0.##} × 建筑 {CurrentLevel} 级倍率 {upgradeMultiplier:0.##}）", this);
             }
 
             if (!destroyed || !grantRewardOnKill || reward <= 0)
