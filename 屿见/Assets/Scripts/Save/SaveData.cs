@@ -9,7 +9,8 @@ namespace Yujian.Save
     /// 约定：
     ///   · 所有字段都是 public + 可序列化，JsonUtility 才能写进来；
     ///   · 存的是稳定 ID（字符串）与普通数值，不存 MaterialData / BuildingData 这类资产引用；
-    ///   · 玩家等级、伤害倍率这类派生值不存，读档后按规则重算；
+    ///   · 当前玩家等级由建筑数重算，但「历史最高等级」单独保存（策划案 4.2：拆楼不掉级）；
+    ///   · 伤害倍率这类派生值不存，读档后按规则重算；
     ///   · 新增字段一律给默认值，旧存档缺字段时保持默认，不报空引用。
     /// </summary>
     [Serializable]
@@ -45,6 +46,12 @@ namespace Yujian.Save
 
         /// <summary>已放置建筑。由 BuildingSaveParticipant 写入 / 恢复。</summary>
         public List<BuildingSave> buildings = new List<BuildingSave>();
+
+        /// <summary>
+        /// 历史最高玩家等级（策划案 4.2：等级只升不降）。
+        /// 0 表示旧存档没有记录，读档后按建筑数重新计算。
+        /// </summary>
+        public int playerHighestLevel;
 
         /// <summary>矿石生成进度。第 1 步只定义结构，第 3 步开始写入。</summary>
         public MiningSave mining = new MiningSave();

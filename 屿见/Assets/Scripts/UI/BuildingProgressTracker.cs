@@ -32,6 +32,9 @@ namespace Yujian.UI
         [Tooltip("顶部进度横幅")]
         [SerializeField] private BuildingProgressBannerUI banner;
 
+        [Tooltip("拆除建筑时是否在原位置生成尘埃粒子（策划案 2026-11-06 美术需求）")]
+        [SerializeField] private bool enableDemolitionDust = true;
+
         [Header("调试")]
         [Tooltip("是否在 Console 打印进度结算")]
         [SerializeField] private bool logProgress = true;
@@ -39,11 +42,23 @@ namespace Yujian.UI
         private void OnEnable()
         {
             EventBus.Subscribe<BuildingPlaced>(HandleBuildingPlaced);
+            EventBus.Subscribe<BuildingRemoved>(HandleBuildingRemoved);
         }
 
         private void OnDisable()
         {
             EventBus.Unsubscribe<BuildingPlaced>(HandleBuildingPlaced);
+            EventBus.Unsubscribe<BuildingRemoved>(HandleBuildingRemoved);
+        }
+
+        private void HandleBuildingRemoved(BuildingRemoved evt)
+        {
+            if (!enableDemolitionDust)
+            {
+                return;
+            }
+
+            BuildingDustEffect.Play(evt.Position);
         }
 
         private void HandleBuildingPlaced(BuildingPlaced evt)
@@ -78,9 +93,11 @@ namespace Yujian.UI
             }
 
             int current = playerLevel.BuildingCount;
-            int previousLevel = playerLevel.GetLevelForBuildingCount(Mathf.Max(0, current - 1));
             int level = playerLevel.CurrentLevel;
-            bool leveledUp = level > previousLevel;
+
+            // 等级只升不降：是否升级由 PlayerLevel 自己记录，
+            // 不能再用「当前建筑数 - 1」反查，否则拆楼后再建会被误判成升级。
+            bool leveledUp = playerLevel.ConsumeLevelUpFlag();
 
             bool hasNext = playerLevel.TryGetNextLevel(out int nextBuildingCount, out _);
             bool isMaxLevel = playerLevel.IsMaxLevel;

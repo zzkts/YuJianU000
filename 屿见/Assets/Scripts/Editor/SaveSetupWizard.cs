@@ -43,6 +43,7 @@ namespace Yujian.EditorTools
             UpdateBuildingCatalog(catalog, buildings);
             EnsureSaveSystem(catalog);
             EnsureMiningParticipants();
+            EnsurePlayerLevelParticipant();
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -409,6 +410,37 @@ namespace Yujian.EditorTools
             EditorUtility.SetDirty(fragmentParticipant);
 
             EnsureParticipants(saveSystem, required.ToArray());
+            EditorUtility.SetDirty(saveSystem);
+            return true;
+        }
+
+        /// <summary>
+        /// 补上「历史最高玩家等级」存档参与者（策划案 4.2：等级只升不降）。
+        /// 幂等：已有组件就复用，已加入执行列表就不重复添加。
+        /// </summary>
+        public static bool EnsurePlayerLevelParticipant()
+        {
+            SaveSystem saveSystem = Object.FindFirstObjectByType<SaveSystem>(FindObjectsInactive.Include);
+
+            if (saveSystem == null)
+            {
+                Debug.LogWarning("[存档配置] 场景里没有 SaveSystem，玩家等级不会写档。");
+                return false;
+            }
+
+            PlayerLevel playerLevel = Object.FindFirstObjectByType<PlayerLevel>(FindObjectsInactive.Include);
+
+            if (playerLevel == null)
+            {
+                Debug.LogWarning("[存档配置] 场景里没有 PlayerLevel，跳过历史最高等级存档。");
+                return false;
+            }
+
+            PlayerLevelSaveParticipant participant =
+                EnsureComponent<PlayerLevelSaveParticipant>(saveSystem.gameObject);
+            SetReference(participant, "playerLevel", playerLevel);
+            EnsureParticipants(saveSystem, participant);
+            EditorUtility.SetDirty(participant);
             EditorUtility.SetDirty(saveSystem);
             return true;
         }

@@ -9,9 +9,9 @@ namespace Yujian.UI
     /// 建筑进度横幅（策划案 4.1 / 4.2）。
     ///
     /// 两种形态共用一套物体：
-    ///   · 特殊建筑：X/N、还差哪些特殊建筑、金色边框、完成部分呼吸 RGB、左右礼炮；
+    ///   · 特殊建筑：X/N、还差哪些特殊建筑、金色边框、完成部分呼吸 RGB、左右礼炮彩带 + 火花柱；
     ///   · 普通建筑：X/N（N = 下一等级所需建筑数）、当前等级、黑色边框、进度条缩放脉冲，
-    ///     升级时左右喷火焰柱。
+    ///     升级时左右喷火花柱（2026-11-06 美术需求：礼炮 / 火花柱 / 尘埃）。
     ///
     /// 播放队列由本类自己维护：特殊建筑先播，播完自动接普通建筑。
     /// 连续建成多座时不会叠在一起，多条普通进度只保留最新一条。
@@ -83,14 +83,17 @@ namespace Yujian.UI
         [SerializeField] private float barPulseSecondsPerCycle = 1.1f;
 
         [Header("特效")]
-        [Tooltip("是否生成程序化礼炮 / 火焰柱")]
+        [Tooltip("是否生成程序化礼炮 / 火花柱")]
         [SerializeField] private bool enableEffects = true;
 
-        [Tooltip("特殊建筑每侧礼炮粒子数")]
-        [SerializeField] private int fireworkParticlesPerSide = 18;
+        [Tooltip("特殊建筑每侧礼炮彩带数量")]
+        [SerializeField] private int confettiParticlesPerSide = 16;
 
-        [Tooltip("升级时每侧火焰柱粒子数")]
-        [SerializeField] private int flameParticlesPerSide = 14;
+        [Tooltip("每侧火花柱的火花数量")]
+        [SerializeField] private int sparkParticlesPerSide = 22;
+
+        [Tooltip("火花柱持续喷射时长（秒）")]
+        [SerializeField] private float sparkEmissionDuration = 0.45f;
 
         [Tooltip("粒子基础尺寸（像素）")]
         [SerializeField] private float particleSize = 10f;
@@ -394,72 +397,126 @@ namespace Yujian.UI
 
             if (item.IsSpecial)
             {
-                SpawnFirework(new Vector2(-halfWidth - 12f, -6f), -1f);
-                SpawnFirework(new Vector2(halfWidth + 12f, -6f), 1f);
+                // 策划案 4.1（2026-11-06）：左右同时生成礼炮与火花柱
+                SpawnConfetti(new Vector2(-halfWidth - 12f, -6f), -1f);
+                SpawnConfetti(new Vector2(halfWidth + 12f, -6f), 1f);
+                SpawnSparkColumn(new Vector2(-halfWidth - 16f, -60f), -1f);
+                SpawnSparkColumn(new Vector2(halfWidth + 16f, -60f), 1f);
             }
             else if (item.LeveledUp || item.IsMaxLevel)
             {
-                SpawnFlameColumn(new Vector2(-halfWidth - 16f, -60f));
-                SpawnFlameColumn(new Vector2(halfWidth + 16f, -60f));
+                SpawnSparkColumn(new Vector2(-halfWidth - 16f, -60f), -1f);
+                SpawnSparkColumn(new Vector2(halfWidth + 16f, -60f), 1f);
             }
         }
 
-        private void SpawnFirework(Vector2 origin, float outward)
+        /// <summary>
+        /// 礼炮：彩带向上喷出后受重力下坠，每条的长度、宽度、颜色、旋转速度都不同。
+        /// </summary>
+        private void SpawnConfetti(Vector2 origin, float outward)
         {
-            int count = Mathf.Max(0, fireworkParticlesPerSide);
+            int count = Mathf.Max(0, confettiParticlesPerSide);
 
             for (int i = 0; i < count; i++)
             {
-                Color color = Color.HSVToRGB(Random.value, 0.85f, 1f);
+                Color color = Color.HSVToRGB(Random.value, Random.Range(0.72f, 1f), 1f);
                 Vector2 velocity = new Vector2(
-                    outward * Random.Range(90f, 260f),
-                    Random.Range(120f, 320f));
-                float size = particleSize * Random.Range(0.6f, 1.4f);
-                SpawnParticle(origin, velocity, Random.Range(0.65f, 1.05f), color, size, -760f);
+                    outward * Random.Range(80f, 250f),
+                    Random.Range(160f, 350f));
+
+                float width = Mathf.Max(2f, particleSize * Random.Range(0.18f, 0.34f));
+                float height = Mathf.Max(6f, particleSize * Random.Range(0.9f, 1.8f));
+                float angularVelocity = Random.Range(180f, 540f) * (Random.value < 0.5f ? -1f : 1f);
+
+                SpawnRibbon(
+                    origin,
+                    velocity,
+                    Random.Range(0.9f, 1.6f),
+                    color,
+                    width,
+                    height,
+                    -780f,
+                    angularVelocity);
             }
         }
 
-        private void SpawnFlameColumn(Vector2 origin)
+        /// <summary>
+        /// 火花柱：持续向上喷射亮色小火花，带明暗闪烁和轻微下坠。
+        /// </summary>
+        private void SpawnSparkColumn(Vector2 origin, float outward)
         {
-            int count = Mathf.Max(0, flameParticlesPerSide);
-
-            for (int i = 0; i < count; i++)
+            if (sparkParticlesPerSide <= 0 || !isActiveAndEnabled)
             {
-                Color color = Color.Lerp(
-                    new Color(1f, 0.35f, 0.05f),
-                    new Color(1f, 0.92f, 0.35f),
-                    Random.value);
-                Vector2 velocity = new Vector2(
-                    Random.Range(-35f, 35f),
-                    Random.Range(120f, 260f));
-                float size = particleSize * Random.Range(0.7f, 1.5f);
-                SpawnParticle(origin, velocity, Random.Range(0.35f, 0.7f), color, size, 420f);
+                return;
+            }
+
+            StartCoroutine(EmitSparkColumn(origin, outward));
+        }
+
+        private IEnumerator EmitSparkColumn(Vector2 origin, float outward)
+        {
+            int count = Mathf.Max(1, sparkParticlesPerSide);
+            float duration = Mathf.Max(0.05f, sparkEmissionDuration);
+            float interval = duration / count;
+            float elapsed = 0f;
+            int emitted = 0;
+
+            while (emitted < count)
+            {
+                elapsed += Time.unscaledDeltaTime;
+
+                while (emitted < count && elapsed >= emitted * interval)
+                {
+                    SpawnSpark(origin, outward);
+                    emitted++;
+                }
+
+                yield return null;
             }
         }
 
-        private void SpawnParticle(
-            Vector2 origin, Vector2 velocity, float lifetime, Color color, float size, float accelerationY)
+        private void SpawnSpark(Vector2 origin, float outward)
         {
-            GameObject particle = new GameObject("ProgressParticle", typeof(RectTransform), typeof(Image));
+            Color color = Color.Lerp(
+                new Color(1f, 0.86f, 0.45f),
+                Color.white,
+                Random.value);
+
+            Vector2 velocity = new Vector2(
+                outward * Random.Range(0f, 45f) + Random.Range(-28f, 28f),
+                Random.Range(180f, 430f));
+
+            float size = particleSize * Random.Range(0.16f, 0.32f);
+            SpawnSparkParticle(origin, velocity, Random.Range(0.45f, 0.95f), color, size);
+        }
+
+        private void SpawnRibbon(
+            Vector2 origin, Vector2 velocity, float lifetime, Color color,
+            float width, float height, float accelerationY, float angularVelocity)
+        {
+            GameObject particle = new GameObject("ProgressRibbon", typeof(RectTransform), typeof(Image));
             particle.transform.SetParent(fxLayer, false);
 
             RectTransform rect = (RectTransform)particle.transform;
-            rect.sizeDelta = new Vector2(size, size);
+            rect.sizeDelta = new Vector2(width, height);
             rect.anchoredPosition = origin;
+            rect.localRotation = Quaternion.Euler(0f, 0f, Random.Range(0f, 360f));
 
             Image image = particle.GetComponent<Image>();
             image.color = color;
             image.raycastTarget = false;
 
-            StartCoroutine(AnimateParticle(rect, image, velocity, lifetime, accelerationY));
+            StartCoroutine(AnimateRibbon(rect, image, velocity, lifetime, accelerationY, angularVelocity));
         }
 
-        private IEnumerator AnimateParticle(
-            RectTransform rect, Image image, Vector2 velocity, float lifetime, float accelerationY)
+        private IEnumerator AnimateRibbon(
+            RectTransform rect, Image image, Vector2 velocity, float lifetime,
+            float accelerationY, float angularVelocity)
         {
             float elapsed = 0f;
             Vector2 position = rect.anchoredPosition;
-            Vector3 baseScale = rect.localScale;
+            float angle = rect.localEulerAngles.z;
+            Color startColor = image.color;
 
             while (elapsed < lifetime && rect != null && image != null)
             {
@@ -470,11 +527,68 @@ namespace Yujian.UI
                 position += velocity * deltaTime;
                 rect.anchoredPosition = position;
 
-                float fade = 1f - Mathf.Clamp01(elapsed / lifetime);
-                Color color = image.color;
-                color.a = fade;
+                angle += angularVelocity * deltaTime;
+                rect.localRotation = Quaternion.Euler(0f, 0f, angle);
+
+                float t = Mathf.Clamp01(elapsed / lifetime);
+                float fade = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.55f, 1f, t));
+                Color color = startColor;
+                color.a = startColor.a * fade;
                 image.color = color;
-                rect.localScale = baseScale * Mathf.Lerp(0.5f, 1f, fade);
+
+                yield return null;
+            }
+
+            if (rect != null)
+            {
+                Destroy(rect.gameObject);
+            }
+        }
+
+        private void SpawnSparkParticle(Vector2 origin, Vector2 velocity, float lifetime, Color color, float size)
+        {
+            GameObject particle = new GameObject("ProgressSpark", typeof(RectTransform), typeof(Image));
+            particle.transform.SetParent(fxLayer, false);
+
+            RectTransform rect = (RectTransform)particle.transform;
+            rect.sizeDelta = new Vector2(size, size);
+            rect.anchoredPosition = origin;
+            rect.localRotation = Quaternion.Euler(0f, 0f, 45f);
+
+            Image image = particle.GetComponent<Image>();
+            image.color = color;
+            image.raycastTarget = false;
+
+            StartCoroutine(AnimateSpark(rect, image, velocity, lifetime, color));
+        }
+
+        private IEnumerator AnimateSpark(
+            RectTransform rect, Image image, Vector2 velocity, float lifetime, Color startColor)
+        {
+            float elapsed = 0f;
+            float flickerPhase = Random.Range(0f, Mathf.PI * 2f);
+            Vector2 position = rect.anchoredPosition;
+
+            while (elapsed < lifetime && rect != null && image != null)
+            {
+                float deltaTime = Time.unscaledDeltaTime;
+                elapsed += deltaTime;
+
+                velocity.y -= 140f * deltaTime;
+                velocity.x *= 1f - 1.2f * deltaTime;
+                position += velocity * deltaTime;
+                rect.anchoredPosition = position;
+
+                float t = Mathf.Clamp01(elapsed / lifetime);
+                float fade = 1f - Mathf.SmoothStep(0f, 1f, t);
+                float flicker = 0.72f + 0.28f * Mathf.Sin(elapsed * 38f + flickerPhase);
+
+                Color color = startColor;
+                color.a = fade * flicker;
+                image.color = color;
+
+                float scale = Mathf.Lerp(1f, 0.25f, t) * (0.85f + 0.3f * flicker);
+                rect.localScale = new Vector3(scale, scale, 1f);
 
                 yield return null;
             }
