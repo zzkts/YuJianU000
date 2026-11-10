@@ -9,7 +9,7 @@ using Yujian.UI;
 namespace Yujian.EditorTools
 {
     /// <summary>
-    /// 一键挂上挖矿界面（飞书 2.1 挖矿系统界面设计）。
+    /// 一键挂上清洁界面（飞书 2.1 挖矿系统界面设计）。
     /// 入口：菜单栏 → 屿见 → 挖矿 → 配置挖矿界面
     ///
     /// 只做一件事：在场景里放一个挂着 MiningHudUI 的物体并接好引用。
@@ -17,14 +17,14 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class MiningHudSetupWizard
     {
-        private const string RootName = "挖矿界面";
+        private const string RootName = "清洁界面";
 
         [MenuItem("屿见/挖矿/配置挖矿界面", false, 338)]
         public static void Configure()
         {
             if (EditorApplication.isPlaying)
             {
-                EditorUtility.DisplayDialog("挖矿界面", "请先退出 Play Mode，再运行本命令。", "知道了");
+                EditorUtility.DisplayDialog("清洁界面", "请先退出 Play Mode，再运行本命令。", "知道了");
                 return;
             }
 
@@ -43,13 +43,13 @@ namespace Yujian.EditorTools
                 return;
             }
 
-            // 照明工具是挖矿界面的依赖。场景里还没有时顺手补上，
+            // 照明工具是清洁界面的依赖。场景里还没有时顺手补上，
             // 免得用户要在两个菜单之间来回点。
             if (lightTool == null)
             {
                 if (!MiningLightToolSetupWizard.ConfigureLightTool(false))
                 {
-                    Debug.LogWarning("[挖矿界面] 自动补照明工具失败，" +
+                    Debug.LogWarning("[清洁界面] 自动补照明工具失败，" +
                                      "请先手动运行「屿见/挖矿/配置照明工具」。");
                 }
 
@@ -67,14 +67,14 @@ namespace Yujian.EditorTools
             if (hud == null)
             {
                 GameObject root = new GameObject(RootName);
-                Undo.RegisterCreatedObjectUndo(root, "创建挖矿界面");
+                Undo.RegisterCreatedObjectUndo(root, "创建清洁界面");
                 hud = Undo.AddComponent<MiningHudUI>(root);
             }
 
             hud.ConfigureForSetup(areas, currency, lightTool, miningTool);
             EditorUtility.SetDirty(hud);
 
-            // 挖矿界面的两个升级列表共用同一份进度：退出游戏后等级也要保留。
+            // 清洁界面的两个升级列表共用同一份进度：退出游戏后等级也要保留。
             SaveSetupWizard.EnsureMiningParticipants();
 
             EditorSceneManager.MarkSceneDirty(hud.gameObject.scene);
@@ -100,23 +100,23 @@ namespace Yujian.EditorTools
 
             if (!string.IsNullOrEmpty(missing))
             {
-                Debug.LogWarning("[挖矿界面] 已挂上，但这些依赖没找到，界面会显示「未配置」：" + missing);
+                Debug.LogWarning("[清洁界面] 已挂上，但这些依赖没找到，界面会显示「未配置」：" + missing);
             }
 
-            EditorUtility.DisplayDialog("挖矿界面",
-                "挖矿界面已经挂好并保存。\n\n" +
+            EditorUtility.DisplayDialog("清洁界面",
+                "清洁界面已经挂好并保存。\n\n" +
                 "进入 Play 后，从岛上矿山进入矿洞即可看到：\n" +
                 "左侧装备、右侧两个升级列表、金币栏、返回主岛、x1/Max。\n\n" +
                 "照明工具与暴击点系统也已一起检查并补好。",
                 "知道了");
 
-            Debug.Log("[挖矿界面] 已配置并保存。");
+            Debug.Log("[清洁界面] 已配置并保存。");
         }
 
         private static void Fail(string message)
         {
-            Debug.LogError("[挖矿界面] " + message);
-            EditorUtility.DisplayDialog("挖矿界面未配置", message, "知道了");
+            Debug.LogError("[清洁界面] " + message);
+            EditorUtility.DisplayDialog("清洁界面未配置", message, "知道了");
         }
     }
 }

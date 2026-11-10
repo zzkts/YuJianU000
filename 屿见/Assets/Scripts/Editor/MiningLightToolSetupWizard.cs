@@ -71,7 +71,7 @@ namespace Yujian.EditorTools
 
             tool.ConfigureForSetup(currency);
             // MVP 演示：开局直接装备火把，进矿洞就能看到暴击点。
-            // 想做「先花 40 金币解锁火把」的话，把 Starting Level 改回 0。
+            // 想做「先花 40 垃圾解锁火把」的话，把 Starting Level 改回 0。
             tool.ConfigureStartingLevel(1);
             EditorUtility.SetDirty(tool);
 
@@ -155,7 +155,7 @@ namespace Yujian.EditorTools
             Text statsText = CreateText(card.transform, "StatsText", "暴击点上限 1　停留 2.5 秒", 16,
                                         TextAnchor.MiddleCenter, BodyColor, 24f);
 
-            Text costText = CreateText(card.transform, "CostText", "购买「火把」需要 40 金币", 14,
+            Text costText = CreateText(card.transform, "CostText", "购买「火把」需要 40 垃圾", 14,
                                        TextAnchor.MiddleCenter, PriceColor, 22f);
 
             Text buttonLabel;

@@ -15,7 +15,7 @@ namespace Yujian.EditorTools
     /// 「建筑区右下角入口 + 240×90 轻量化浮窗」。
     ///
     /// 一次运行会完成：
-    ///   · 重建 Canvas/ShopPanel 的层级（标题 / 金币 / 原料列表 / 价格 / 购买 / 状态）；
+    ///   · 重建 Canvas/ShopPanel 的层级（标题 / 垃圾 / 原料列表 / 价格 / 购买 / 状态）；
     ///   · 保留并隐藏旧的「照明工具升级卡」，不删除它的引用；
     ///   · 创建木板原料资产，并把木板加进风琴博物馆的建造需求；
     ///   · 把木板登记进 SaveCatalog；
@@ -250,7 +250,7 @@ namespace Yujian.EditorTools
             Place(titleText.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
                   new Vector2(6f, -4f), new Vector2(120f, 12f));
 
-            Text moneyText = CreateText(panel, "MoneyText", "金币 0", 8, BodyColor, TextAnchor.MiddleRight);
+            Text moneyText = CreateText(panel, "MoneyText", "垃圾 0", 8, BodyColor, TextAnchor.MiddleRight);
             Place(moneyText.gameObject, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f),
                   new Vector2(-6f, -4f), new Vector2(96f, 12f));
 

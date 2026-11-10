@@ -28,7 +28,7 @@ namespace Yujian.EditorTools
         private const string PlayerLevelTablePath = DataFolder + "/PlayerLevelTable.asset";
         private const string OreLevelTablePath = DataFolder + "/OreLevelTable.asset";
 
-        private const string SpawnPointName = "Ore_01";
+        private const string SpawnPointName = "Garbage_01";
 
         private static readonly OreType[] PlaceholderTypes =
         {
@@ -334,7 +334,7 @@ namespace Yujian.EditorTools
             return group;
         }
 
-        /// <summary>优先用 Ore_01 当固定生成点；找不到时按名字排序取第一块，保证重复运行结果一致。</summary>
+        /// <summary>优先用 Garbage_01 当固定生成点；找不到时按名字排序取第一块，保证重复运行结果一致。</summary>
         private static Ore ChooseSpawnOre(Ore[] ores)
         {
             for (int i = 0; i < ores.Length; i++)
@@ -347,7 +347,7 @@ namespace Yujian.EditorTools
 
             System.Array.Sort(ores, (a, b) => string.CompareOrdinal(a.name, b.name));
 
-            Debug.LogWarning($"[OreProgressionWizard] 场景里没有名为 {SpawnPointName} 的矿石，" +
+            Debug.LogWarning($"[OreProgressionWizard] 场景里没有名为 {SpawnPointName} 的垃圾聚合体，" +
                              $"改用按名字排序的第一块「{ores[0].name}」。");
             return ores[0];
         }

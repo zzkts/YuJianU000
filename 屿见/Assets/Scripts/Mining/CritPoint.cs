@@ -36,6 +36,9 @@ namespace Yujian.Mining
         private float pulseSeed;
         private float spawnedAt;
         private bool consumed;
+        private Transform anchor;
+        private Vector3 localAnchorPoint;
+        private bool anchored;
 
         /// <summary>所属矿石，可能为空（矿石先消失）。</summary>
         public Ore Owner => owner;
@@ -60,17 +63,36 @@ namespace Yujian.Mining
         }
 
         /// <summary>
+        /// 挂到某块垃圾上：之后每帧跟随该块的 Transform。
+        /// 矿石受击缩放 / 旋转、垃圾块被摘下来时都不会脱离表面。
+        /// </summary>
+        public void Attach(Transform newAnchor, Vector3 localPoint)
+        {
+            anchor = newAnchor;
+            localAnchorPoint = localPoint;
+            anchored = newAnchor != null;
+
+            if (anchored)
+            {
+                transform.position = anchor.TransformPoint(localAnchorPoint);
+            }
+        }
+
+        /// <summary>
         /// 换位：点中后暴击点消失，并在新位置重新出现（不销毁对象）。
         /// 重新播放一次「放大→缩小」的生成动画。
         /// </summary>
-        public void Relocate(Vector3 worldPosition)
+        public void Relocate(Vector3 worldPosition, Transform newAnchor, Vector3 localPoint)
         {
             if (consumed)
             {
                 return;
             }
 
-            transform.position = worldPosition;
+            anchor = newAnchor;
+            localAnchorPoint = localPoint;
+            anchored = newAnchor != null;
+            transform.position = anchored ? anchor.TransformPoint(localAnchorPoint) : worldPosition;
             spawnedAt = Time.time;
         }
 
@@ -115,6 +137,13 @@ namespace Yujian.Mining
                 return;
             }
 
+            if (anchored && anchor == null)
+            {
+                // 挂靠的垃圾块已经被收走 / 销毁，点跟着消失，不要留在半空。
+                Consume();
+                return;
+            }
+
             float pulse = 1f + Mathf.Sin((Time.time + pulseSeed) * pulseSpeed) * pulseAmount;
             float spawn = EvaluateSpawnScale();
             float shrink = 1f;
@@ -130,6 +159,19 @@ namespace Yujian.Mining
             }
 
             transform.localScale = baseScale * pulse * spawn * shrink;
+        }
+
+        /// <summary>
+        /// 在矿石受击动画更新之后再同步位置，避免暴击点比垃圾慢一帧。
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (consumed || !anchored || anchor == null)
+            {
+                return;
+            }
+
+            transform.position = anchor.TransformPoint(localAnchorPoint);
         }
 
         /// <summary>生成动画：0 → 1.25 倍 → 1 倍，平滑过渡。</summary>

@@ -26,13 +26,13 @@ namespace Yujian.Core
     /// <summary>GameArea 的中文名。只用于日志与按钮文字，不参与任何判定。</summary>
     public static class GameAreaUtility
     {
-        /// <summary>取该区域的中文名，例如 Mining → "挖矿"。</summary>
+        /// <summary>取该区域的中文名，例如 Mining → "清洁"。</summary>
         public static string ToChineseName(this GameArea area)
         {
             switch (area)
             {
                 case GameArea.Mining:
-                    return "挖矿";
+                    return "清洁";
                 case GameArea.Building:
                     return "建筑";
                 case GameArea.Shop:

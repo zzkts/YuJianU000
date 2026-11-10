@@ -35,7 +35,7 @@ namespace Yujian.Mining
         [SerializeField] private bool blockClicksOverUI = true;
 
         [Header("依赖")]
-        [Tooltip("玩家金币，矿石击碎后在此发放奖励")]
+        [Tooltip("玩家垃圾，矿石击碎后在此发放奖励")]
         [SerializeField] private PlayerCurrency playerCurrency;
 
         [Tooltip("伤害计算系统")]
@@ -228,6 +228,8 @@ namespace Yujian.Mining
             // 先取出名字与奖励：TakeDamage 可能击碎并销毁矿石
             string oreName = ore.name;
             int reward = ore.Reward;
+            // 垃圾聚合体由 GarbageDropper 分档发放奖励，这里不能再发一次
+            bool suppressReward = ore.SuppressDeathReward;
 
             // D3=A：普通攻击不再随机暴击，isCritical 恒为 false；
             // 暴击只由上面的暴击点分支产生
@@ -251,11 +253,16 @@ namespace Yujian.Mining
                 return;
             }
 
-            playerCurrency.AddMoney(reward);
+            if (!suppressReward)
+            {
+                playerCurrency.AddMoney(reward);
+            }
 
             if (logMiningFlow)
             {
-                Debug.Log($"[MiningInput] 击碎 {oreName}，发放 {reward} 金币，当前金币 {playerCurrency.CurrentMoney}");
+                Debug.Log($"[MiningInput] 击碎 {oreName}，" +
+                          (suppressReward ? "奖励由掉落系统分档发放" : $"发放 {reward} 垃圾") +
+                          $"，当前垃圾 {playerCurrency.CurrentMoney}");
             }
         }
 
@@ -275,6 +282,7 @@ namespace Yujian.Mining
 
             string oreName = owner.name;
             int reward = owner.Reward;
+            bool suppressReward = owner.SuppressDeathReward;
             float damage = damageSystem.CalculateCritPointDamage();
 
             if (damage <= 0f)
@@ -295,12 +303,16 @@ namespace Yujian.Mining
                 return;
             }
 
-            playerCurrency.AddMoney(reward);
+            if (!suppressReward)
+            {
+                playerCurrency.AddMoney(reward);
+            }
 
             if (logMiningFlow)
             {
-                Debug.Log($"[MiningInput] 暴击点击碎 {oreName}，发放 {reward} 金币，" +
-                          $"当前金币 {playerCurrency.CurrentMoney}");
+                Debug.Log($"[MiningInput] 暴击点击碎 {oreName}，" +
+                          (suppressReward ? "奖励由掉落系统分档发放" : $"发放 {reward} 垃圾") +
+                          $"，当前垃圾 {playerCurrency.CurrentMoney}");
             }
         }
 

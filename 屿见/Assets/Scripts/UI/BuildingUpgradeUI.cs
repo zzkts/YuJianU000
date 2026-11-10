@@ -119,7 +119,7 @@ namespace Yujian.UI
 
         private void LateUpdate()
         {
-            // 金币、等级、建筑位置每帧都可能变，用事件反而容易漏
+            // 垃圾、等级、建筑位置每帧都可能变，用事件反而容易漏
             Refresh();
         }
 
@@ -234,10 +234,10 @@ namespace Yujian.UI
             {
                 int target = upgrade.GetTargetLevel(mode);
                 int total = upgrade.SelectedTable.GetTotalCost(level, target);
-                return $"Lv.{level} / {max}｜升到 {target} 级共 {total} 金币";
+                return $"Lv.{level} / {max}｜升到 {target} 级共 {total} 垃圾";
             }
 
-            return $"Lv.{level} / {max}｜下一级 {upgrade.NextCost} 金币";
+            return $"Lv.{level} / {max}｜下一级 {upgrade.NextCost} 垃圾";
         }
 
         private void WireButton()

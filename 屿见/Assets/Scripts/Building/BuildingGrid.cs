@@ -13,6 +13,9 @@ namespace Yujian.Building
         OutOfBounds = 3,
         Occupied = 4,
         NotBuildable = 5,
+
+        /// <summary>落在污染区格子里：净化前整块封锁，净化后只保留污染核心那一格。</summary>
+        LevelLocked = 6,
     }
 
     /// <summary>GridPlacementFailure 的中文描述。只用于日志与提示文字。</summary>
@@ -34,6 +37,8 @@ namespace Yujian.Building
                     return "格子已被占用";
                 case GridPlacementFailure.NotBuildable:
                     return "不在可建台地上";
+                case GridPlacementFailure.LevelLocked:
+                    return "关卡污染区未净化";
                 default:
                     return failure.ToString();
             }
@@ -93,6 +98,24 @@ namespace Yujian.Building
 
         // ownerId（建筑实例的 GetInstanceID）→ 占地矩形，用于拆除时精确释放
         private readonly Dictionary<int, RectInt> ownerRects = new Dictionary<int, RectInt>();
+
+        // 关卡污染区：ownerId（关卡入口的 GetInstanceID）→ 占地与污染核心。
+        // 和建筑占用分开存，净化状态变化时只重算封锁掩码，不影响建筑占用表。
+        private readonly Dictionary<int, LevelFootprint> levelFootprints =
+            new Dictionary<int, LevelFootprint>();
+
+        // 关卡封锁掩码：true = 这一格当前不能建（污染未净化，或净化后剩下的核心格）
+        private bool[] levelBlockMask;
+
+        /// <summary>一个关卡在建筑网格上的污染区。</summary>
+        private struct LevelFootprint
+        {
+            public RectInt Rect;
+            public Vector2Int CoreCell;
+
+            /// <summary>是否已净化。true 时只封锁核心格，其余格子归还给玩家。</summary>
+            public bool Unlocked;
+        }
 
         private Vector3 origin;
         private bool configured;
@@ -218,8 +241,10 @@ namespace Yujian.Building
             ownerRects.Clear();
             occupied = new bool[cellCounts.x * cellCounts.y];
             buildableMask = new bool[cellCounts.x * cellCounts.y];
+            levelBlockMask = new bool[cellCounts.x * cellCounts.y];
 
             BuildBuildableMask();
+            RebuildLevelBlockMask();
 
             configured = true;
 
@@ -309,6 +334,159 @@ namespace Yujian.Building
             }
 
             return false;
+        }
+
+        // ---------- 关卡污染区 ----------
+
+        /// <summary>
+        /// 登记（或更新）一个关卡的污染区。ownerId 用关卡入口的 GetInstanceID()。
+        /// 未净化时封锁整块矩形；已净化时只封锁污染核心那一格，且核心格永远不可建（策划案 2.3.4）。
+        /// </summary>
+        public bool RegisterLevelFootprint(int ownerId, RectInt rect, Vector2Int coreCell, bool unlocked)
+        {
+            if (rect.width <= 0 || rect.height <= 0)
+            {
+                Debug.LogWarning($"[BuildingGrid] 关卡污染区尺寸非法（ownerId={ownerId}，格子 {rect}），已忽略。", this);
+                return false;
+            }
+
+            levelFootprints[ownerId] = new LevelFootprint
+            {
+                Rect = rect,
+                CoreCell = coreCell,
+                Unlocked = unlocked,
+            };
+
+            RebuildLevelBlockMask();
+
+            if (logGridFlow)
+            {
+                Debug.Log($"[BuildingGrid] 登记关卡污染区：ownerId={ownerId}，格子 {rect}，" +
+                          $"核心格 {coreCell}，{(unlocked ? "已净化（仅核心格封锁）" : "未净化（整块封锁）")}。");
+            }
+
+            return true;
+        }
+
+        /// <summary>切换某个关卡的净化状态。找不到登记时返回 false。</summary>
+        public bool SetLevelFootprintUnlocked(int ownerId, bool unlocked)
+        {
+            if (!levelFootprints.TryGetValue(ownerId, out LevelFootprint footprint))
+            {
+                return false;
+            }
+
+            if (footprint.Unlocked == unlocked)
+            {
+                return true;
+            }
+
+            footprint.Unlocked = unlocked;
+            levelFootprints[ownerId] = footprint;
+            RebuildLevelBlockMask();
+
+            if (logGridFlow)
+            {
+                Debug.Log($"[BuildingGrid] 关卡污染区 ownerId={ownerId} 现在" +
+                          $"{(unlocked ? "已净化：核心格以外解除封锁" : "重新封锁整块")}。");
+            }
+
+            return true;
+        }
+
+        /// <summary>移除登记（关卡被销毁 / 测试重置时）。返回是否存在过。</summary>
+        public bool UnregisterLevelFootprint(int ownerId)
+        {
+            if (!levelFootprints.Remove(ownerId))
+            {
+                return false;
+            }
+
+            RebuildLevelBlockMask();
+            return true;
+        }
+
+        /// <summary>某个 ownerId 是否登记过污染区。</summary>
+        public bool HasLevelFootprint(int ownerId)
+        {
+            return levelFootprints.ContainsKey(ownerId);
+        }
+
+        /// <summary>读取污染区登记，供存档 / 验收使用。</summary>
+        public bool TryGetLevelFootprint(
+            int ownerId, out RectInt rect, out Vector2Int coreCell, out bool unlocked)
+        {
+            if (levelFootprints.TryGetValue(ownerId, out LevelFootprint footprint))
+            {
+                rect = footprint.Rect;
+                coreCell = footprint.CoreCell;
+                unlocked = footprint.Unlocked;
+                return true;
+            }
+
+            rect = default;
+            coreCell = default;
+            unlocked = false;
+            return false;
+        }
+
+        /// <summary>这一格是否被关卡污染区封锁。越界一律 false。</summary>
+        public bool IsCellLevelBlocked(Vector2Int cell)
+        {
+            if (!IsCellInsideGrid(cell) || levelBlockMask == null)
+            {
+                return false;
+            }
+
+            return levelBlockMask[cell.x + cell.y * cellCounts.x];
+        }
+
+        /// <summary>
+        /// 根据所有已登记的污染区重算封锁掩码。
+        /// 未净化 → 整块矩形封锁；已净化 → 只封锁污染核心格。
+        /// </summary>
+        private void RebuildLevelBlockMask()
+        {
+            int expected = cellCounts.x * cellCounts.y;
+
+            if (levelBlockMask == null || levelBlockMask.Length != expected)
+            {
+                levelBlockMask = new bool[expected];
+            }
+            else
+            {
+                System.Array.Clear(levelBlockMask, 0, levelBlockMask.Length);
+            }
+
+            foreach (LevelFootprint footprint in levelFootprints.Values)
+            {
+                if (footprint.Unlocked)
+                {
+                    MarkLevelBlocked(footprint.CoreCell);
+                    continue;
+                }
+
+                RectInt rect = footprint.Rect;
+
+                for (int y = rect.yMin; y < rect.yMax; y++)
+                {
+                    for (int x = rect.xMin; x < rect.xMax; x++)
+                    {
+                        MarkLevelBlocked(new Vector2Int(x, y));
+                    }
+                }
+            }
+        }
+
+        private void MarkLevelBlocked(Vector2Int cell)
+        {
+            // 这里不能用 IsCellInsideGrid：Rebuild 过程中 configured 还是上一次的值
+            if (cell.x < 0 || cell.x >= cellCounts.x || cell.y < 0 || cell.y >= cellCounts.y)
+            {
+                return;
+            }
+
+            levelBlockMask[cell.x + cell.y * cellCounts.x] = true;
         }
 
         // ---------- 坐标换算 ----------
@@ -435,7 +613,10 @@ namespace Yujian.Building
                 && cell.y >= 0 && cell.y < cellCounts.y;
         }
 
-        /// <summary>格子是否在可建台地上。越界一律 false。</summary>
+        /// <summary>
+        /// 格子是否可建。越界、台地外、关卡污染区封锁中都算 false。
+        /// 网格线可视化直接用这个判定，所以污染区不会画出格线。
+        /// </summary>
         public bool IsCellBuildable(Vector2Int cell)
         {
             if (!IsCellInsideGrid(cell) || buildableMask == null)
@@ -443,7 +624,14 @@ namespace Yujian.Building
                 return false;
             }
 
-            return buildableMask[cell.x + cell.y * cellCounts.x];
+            int index = cell.x + cell.y * cellCounts.x;
+
+            if (!buildableMask[index])
+            {
+                return false;
+            }
+
+            return levelBlockMask == null || !levelBlockMask[index];
         }
 
         /// <summary>格子是否已被建筑占用。越界一律 false。</summary>
@@ -493,6 +681,12 @@ namespace Yujian.Building
                     if (!buildableMask[index])
                     {
                         failure = GridPlacementFailure.NotBuildable;
+                        return false;
+                    }
+
+                    if (levelBlockMask != null && levelBlockMask[index])
+                    {
+                        failure = GridPlacementFailure.LevelLocked;
                         return false;
                     }
 
@@ -546,10 +740,16 @@ namespace Yujian.Building
                         && x >= ownRect.xMin && x < ownRect.xMax
                         && y >= ownRect.yMin && y < ownRect.yMax;
 
-                    // 面积优先：先看是不是可建台地，再看有没有被别的建筑占
+                    // 面积优先：先看是不是可建台地，再看关卡污染区，最后看有没有被别的建筑占
                     if (!buildableMask[index])
                     {
                         failure = GridPlacementFailure.NotBuildable;
+                        return false;
+                    }
+
+                    if (levelBlockMask != null && levelBlockMask[index])
+                    {
+                        failure = GridPlacementFailure.LevelLocked;
                         return false;
                     }
 
@@ -659,10 +859,23 @@ namespace Yujian.Building
                 }
             }
 
+            int levelBlockedCount = 0;
+
+            if (levelBlockMask != null)
+            {
+                for (int i = 0; i < levelBlockMask.Length; i++)
+                {
+                    if (levelBlockMask[i])
+                    {
+                        levelBlockedCount++;
+                    }
+                }
+            }
+
             Debug.Log($"[BuildingGrid] 状态：configured={configured}，原点 {origin}，" +
                       $"格数 {cellCounts.x}×{cellCounts.y}，单格 {cellSize}，" +
-                      $"可建 {buildableCount} 格，已占用 {OccupiedCellCount} 格，" +
-                      $"登记建筑 {ownerRects.Count} 座。", this);
+                      $"可建 {buildableCount} 格，关卡封锁 {levelBlockedCount} 格，" +
+                      $"已占用 {OccupiedCellCount} 格，登记建筑 {ownerRects.Count} 座。", this);
         }
     }
 }

@@ -110,6 +110,18 @@ namespace Yujian.Mining
         /// <summary>矿石被击碎时广播（参数为自身）。外部生成器用它接续生成下一块。</summary>
         public event System.Action<Ore> OnDied;
 
+        /// <summary>生命值变化时广播（当前生命值，最大生命值）。垃圾掉落系统用它判断是否跨过掉落档位。</summary>
+        public event System.Action<float, float> OnHealthChanged;
+
+        /// <summary>被外部生成器重新配置并准备出现时广播（参数为自身）。</summary>
+        public event System.Action<Ore> OnDefinitionApplied;
+
+        /// <summary>
+        /// 为 true 时，死亡奖励由外部系统（垃圾掉落）分档发放，
+        /// 调用方（MiningInput / 建筑自动攻击）不要再自行加钱，避免重复发放。
+        /// </summary>
+        public bool SuppressDeathReward { get; set; }
+
         /// <summary>参与表现的实际节点。</summary>
         private Transform Visual => visualRoot != null ? visualRoot : transform;
 
@@ -242,6 +254,9 @@ namespace Yujian.Mining
 
             EventBus.Publish(new OreHit(transform.position, destroyed));
 
+            // 先让掉落系统处理跨过的血量档位，再走死亡流程
+            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+
             if (!destroyed)
             {
                 return false;
@@ -249,6 +264,54 @@ namespace Yujian.Mining
 
             Die();
             return true;
+        }
+
+        /// <summary>
+        /// 恢复生命值，不会超过最大生命值。
+        /// 关卡系统 2.3.3 的 BOSS 回血走这里：只影响血量，不触发受击表现、不重排掉落档位。
+        /// </summary>
+        /// <param name="amount">恢复量，非正数时忽略。</param>
+        public void Heal(float amount)
+        {
+            if (!IsAlive || amount <= 0f)
+            {
+                return;
+            }
+
+            float nextHealth = Mathf.Min(maxHealth, currentHealth + amount);
+
+            if (nextHealth <= currentHealth)
+            {
+                return;
+            }
+
+            currentHealth = nextHealth;
+            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+        }
+
+        /// <summary>
+        /// 瞬间回满生命值，并把已经被打散的垃圾外壳重新聚合。
+        /// 关卡系统 2.3.6 的 BOSS 倒计时结束后走这里：血量恢复、损失掉的垃圾重新出现、倒计时重启。
+        /// 不改变种类、最大生命值与奖励。
+        /// </summary>
+        public void RestoreFullHealth()
+        {
+            if (!IsAlive)
+            {
+                return;
+            }
+
+            currentHealth = maxHealth;
+
+            GarbageAggregateVisual aggregateVisual =
+                Visual.GetComponentInChildren<GarbageAggregateVisual>(true);
+            if (aggregateVisual != null)
+            {
+                aggregateVisual.Rebuild();
+            }
+
+            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+            OnDefinitionApplied?.Invoke(this);
         }
 
         /// <summary>
@@ -302,6 +365,17 @@ namespace Yujian.Mining
             Transform visual = Visual;
             visual.localRotation = baseRotation;
             visual.localScale = baseScale;
+
+            // 垃圾聚合体：刷新 / 下一次生成时把被摘掉的外壳补回来
+            GarbageAggregateVisual aggregateVisual =
+                Visual.GetComponentInChildren<GarbageAggregateVisual>(true);
+            if (aggregateVisual != null)
+            {
+                aggregateVisual.Rebuild();
+            }
+
+            // 让掉落系统按新的最大生命值 / 奖励重建档位
+            OnDefinitionApplied?.Invoke(this);
 
             SetOreVisible(true);
 

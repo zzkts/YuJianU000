@@ -70,6 +70,9 @@ namespace Yujian.Mining
         private bool searchedSparkPrefab;
         private bool warnedMissingOre;
         private bool isInMiningArea;
+        private GarbageAggregateVisual garbageVisual;
+        private Ore garbageVisualOwner;
+        private int lastShellPieceCount = -1;
         private float cooldownRemaining;
         private int burstRemaining;
         private const float BurstSpawnInterval = 0.08f;
@@ -203,6 +206,7 @@ namespace Yujian.Mining
             }
 
             PruneConsumed();
+            TrackShellChanges();
 
             if (activePoints.Count >= Capacity)
             {
@@ -295,7 +299,9 @@ namespace Yujian.Mining
 
             if (owner != null && owner.IsAlive && CanSpawn)
             {
-                point.Relocate(ResolveSpawnPosition(owner, point));
+                Vector3 newPosition = ResolveSpawnPosition(owner, point,
+                    out Transform anchor, out Vector3 localPoint);
+                point.Relocate(newPosition, anchor, localPoint);
                 return;
             }
 
@@ -317,6 +323,7 @@ namespace Yujian.Mining
             activePoints.Clear();
             burstRemaining = Capacity;
             cooldownRemaining = 0f;
+            lastShellPieceCount = -1;
         }
 
         /// <summary>生成一个暴击点。公开出来方便批处理验证不依赖冷却计时。</summary>
@@ -334,7 +341,8 @@ namespace Yujian.Mining
                 return null;
             }
 
-            Vector3 position = ResolveSpawnPosition(target, null);
+            Vector3 position = ResolveSpawnPosition(target, null,
+                out Transform anchor, out Vector3 localPoint);
             GameObject pointObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             pointObject.name = "CritPoint";
             pointObject.layer = target.gameObject.layer;
@@ -360,6 +368,7 @@ namespace Yujian.Mining
 
             CritPoint point = pointObject.AddComponent<CritPoint>();
             point.Initialize(target, Lifetime);
+            point.Attach(anchor, localPoint);
             activePoints.Add(point);
 
             if (logSpawnFlow)
@@ -378,8 +387,12 @@ namespace Yujian.Mining
         /// 玩家点暴击点时鼠标同时压在矿石上，符合 2.1.4 的检测规则。
         /// 配置半径继续作为离矿石中心的最大距离。
         /// </summary>
-        private Vector3 ResolveSpawnPosition(Ore target, CritPoint exclude)
+        private Vector3 ResolveSpawnPosition(Ore target, CritPoint exclude,
+            out Transform anchor, out Vector3 localPoint)
         {
+            anchor = null;
+            localPoint = default;
+
             Bounds bounds;
 
             if (!TryGetOreBounds(target, out bounds))
@@ -395,6 +408,61 @@ namespace Yujian.Mining
             }
 
             Camera camera = viewCamera != null ? viewCamera : Camera.main;
+
+            // 垃圾聚合体的外壳块没有碰撞体，射线只会打到点击用的包围盒上，
+            // 看起来就是「暴击点悬在空气里」。这里优先直接在外壳块上取表面点。
+            if (camera != null)
+            {
+                GarbageAggregateVisual visual = GetGarbageVisual(target);
+
+                if (visual != null)
+                {
+                    Vector3 lastSurface = default;
+                    Transform lastAnchor = null;
+                    Vector3 lastLocalPoint = default;
+                    bool hasSurface = false;
+
+                    for (int attempt = 0; attempt < 24; attempt++)
+                    {
+                        if (!visual.TryGetCritPointSurface(camera,
+                                out GarbageAggregateVisual.CritSurface surface))
+                        {
+                            break;
+                        }
+
+                        Vector3 worldOffset = surface.WorldNormal * (pointDiameter * 0.35f);
+                        Vector3 candidate = surface.WorldPosition + worldOffset;
+                        Vector3 anchoredLocalPoint = surface.LocalPoint
+                            + surface.Anchor.InverseTransformVector(worldOffset);
+
+                        if ((candidate - bounds.center).sqrMagnitude > radius * radius)
+                        {
+                            continue;
+                        }
+
+                        lastSurface = candidate;
+                        lastAnchor = surface.Anchor;
+                        lastLocalPoint = anchoredLocalPoint;
+                        hasSurface = true;
+
+                        if (IsClearOfOtherPoints(candidate, exclude))
+                        {
+                            anchor = surface.Anchor;
+                            localPoint = anchoredLocalPoint;
+                            return candidate;
+                        }
+                    }
+
+                    // 外壳上已经找到落点，只是离别的暴击点太近时也返回外壳点，
+                    // 不要退回包围盒表面（那正是点浮在空气里的原因）。
+                    if (hasSurface)
+                    {
+                        anchor = lastAnchor;
+                        localPoint = lastLocalPoint;
+                        return lastSurface;
+                    }
+                }
+            }
 
             if (camera != null && TryGetScreenRect(bounds, camera, out Rect screenRect))
             {
@@ -439,6 +507,74 @@ namespace Yujian.Mining
             }
 
             return best;
+        }
+
+        /// <summary>找到矿石下面的垃圾外壳，用于把暴击点贴到真实垃圾块上。</summary>
+        private GarbageAggregateVisual GetGarbageVisual(Ore target)
+        {
+            if (target == null)
+            {
+                return null;
+            }
+
+            if (garbageVisualOwner != target)
+            {
+                garbageVisualOwner = target;
+                garbageVisual = target.GetComponentInChildren<GarbageAggregateVisual>(true);
+            }
+
+            return garbageVisual;
+        }
+
+        /// <summary>
+        /// 外壳掉块后，原来贴在那些块上的暴击点会悬空；
+        /// 外壳块数变化时把现有暴击点重新贴到剩下的垃圾上。
+        /// </summary>
+        private void TrackShellChanges()
+        {
+            if (ore == null)
+            {
+                return;
+            }
+
+            GarbageAggregateVisual visual = GetGarbageVisual(ore);
+            int count = visual != null ? visual.RemainingPieceCount : -1;
+
+            if (count >= 0 && lastShellPieceCount >= 0 && count != lastShellPieceCount
+                && activePoints.Count > 0)
+            {
+                RelocateActivePoints(visual);
+            }
+
+            lastShellPieceCount = count;
+        }
+
+        private void RelocateActivePoints(GarbageAggregateVisual visual)
+        {
+            if (ore == null || !ore.IsAlive)
+            {
+                return;
+            }
+
+            if (visual != null && visual.RemainingPieceCount <= 0)
+            {
+                ClearAll();
+                return;
+            }
+
+            for (int i = 0; i < activePoints.Count; i++)
+            {
+                CritPoint point = activePoints[i];
+
+                if (point == null || point.IsConsumed)
+                {
+                    continue;
+                }
+
+                Vector3 newPosition = ResolveSpawnPosition(ore, point,
+                    out Transform anchor, out Vector3 localPoint);
+                point.Relocate(newPosition, anchor, localPoint);
+            }
         }
 
         private static bool TryGetOreBounds(Ore target, out Bounds bounds)

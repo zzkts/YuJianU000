@@ -9,12 +9,12 @@ using Yujian.Mining;
 namespace Yujian.EditorTools
 {
     /// <summary>
-    /// 阶段 13 一键配置：矿洞第一人称手持提灯与挖矿工具。
+    /// 阶段 13 一键配置：清洁区第一人称手持提灯与清洁工具。
     ///
     /// 做五件事：
-    ///   1. 在主相机下创建「矿洞手持道具」，左手提灯、右手镐；
+    ///   1. 在主相机下创建「清洁手持道具」，左手提灯、右手刷；
     ///   2. 给提灯加一盏暖色点光，并接好区域控制器与相机；
-    ///   3. 删除旧的落地灯柱（阶段 12 生成在「矿洞灯光/Lantern」）；
+    ///   3. 删除旧的落地灯柱（阶段 12 生成在「清洁区灯光/Lantern」）；
     ///   4. 把补光 / 轮廓光恢复成阶段 12 的亮度，保留手持提灯；
     ///   5. 保存场景。
     ///
@@ -23,7 +23,7 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class MiningHandheldSetupWizard
     {
-        private const string RootName = "矿洞手持道具";
+        private const string RootName = "清洁手持道具";
         private const int IgnoreRaycastLayer = 2;
         private const string MetalMaterialPath = "Assets/Materials/Mining/HandLantern_Metal.mat";
         private const string GlowMaterialPath = "Assets/Materials/Mining/HandLantern_Glow.mat";
@@ -191,7 +191,7 @@ namespace Yujian.EditorTools
             }
 
             GameObject root = new GameObject(RootName);
-            Undo.RegisterCreatedObjectUndo(root, "创建矿洞手持道具");
+            Undo.RegisterCreatedObjectUndo(root, "创建清洁手持道具");
             root.transform.SetParent(viewCamera.transform, false);
             root.transform.localPosition = Vector3.zero;
             root.transform.localRotation = Quaternion.identity;

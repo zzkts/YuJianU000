@@ -88,10 +88,10 @@ namespace Yujian.Shop
                 if (logPurchaseFlow)
                 {
                     Debug.Log($"[Shop] 购买失败：{color.ToChineseName()}{material.MaterialName} ×{amount} " +
-                              $"需要 {totalCost} 金币，当前只有 {playerCurrency.CurrentMoney}。金币与库存均未变动。");
+                              $"需要 {totalCost} 垃圾，当前只有 {playerCurrency.CurrentMoney}。垃圾与库存均未变动。");
                 }
 
-                EventBus.Publish(new PurchaseFailed(material, color, amount, "金币不足"));
+                EventBus.Publish(new PurchaseFailed(material, color, amount, "垃圾不足"));
                 return false;
             }
 
@@ -100,7 +100,7 @@ namespace Yujian.Shop
             if (logPurchaseFlow)
             {
                 Debug.Log($"[Shop] 购买成功：{color.ToChineseName()}{material.MaterialName} ×{amount}，" +
-                          $"花费 {totalCost} 金币，剩余 {playerCurrency.CurrentMoney} 金币。");
+                          $"花费 {totalCost} 垃圾，剩余 {playerCurrency.CurrentMoney} 垃圾。");
             }
 
             EventBus.Publish(new PurchaseSucceeded(material, color, amount, totalCost));

@@ -26,7 +26,7 @@ namespace Yujian.Mining
                 case OreType.HongZhuan: return "红砖";
                 case OreType.MuLiao: return "木料";
                 case OreType.HuaGangYan: return "花岗岩";
-                default: return "未知矿石";
+                default: return "未知垃圾";
             }
         }
 

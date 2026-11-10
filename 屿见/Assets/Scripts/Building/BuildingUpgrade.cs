@@ -21,7 +21,7 @@ namespace Yujian.Building
     /// 职责：
     ///   1. 记住「玩家当前选中了哪座已建建筑」；
     ///   2. 按 <see cref="BuildingUpgradeTable"/> 算下一次/下一次间隔的费用与目标等级；
-    ///   3. 扣金币、写等级、广播 <see cref="BuildingUpgraded"/>。
+    ///   3. 扣垃圾、写等级、广播 <see cref="BuildingUpgraded"/>。
     ///
     /// 不做的事：不处理输入（点击谁的判定在 <see cref="BuildingPointerInteraction"/>）、
     /// 不投影 UI（<see cref="Yujian.UI.BuildingUpgradeUI"/>）、不建建筑、不碰存档
@@ -35,7 +35,7 @@ namespace Yujian.Building
         [Tooltip("建筑管理器。选中对象必须来自它的已放置建筑列表")]
         [SerializeField] private BuildingManager buildingManager;
 
-        [Tooltip("玩家金币。升级从这里扣钱；留空会报错，升级按钮点了不生效")]
+        [Tooltip("玩家垃圾。升级从这里扣钱；留空会报错，升级按钮点了不生效")]
         [SerializeField] private PlayerCurrency currency;
 
         [Header("调试")]
@@ -46,7 +46,7 @@ namespace Yujian.Building
         /// <summary>选中对象变化（选中、切换、取消）时触发。</summary>
         public event Action OnSelectionChanged;
 
-        /// <summary>等级或金币导致的可升级状态变化时触发。</summary>
+        /// <summary>等级或垃圾导致的可升级状态变化时触发。</summary>
         public event Action OnUpgradeStateChanged;
 
         /// <summary>当前选中的建筑实例，没有则为 null。</summary>
@@ -81,7 +81,7 @@ namespace Yujian.Building
             }
         }
 
-        /// <summary>玩家当前金币。</summary>
+        /// <summary>玩家当前垃圾。</summary>
         public int CurrentMoney => currency != null ? currency.CurrentMoney : 0;
 
         private void Awake()
@@ -148,7 +148,7 @@ namespace Yujian.Building
 
         /// <summary>
         /// 当前模式下点一次能升几级（用来显示按钮上的「可升级次数」）。
-        /// x1 恒为 0/1；Max 为金币够连升到目标等级的次数。
+        /// x1 恒为 0/1；Max 为垃圾够连升到目标等级的次数。
         /// </summary>
         public int GetAffordableLevelCount(BuildingUpgradeMode mode)
         {
@@ -197,7 +197,7 @@ namespace Yujian.Building
 
             if (currency == null)
             {
-                message = "金币系统未配置";
+                message = "垃圾系统未配置";
                 return false;
             }
 
@@ -232,7 +232,7 @@ namespace Yujian.Building
             if (upgraded <= 0)
             {
                 int nextCost = table.GetUpgradeCost(info.Level);
-                message = nextCost > 0 ? $"金币不足（需要 {nextCost}）" : "已经满级了";
+                message = nextCost > 0 ? $"垃圾不足（需要 {nextCost}）" : "已经满级了";
                 OnUpgradeStateChanged?.Invoke();
                 return false;
             }
@@ -242,7 +242,7 @@ namespace Yujian.Building
             if (logUpgradeFlow)
             {
                 Debug.Log($"[BuildingUpgrade]「{info.Data.BuildingName}」{previousLevel} → {info.Level} 级" +
-                          $"（{mode}，本次升 {upgraded} 级），剩余金币 {currency.CurrentMoney}。");
+                          $"（{mode}，本次升 {upgraded} 级），剩余垃圾 {currency.CurrentMoney}。");
             }
 
             EventBus.Publish(new BuildingUpgraded(info.Data, previousLevel, info.Level));
@@ -251,7 +251,7 @@ namespace Yujian.Building
         }
 
         /// <summary>
-        /// 每帧由 UI 调用：金币会因为挖矿随时变化，按钮上的「可升级次数」需要跟着刷新。
+        /// 每帧由 UI 调用：垃圾会因为挖矿随时变化，按钮上的「可升级次数」需要跟着刷新。
         /// </summary>
         public void NotifyMoneyChanged()
         {

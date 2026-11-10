@@ -18,7 +18,7 @@ namespace Yujian.EditorTools
     ///   1. 建 / 复用场景物体 <c>GameAreaSystem</c>（GameAreaController + AreaCameraDirector）；
     ///   2. 接线：挖矿输入、相机、建筑相机调度、按区域显隐的面板数组；
     ///   3. 重建 <c>Canvas/BottomNav</c>：三个按钮 [挖矿] [建筑] [商店]；
-    ///   4. 建 <c>Canvas/CoinHud</c>：常驻金币文本（事件驱动）；
+    ///   4. 建 <c>Canvas/CoinHud</c>：常驻垃圾文本（事件驱动）；
     ///   5. 给建筑预制体挂上 BuildingSpawnPop（建造成功 0.8 → 1）；
     ///   6. 让位：把材料面板与建筑面板整体抬到导航条上方，并同步 SlidingPanel 的隐藏位移；
     ///   7. 打开两个面板里被摆成关闭的按钮：材料面板的 <c>[×]</c> / <c>[√]</c>、
@@ -74,7 +74,7 @@ namespace Yujian.EditorTools
 
             if (canvas == null)
             {
-                Fail("场景里找不到 Canvas，无法建底部导航与金币 HUD。");
+                Fail("场景里找不到 Canvas，无法建底部导航与垃圾 HUD。");
                 return;
             }
 
@@ -161,7 +161,7 @@ namespace Yujian.EditorTools
 
             GameObject navObject = BuildBottomNav(canvas, templateButton, areaController);
 
-            // ---------------- 4. 金币 HUD ----------------
+            // ---------------- 4. 垃圾 HUD ----------------
 
             Text coinText = BuildCoinHud(canvas, currency);
 
@@ -196,7 +196,7 @@ namespace Yujian.EditorTools
             Debug.Log("[MvpSetupWizard] 配置完成：\n" +
                       $"  · 区域系统：{AreaSystemObjectName}（GameAreaController + AreaCameraDirector）\n" +
                       "  · 导航条：Canvas/BottomNav = [挖矿] [建筑]，已接 BottomNavUI\n" +
-                      $"  · 金币 HUD：{coinText.name}（事件驱动，没有 Update）\n" +
+                      $"  · 垃圾 HUD：{coinText.name}（事件驱动，没有 Update）\n" +
                       $"  · 建筑预制体：{prefabReport}\n" +
                       $"  · 面板让位：{panelReport}\n" +
                       $"  · 面板按钮：{buttonReport}\n" +
@@ -357,7 +357,7 @@ namespace Yujian.EditorTools
             return null;
         }
 
-        // ---------------- 金币 HUD ----------------
+        // ---------------- 垃圾 HUD ----------------
 
         private static Text BuildCoinHud(Canvas canvas, PlayerCurrency currency)
         {
@@ -384,7 +384,7 @@ namespace Yujian.EditorTools
             background.color = CoinBackColor;
             background.sprite = null;
 
-            // 金币只是一个读数，不拦截点击：它不是面板，没有需要点它的东西
+            // 垃圾只是一个读数，不拦截点击：它不是面板，没有需要点它的东西
             background.raycastTarget = false;
 
             // 文字放在子物体上，不跟 Image 挤在同一个物体上：
@@ -400,7 +400,7 @@ namespace Yujian.EditorTools
             text.alignment = TextAnchor.MiddleRight;
             text.color = CoinTextColor;
             text.raycastTarget = false;
-            text.text = "金币：0";
+            text.text = "垃圾：0";
 
             CoinHudUI hud = EnsureComponent<CoinHudUI>(hudObject);
 

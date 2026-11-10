@@ -10,10 +10,10 @@ namespace Yujian.UI
     ///
     /// 职责：按「商品目录」为每种原料克隆一个 ShopItemUI 条目，维护当前选中的原料，
     /// 在右侧显示单价 / 总价，并把购买请求转交给 Shop.TryBuy()。
-    /// 严格只读：金币从 Shop 暴露的只读属性取，本类不直接修改任何数值。
+    /// 严格只读：垃圾从 Shop 暴露的只读属性取，本类不直接修改任何数值。
     ///
     /// 布局是 240×90 的固定小窗：
-    ///   标题 / 金币（顶部）
+    ///   标题 / 垃圾（顶部）
     ///   ├─ 左侧：可滚轮浏览的原料列表（名称、样式、说明、颜色、数量）
     ///   └─ 右侧：单价、总价、购买
     ///   底部：成功 / 余量不足提示
@@ -246,14 +246,14 @@ namespace Yujian.UI
                 if (!warnedMissingMoneySource)
                 {
                     warnedMissingMoneySource = true;
-                    Debug.LogWarning("[ShopUI] 拿不到 PlayerCurrency，金币显示将一直为 ?。", this);
+                    Debug.LogWarning("[ShopUI] 拿不到 PlayerCurrency，垃圾显示将一直为 ?。", this);
                 }
 
-                moneyText.text = "金币 ?";
+                moneyText.text = "垃圾 ?";
                 return;
             }
 
-            moneyText.text = $"金币 {shop.Currency.CurrentMoney}";
+            moneyText.text = $"垃圾 {shop.Currency.CurrentMoney}";
         }
 
         /// <summary>

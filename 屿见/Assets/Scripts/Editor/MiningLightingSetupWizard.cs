@@ -12,9 +12,9 @@ namespace Yujian.EditorTools
     /// 阶段 12 一键配置：矿洞照明。
     ///
     /// 做四件事：
-    ///   1. 在矿石旁生成矿灯外观；主光、补光、轮廓光挂在「矿洞灯光」根下；
+    ///   1. 在垃圾聚合体旁生成灯外观；主光、补光、轮廓光挂在「清洁区灯光」根下；
     ///   2. 重复运行不会重复生成灯，已有手持提灯时不再生成落地灯；
-    ///   3. 给「矿洞灯光」根物体加 MiningLightingController，接好区域、太阳和相机；
+    ///   3. 给「清洁区灯光」根物体加 MiningLightingController，接好区域、太阳和相机；
     ///   4. 保存场景。
     ///
     /// 不直接改 .unity，由 Unity 自己写盘（项目规则 13）。
@@ -22,7 +22,7 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class MiningLightingSetupWizard
     {
-        private const string RootName = "矿洞灯光";
+        private const string RootName = "清洁区灯光";
         private const string MetalMaterialPath = "Assets/Materials/Mining/MineLantern_Metal.mat";
         private const string GlowMaterialPath = "Assets/Materials/Mining/MineLantern_Glow.mat";
         private const string CaveRockMaterialPath = "Assets/Materials/Mining/MineCave_Rock.mat";
@@ -71,7 +71,7 @@ namespace Yujian.EditorTools
                     : Vector3.zero;
 
                 root = new GameObject(RootName);
-                Undo.RegisterCreatedObjectUndo(root, "创建矿洞灯光");
+                Undo.RegisterCreatedObjectUndo(root, "创建清洁区灯光");
                 root.transform.position = position;
 
                 controller = Undo.AddComponent<MiningLightingController>(root);
@@ -149,7 +149,7 @@ namespace Yujian.EditorTools
             Material glow = LoadOrCreateMaterial(GlowMaterialPath,
                 new Color(1f, 0.82f, 0.45f, 1f), 0f, 0f, true);
 
-            // 只生成落地灯的模型。真正的灯光统一放在「矿洞灯光」根下，
+            // 只生成落地灯的模型。真正的灯光统一放在「清洁区灯光」根下，
             // 这样阶段 13 删除落地灯时不会把主光一起删掉。
             GameObject lantern = new GameObject("Lantern");
             Undo.RegisterCreatedObjectUndo(lantern, "创建矿灯");
@@ -177,7 +177,7 @@ namespace Yujian.EditorTools
 
         /// <summary>
         /// 保证灯架只生成一次：有手持提灯时不再生成落地灯；
-        /// 主光、补光、轮廓光统一放在「矿洞灯光」根下。
+        /// 主光、补光、轮廓光统一放在「清洁区灯光」根下。
         /// 同名灯重复时只保留一盏，避免一键修复越跑越乱。
         /// </summary>
         private static void EnsureLanternRig(Transform root)
@@ -257,7 +257,7 @@ namespace Yujian.EditorTools
             if (kept == null)
             {
                 GameObject lightObject = new GameObject(objectName);
-                Undo.RegisterCreatedObjectUndo(lightObject, "创建矿洞灯光");
+                Undo.RegisterCreatedObjectUndo(lightObject, "创建清洁区灯光");
                 lightObject.transform.SetParent(root, false);
                 kept = lightObject.transform;
             }
@@ -273,7 +273,7 @@ namespace Yujian.EditorTools
                 light = Undo.AddComponent<Light>(kept.gameObject);
             }
 
-            Undo.RecordObject(light, "恢复矿洞灯光");
+            Undo.RecordObject(light, "恢复清洁区灯光");
             light.type = LightType.Point;
             light.color = color;
             light.intensity = intensity;

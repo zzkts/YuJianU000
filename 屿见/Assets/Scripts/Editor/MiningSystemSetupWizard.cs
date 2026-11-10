@@ -45,9 +45,9 @@ namespace Yujian.EditorTools
             Selection.activeGameObject = entrance.gameObject;
             EditorGUIUtility.PingObject(entrance);
 
-            Debug.Log("[矿洞系统] 已修复并保存：矿洞入口可点击、照明参数已恢复、手持提灯保留。");
+            Debug.Log("[矿洞系统] 已修复并保存：清洁区入口可点击、照明参数已恢复、手持提灯保留。");
             EditorUtility.DisplayDialog("矿洞系统",
-                "矿洞入口与照明已经修复并保存。\n\n现在可以进 Play，从岛上矿山进入矿洞检查。",
+                "清洁区入口与照明已经修复并保存。\n\n现在可以进 Play，从岛上的入口进去检查。",
                 "知道了");
         }
 
@@ -57,13 +57,13 @@ namespace Yujian.EditorTools
 
             if (!root.activeSelf)
             {
-                Undo.RecordObject(root, "启用矿洞入口");
+                Undo.RecordObject(root, "启用清洁区入口");
                 root.SetActive(true);
             }
 
             if (!entrance.enabled)
             {
-                Undo.RecordObject(entrance, "启用矿洞入口组件");
+                Undo.RecordObject(entrance, "启用清洁区入口组件");
                 entrance.enabled = true;
             }
 
@@ -75,7 +75,7 @@ namespace Yujian.EditorTools
             }
             else
             {
-                Undo.RecordObject(box, "适配矿洞入口碰撞框");
+                Undo.RecordObject(box, "适配清洁区入口碰撞框");
             }
 
             entrance.RebuildClickCollider();
@@ -91,7 +91,7 @@ namespace Yujian.EditorTools
 
             if (!router.enabled)
             {
-                Undo.RecordObject(router, "启用矿洞入口点击");
+                Undo.RecordObject(router, "启用清洁区入口点击");
                 router.enabled = true;
             }
 
@@ -137,7 +137,7 @@ namespace Yujian.EditorTools
             {
                 Camera camera = Camera.main;
                 Transform lanternPivot = camera != null
-                    ? camera.transform.Find("矿洞手持道具/LanternPivot")
+                    ? camera.transform.Find("清洁手持道具/LanternPivot")
                     : null;
                 handLight = lanternPivot != null
                     ? lanternPivot.Find("Lantern Light")?.GetComponent<Light>()
@@ -187,7 +187,7 @@ namespace Yujian.EditorTools
                 return;
             }
 
-            Undo.RecordObject(light, "恢复矿洞灯光亮度");
+            Undo.RecordObject(light, "恢复清洁区灯光亮度");
             light.intensity = intensity;
             EditorUtility.SetDirty(light);
         }

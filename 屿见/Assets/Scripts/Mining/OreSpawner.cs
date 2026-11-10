@@ -44,9 +44,21 @@ namespace Yujian.Mining
         private int currentTier;
         private bool initialized;
         private Coroutine respawnRoutine;
+        private bool paused;
+        private bool spawnPending;
+
+        /// <summary>关卡系统 2.3.1「垃圾聚合体组」：非空时只从这些组里抽，忽略等级表里的组。</summary>
+        private OreGroup[] groupOverride;
+        private readonly HashSet<OreEntry> overrideDrawn = new HashSet<OreEntry>();
 
         /// <summary>当前使用的矿石等级。</summary>
         public int CurrentTier => currentTier;
+
+        /// <summary>场上共享的那一块矿石。关卡系统用它判断 BOSS、放大 BOSS。</summary>
+        public Ore CurrentOre => ore;
+
+        /// <summary>关卡是否处于暂停状态（离开关卡时由 LevelManager 打开）。</summary>
+        public bool IsPaused => paused;
 
         private void OnEnable()
         {
@@ -131,6 +143,121 @@ namespace Yujian.Mining
             return true;
         }
 
+        /// <summary>
+        /// 暂停 / 恢复生成（关卡系统 2.3.3：退出关卡后聚合体停止刷新）。
+        /// 暂停期间被打死的矿石不会立刻补位，恢复时再生成，保证关卡进度不会在岛上看不见时推进。
+        /// </summary>
+        public void SetPaused(bool value)
+        {
+            if (paused == value)
+            {
+                return;
+            }
+
+            paused = value;
+
+            if (logSpawnFlow)
+            {
+                Debug.Log($"[OreSpawner] 关卡生成{(paused ? "暂停" : "恢复")}。");
+            }
+
+            if (!paused && spawnPending)
+            {
+                spawnPending = false;
+                SpawnNextOre();
+            }
+        }
+
+        /// <summary>
+        /// 指定本关卡的「垃圾聚合体组」（策划案 2.3.1）。
+        /// 传空数组表示不覆盖，继续按矿石等级表抽取。
+        /// 只在组集合真的变化时清空抽过的记录，退出 / 重进关卡不会重置抽取进度。
+        /// </summary>
+        public void SetGroupOverride(OreGroup[] groups)
+        {
+            OreGroup[] normalized = groups != null && groups.Length > 0 ? groups : null;
+
+            if (SameGroups(groupOverride, normalized))
+            {
+                return;
+            }
+
+            groupOverride = normalized;
+            overrideDrawn.Clear();
+
+            if (logSpawnFlow)
+            {
+                Debug.Log(normalized != null
+                    ? $"[OreSpawner] 本关使用专属聚合体组，共 {normalized.Length} 组。"
+                    : "[OreSpawner] 本关没有专属聚合体组，改回按矿石等级表抽取。");
+            }
+        }
+
+        /// <summary>
+        /// 立即停止刷新，并丢弃「暂停期间欠下的一次生成」。
+        /// 进入 BOSS 战 / 关卡通关后调用，否则回到关卡时可能凭空补出一块小怪。
+        /// </summary>
+        public void StopSpawning()
+        {
+            if (respawnRoutine != null)
+            {
+                StopCoroutine(respawnRoutine);
+                respawnRoutine = null;
+            }
+
+            spawnPending = false;
+        }
+
+        /// <summary>
+        /// 把场上共享的矿石切换成 BOSS（策划案 2.3.4 / 2.3.6）。
+        /// 会停掉欠下的刷新并暂停生成，再用指定数值重写这一块矿石；
+        /// BOSS 被击碎后由 LevelManager 决定是否通关，本类不会再补位。
+        /// </summary>
+        /// <returns>是否成功应用 BOSS 定义。</returns>
+        public bool SpawnBoss(OreType type, float maxHealth, int reward)
+        {
+            if (ore == null)
+            {
+                Debug.LogError("[OreSpawner] 没有可用的矿石对象，无法生成 BOSS。", this);
+                return false;
+            }
+
+            SetPaused(true);
+            StopSpawning();
+            ore.ApplyDefinition(type, maxHealth, reward);
+
+            if (logSpawnFlow)
+            {
+                Debug.Log($"[OreSpawner] BOSS 已生成：{OreTypeInfo.DisplayName(type)}，" +
+                          $"生命值 {maxHealth:0.##}，奖励 {reward}。");
+            }
+
+            return true;
+        }
+
+        private static bool SameGroups(OreGroup[] a, OreGroup[] b)
+        {
+            if (a == b)
+            {
+                return true;
+            }
+
+            if (a == null || b == null || a.Length != b.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         private void HandleOreDied(Ore deadOre)
         {
             if (!initialized || deadOre != ore)
@@ -167,6 +294,21 @@ namespace Yujian.Mining
         /// </summary>
         private void SpawnNextOre()
         {
+            if (paused)
+            {
+                // 关卡暂停中：记住还欠一块矿石，恢复时补上
+                spawnPending = true;
+
+                if (logSpawnFlow)
+                {
+                    Debug.Log("[OreSpawner] 关卡暂停中，矿石改为恢复后生成。");
+                }
+
+                return;
+            }
+
+            spawnPending = false;
+
             OreGroup group;
             OreEntry entry = SelectNextEntry(out group);
 
@@ -199,6 +341,12 @@ namespace Yujian.Mining
         private OreEntry SelectNextEntry(out OreGroup selectedGroup)
         {
             selectedGroup = null;
+
+            // 关卡指定了专属聚合体组时，等级只用于血量 / 奖励成长，组和条目都从专属表里抽
+            if (groupOverride != null)
+            {
+                return SelectOverrideEntry(out selectedGroup);
+            }
 
             // guard 只是防御配置异常导致的死循环，正常情况下最多循环"等级数量 + 1"次
             for (int guard = 0; guard < 64; guard++)
@@ -265,6 +413,73 @@ namespace Yujian.Mining
             }
 
             Debug.LogError("[OreSpawner] 抽取矿石条目时超过最大循环次数，请检查矿石组配置。", this);
+            return null;
+        }
+
+        /// <summary>
+        /// 从关卡专属的聚合体组里抽一条：组间等概率，组内按权重，抽过的不重复；
+        /// 全部抽完后清空记录重新循环，保证关卡可以一直刷到 BOSS 出现。
+        /// </summary>
+        private OreEntry SelectOverrideEntry(out OreGroup selectedGroup)
+        {
+            selectedGroup = null;
+
+            for (int guard = 0; guard < 64; guard++)
+            {
+                List<OreGroup> candidates = new List<OreGroup>();
+                bool anySelectable = false;
+
+                for (int i = 0; i < groupOverride.Length; i++)
+                {
+                    OreGroup group = groupOverride[i];
+
+                    if (group == null)
+                    {
+                        continue;
+                    }
+
+                    if (group.HasSelectableEntry)
+                    {
+                        anySelectable = true;
+                    }
+
+                    if (HasUndrawnSelectableEntry(group, overrideDrawn))
+                    {
+                        candidates.Add(group);
+                    }
+                }
+
+                if (candidates.Count == 0)
+                {
+                    if (!anySelectable)
+                    {
+                        Debug.LogError("[OreSpawner] 关卡专属聚合体组里没有任何可抽取条目" +
+                                       "（权重与生命值都必须大于 0）。", this);
+                        return null;
+                    }
+
+                    if (logSpawnFlow)
+                    {
+                        Debug.Log("[OreSpawner] 关卡专属聚合体组已全部抽过一遍，重置抽取记录后继续循环。");
+                    }
+
+                    overrideDrawn.Clear();
+                    continue;
+                }
+
+                selectedGroup = candidates[Random.Range(0, candidates.Count)];
+                OreEntry entry = PickWeightedEntry(selectedGroup, overrideDrawn);
+
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                overrideDrawn.Add(entry);
+                return entry;
+            }
+
+            Debug.LogError("[OreSpawner] 抽取关卡专属聚合体时超过最大循环次数，请检查配置。", this);
             return null;
         }
 

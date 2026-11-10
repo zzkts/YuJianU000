@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Yujian.Core;
+using Yujian.Levels;
 
 namespace Yujian.Mining
 {
@@ -9,6 +10,9 @@ namespace Yujian.Mining
     ///
     /// 只在 Observation 区域处理点击：进入挖矿区后本组件立刻放手，
     /// 点击交给 MiningInput，避免同一次点击同时触发「进矿区」和「打矿石」。
+    ///
+    /// 从关卡系统（阶段 1）开始，入口命中后先查 <see cref="LevelEntrance"/>：
+    /// 有就交给它判断解锁等级并走黑场转场；没有才退回旧的 MiningEntrance 直接进矿区。
     /// </summary>
     [DisallowMultipleComponent]
     public class MiningEntranceRouter : MonoBehaviour
@@ -102,6 +106,20 @@ namespace Yujian.Mining
             if (!Physics.Raycast(ray, out RaycastHit hit, maxRayDistance, entranceLayers,
                     QueryTriggerInteraction.Ignore))
             {
+                return;
+            }
+
+            // 关卡入口优先：它负责解锁判断、黑场转场与暂停，旧的 MiningEntrance 只是它的执行器。
+            LevelEntrance levelEntrance = hit.collider.GetComponentInParent<LevelEntrance>();
+
+            if (levelEntrance != null)
+            {
+                if (logClicks)
+                {
+                    Debug.Log($"[LevelEntrance] 点击「{levelEntrance.name}」，交给关卡系统处理。", levelEntrance);
+                }
+
+                levelEntrance.TryEnter();
                 return;
             }
 

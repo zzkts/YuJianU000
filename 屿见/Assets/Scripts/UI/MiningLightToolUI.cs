@@ -175,7 +175,7 @@ namespace Yujian.UI
 
             if (currency == null)
             {
-                ShowFeedback("没有读到玩家金币，无法购买。", false);
+                ShowFeedback("没有读到玩家垃圾，无法购买。", false);
                 return;
             }
 
@@ -186,7 +186,7 @@ namespace Yujian.UI
             if (!tool.TryUpgrade())
             {
                 int missing = Mathf.Max(0, cost - moneyBefore);
-                ShowFeedback(missing > 0 ? $"金币不足，还差 {missing}。" : "购买失败，请检查 Console。", false);
+                ShowFeedback(missing > 0 ? $"垃圾不足，还差 {missing}。" : "购买失败，请检查 Console。", false);
                 RefreshBase();
                 return;
             }
@@ -236,7 +236,7 @@ namespace Yujian.UI
 
             if (currency == null)
             {
-                SetText(costText, "没有读到玩家金币");
+                SetText(costText, "没有读到玩家垃圾");
                 SetText(buyButtonText, "无法购买");
                 SetCostColor(false);
                 SetButtonInteractable(false);
@@ -248,9 +248,9 @@ namespace Yujian.UI
             bool canAfford = cost <= 0 || money >= cost;
 
             SetText(costText, canAfford
-                ? $"购买「{tool.NextLevelName}」需要 {cost} 金币 · 当前 {money}"
-                : $"需要 {cost} 金币 · 当前 {money}，还差 {cost - money}");
-            SetText(buyButtonText, canAfford ? $"购买{tool.NextLevelName}" : "金币不足");
+                ? $"购买「{tool.NextLevelName}」需要 {cost} 垃圾 · 当前 {money}"
+                : $"需要 {cost} 垃圾 · 当前 {money}，还差 {cost - money}");
+            SetText(buyButtonText, canAfford ? $"购买{tool.NextLevelName}" : "垃圾不足");
             SetCostColor(canAfford);
             SetButtonInteractable(canAfford);
         }

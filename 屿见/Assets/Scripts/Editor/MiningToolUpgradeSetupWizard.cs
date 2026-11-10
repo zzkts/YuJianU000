@@ -128,7 +128,7 @@ namespace Yujian.EditorTools
             Text statsText = CreateText(card.transform, "StatsText", "等级 1　攻击力 1 → 2", 16,
                                         TextAnchor.MiddleCenter, BodyColor, 24f);
 
-            Text costText = CreateText(card.transform, "CostText", "升级花费 15 金币", 14,
+            Text costText = CreateText(card.transform, "CostText", "升级花费 15 垃圾", 14,
                                        TextAnchor.MiddleCenter, PriceColor, 22f);
 
             Text buttonLabel;
@@ -154,7 +154,7 @@ namespace Yujian.EditorTools
             EditorGUIUtility.PingObject(card);
 
             Debug.Log("[MiningToolUpgradeSetupWizard] 已创建「挖矿工具 · 石头」升级卡。" +
-                      "按钮会在金币足够时自动启用。");
+                      "按钮会在垃圾足够时自动启用。");
             return true;
         }
 

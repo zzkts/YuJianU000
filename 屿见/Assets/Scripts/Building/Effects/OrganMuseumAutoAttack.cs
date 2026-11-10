@@ -1,4 +1,5 @@
 using UnityEngine;
+using Yujian.Core;
 using Yujian.Mining;
 
 namespace Yujian.Building.Effects
@@ -37,6 +38,11 @@ namespace Yujian.Building.Effects
         [Tooltip("出射点。留空则用建筑根物体（地面上的占地中心）。只影响表现，不影响能不能打到")]
         [SerializeField] private Transform attackOrigin;
 
+        [Header("区域")]
+        [Tooltip("只在挖矿区（关卡内）攻击。留空会自动查找 GameAreaController。" +
+                 "策划案 2.3.3：玩家在岛屿上时，建筑不对关卡内目标造成伤害")]
+        [SerializeField] private GameAreaController areaController;
+
         [Header("结算")]
         [Tooltip("击碎矿石时是否按玩家挖矿的规则发放奖励。用户已确认：和手动挖一样发，不要关")]
         [SerializeField] private bool grantRewardOnKill = true;
@@ -58,6 +64,9 @@ namespace Yujian.Building.Effects
         /// <summary>每帧查一次所有矿石太浪费；攻击间隔最短也是帧级，这里每次攻击查一次即可。</summary>
         private float timer;
         private Ore currentTarget;
+
+        /// <summary>区域控制器只找一次；场景里真的没有时不再每帧 Find。</summary>
+        private bool areaLookupDone;
 
         /// <summary>配置是否可用。图层没勾时置 false，效果整个停摆——不每秒刷屏、也不空跑。</summary>
         private bool canAttack;
@@ -132,6 +141,14 @@ namespace Yujian.Building.Effects
                 return;
             }
 
+            // 关卡暂停（玩家在岛上 / 商店 / 建筑区）：不索敌、不攒计时，
+            // 免得回到关卡时把离开期间的时间一次性补成一串连击
+            if (!IsInLevelArea())
+            {
+                timer = 0f;
+                return;
+            }
+
             timer += Time.deltaTime;
 
             if (timer < attackInterval)
@@ -143,6 +160,21 @@ namespace Yujian.Building.Effects
             // 万一某一帧卡顿得比间隔还长，也只会补打一发，不会在一帧里连打好几发
             timer = 0f;
             AttackOnce();
+        }
+
+        /// <summary>
+        /// 是否处在关卡内（挖矿区）。
+        /// 场景里没有 GameAreaController 时按旧行为放行，避免整个效果被静默停掉。
+        /// </summary>
+        private bool IsInLevelArea()
+        {
+            if (areaController == null && !areaLookupDone)
+            {
+                areaLookupDone = true;
+                areaController = FindFirstObjectByType<GameAreaController>(FindObjectsInactive.Include);
+            }
+
+            return areaController == null || areaController.CurrentArea == GameArea.Mining;
         }
 
         /// <summary>一次完整的攻击：找目标 → 现算玩家伤害 → 造成伤害 → 击碎则发奖励。</summary>
@@ -185,6 +217,7 @@ namespace Yujian.Building.Effects
             // 先取出名字、奖励与位置：TakeDamage 可能击碎并销毁矿石（与 MiningInput 相同的顺序）
             string targetName = target.name;
             int reward = target.Reward;
+            bool suppressReward = target.SuppressDeathReward;
             Vector3 targetPosition = target.transform.position;
 
             bool destroyed = target.TakeDamage(damage, DamageSource.Building);
@@ -206,13 +239,24 @@ namespace Yujian.Building.Effects
                 return;
             }
 
+            if (suppressReward)
+            {
+                // 垃圾聚合体由 GarbageDropper 分档发放，建筑这里不再重复发钱
+                if (logAttackFlow)
+                {
+                    Debug.Log($"[OrganMuseumAutoAttack] 击碎 {targetName}，奖励由掉落系统分档发放。", this);
+                }
+
+                return;
+            }
+
             // 与 MiningInput 同一条规则：击碎才发奖励，奖励值取自矿石自己
             Context.PlayerCurrency.AddMoney(reward);
 
             if (logAttackFlow)
             {
-                Debug.Log($"[OrganMuseumAutoAttack] 击碎 {targetName}，发放 {reward} 金币，" +
-                          $"当前金币 {Context.PlayerCurrency.CurrentMoney}", this);
+                Debug.Log($"[OrganMuseumAutoAttack] 击碎 {targetName}，发放 {reward} 垃圾，" +
+                          $"当前垃圾 {Context.PlayerCurrency.CurrentMoney}", this);
             }
         }
 

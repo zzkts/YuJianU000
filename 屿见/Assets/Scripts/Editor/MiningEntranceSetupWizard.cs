@@ -8,10 +8,10 @@ using Yujian.Mining;
 namespace Yujian.EditorTools
 {
     /// <summary>
-    /// 阶段 11 一键配置：在岛上放一个可点击的矿洞入口。
+    /// 阶段 11 一键配置：在岛上放一个可点击的清洁区入口。
     ///
     /// 做四件事：
-    ///   1. 找不到就创建「矿洞入口」根物体，并生成一套占位矿山（美术可随时替换）；
+    ///   1. 找不到就创建「清洁区入口」根物体，并生成一套占位入口模型（美术可随时替换）；
     ///   2. 加 BoxCollider，让鼠标 / 手指能点到；
     ///   3. 给 GameAreaSystem 加 MiningEntranceRouter，接好点击动作与相机；
     ///   4. 保存场景。
@@ -21,7 +21,7 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class MiningEntranceSetupWizard
     {
-        private const string RootName = "矿洞入口";
+        private const string RootName = "清洁区入口";
         private const string ModelName = "Model";
         private const string MaterialFolder = "Assets/Materials/Mining";
         private const string RockMaterialPath = "Assets/Materials/Island/Island_Rock.mat";
@@ -33,7 +33,7 @@ namespace Yujian.EditorTools
         {
             if (EditorApplication.isPlaying)
             {
-                EditorUtility.DisplayDialog("矿洞入口", "请先退出 Play Mode，再运行本命令。", "知道了");
+                EditorUtility.DisplayDialog("清洁区入口", "请先退出 Play Mode，再运行本命令。", "知道了");
                 return;
             }
 
@@ -44,14 +44,14 @@ namespace Yujian.EditorTools
 
             if (areaController == null || miningInput == null)
             {
-                Debug.LogError("[矿洞入口] 场景里找不到 GameAreaController 或 MiningInput。" +
+                Debug.LogError("[清洁区入口] 场景里找不到 GameAreaController 或 MiningInput。" +
                                "请先打开 SampleScene，并确认阶段 6 的整合已经配置过。");
                 return;
             }
 
             Undo.IncrementCurrentGroup();
             int undoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("配置矿洞入口");
+            Undo.SetCurrentGroupName("配置清洁区入口");
 
             MiningEntrance entrance =
                 Object.FindFirstObjectByType<MiningEntrance>(FindObjectsInactive.Include);
@@ -66,29 +66,29 @@ namespace Yujian.EditorTools
             else
             {
                 root = new GameObject(RootName);
-                Undo.RegisterCreatedObjectUndo(root, "创建矿洞入口");
+                Undo.RegisterCreatedObjectUndo(root, "创建清洁区入口");
                 root.transform.position = ResolveDefaultPosition();
                 entrance = Undo.AddComponent<MiningEntrance>(root);
                 created = true;
             }
 
-            // 旧版向导把入口放在矿石旁边。检测到这种位置就搬到岛上的独立位置，
+            // 旧版向导把入口放在垃圾聚合体旁边。检测到这种位置就搬到岛上的独立位置，
             // 让「点矿山 → 进矿洞」在画面上说得通。
             if (!created && IsNearOre(root.transform.position))
             {
                 root.transform.position = ResolveDefaultPosition();
-                Debug.Log("[矿洞入口] 检测到入口仍在矿石旁，已移动到岛上的独立位置。", root);
+                Debug.Log("[清洁区入口] 检测到入口仍在垃圾聚合体旁，已移动到岛上的独立位置。", root);
             }
 
             if (!root.activeSelf)
             {
-                Undo.RecordObject(root, "启用矿洞入口");
+                Undo.RecordObject(root, "启用清洁区入口");
                 root.SetActive(true);
             }
 
             if (!entrance.enabled)
             {
-                Undo.RecordObject(entrance, "启用矿洞入口组件");
+                Undo.RecordObject(entrance, "启用清洁区入口组件");
                 entrance.enabled = true;
             }
 
@@ -102,14 +102,14 @@ namespace Yujian.EditorTools
             }
             else
             {
-                Undo.RecordObject(box, "适配矿洞入口碰撞框");
+                Undo.RecordObject(box, "适配清洁区入口碰撞框");
             }
 
             entrance.RebuildClickCollider();
             entrance.ConfigureForSetup(areaController);
             EditorUtility.SetDirty(entrance);
 
-            // 矿石只在矿洞里出现：观察模式下岛上只看得到矿山，点进去才看到矿石。
+            // 垃圾聚合体只在清洁区里出现：观察模式下岛上只看得到入口模型，点进去才看到聚合体。
             Ore ore = Object.FindFirstObjectByType<Ore>(FindObjectsInactive.Include);
 
             if (ore != null)
@@ -157,7 +157,7 @@ namespace Yujian.EditorTools
 
             if (routerCamera != null && routerCamera.objectReferenceValue == null)
             {
-                Debug.LogWarning("[矿洞入口] 没有读到 MiningInput 的 View Camera，请手动把 Main Camera " +
+                Debug.LogWarning("[清洁区入口] 没有读到 MiningInput 的 View Camera，请手动把 Main Camera " +
                                  "拖到 GameAreaSystem 的 MiningEntranceRouter 上。");
             }
 
@@ -167,7 +167,7 @@ namespace Yujian.EditorTools
             Selection.activeGameObject = root;
             EditorGUIUtility.PingObject(root);
 
-            Debug.Log((created ? "[矿洞入口] 已创建「" : "[矿洞入口] 已更新「") + RootName +
+            Debug.Log((created ? "[清洁区入口] 已创建「" : "[清洁区入口] 已更新「") + RootName +
                       "」，位置 " + root.transform.position +
                       "。观察模式下点击矿山即可进入挖矿区。" +
                       "美术换模型时，替换 Model 下的占位物体，然后重新运行本菜单或右键组件执行" +
@@ -180,7 +180,7 @@ namespace Yujian.EditorTools
             Vector3 center = island != null ? island.transform.position : Vector3.zero;
 
             // 岛中心偏左前方：从观察机位（岛南侧上方）看过去在画面里，
-            // 又远离矿石点（矿石在岛西侧），不会和挖矿视角混在一起。
+            // 又远离垃圾聚合体（聚合体在岛西侧），不会和清洁视角混在一起。
             Vector3 candidate = center + new Vector3(-4f, 0f, -26f);
             return new Vector3(candidate.x, SampleGroundHeight(candidate, center.y), candidate.z);
         }
@@ -272,7 +272,7 @@ namespace Yujian.EditorTools
         {
             if (!model.gameObject.activeSelf)
             {
-                Undo.RecordObject(model.gameObject, "显示矿洞入口模型");
+                Undo.RecordObject(model.gameObject, "显示清洁区入口模型");
                 model.gameObject.SetActive(true);
             }
 
@@ -282,7 +282,7 @@ namespace Yujian.EditorTools
             {
                 if (renderers[i] != null && !renderers[i].enabled)
                 {
-                    Undo.RecordObject(renderers[i], "显示矿洞入口模型");
+                    Undo.RecordObject(renderers[i], "显示清洁区入口模型");
                     renderers[i].enabled = true;
                 }
             }
