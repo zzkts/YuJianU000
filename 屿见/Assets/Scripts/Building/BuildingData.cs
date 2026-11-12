@@ -7,7 +7,7 @@ namespace Yujian.Building
 {
     /// <summary>
     /// 建筑大类。
-    /// 新增类别时**一律追加到末尾**：插到中间会改变已有资产里已序列化的整数值（同 MaterialType / MaterialColor 的约定）。
+    /// 新增类别时**一律追加到末尾**：插到中间会改变已有资产里已序列化的整数值（同 MaterialType 的约定）。
     /// </summary>
     public enum BuildingType
     {
@@ -34,8 +34,8 @@ namespace Yujian.Building
     /// <summary>
     /// 一条"建造该建筑需要多少某种原料"的记录。例如"小砖 ×3"。
     ///
-    /// 注意：**这里不含颜色**。颜色是购买时才决定的，而"某个需求是否要求指定颜色"
-    /// 属于阶段 4 的规则（见开发进度.md 未决事项）。阶段 3 只记录、不消耗、不做任何校验。
+    /// 注意：**这里不含颜色**。每种原料只有一个固定外观色（见 MaterialData.DisplayColor），
+    /// 需求只记录"要哪一种原料、要几个"。阶段 3 只记录、不消耗、不做任何校验。
     /// </summary>
     [System.Serializable]
     public struct BuildingMaterialRequirement

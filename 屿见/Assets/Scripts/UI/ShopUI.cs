@@ -14,11 +14,9 @@ namespace Yujian.UI
     ///
     /// 布局是 240×90 的固定小窗：
     ///   标题 / 垃圾（顶部）
-    ///   ├─ 左侧：可滚轮浏览的原料列表（名称、样式、说明、颜色、数量）
+    ///   ├─ 左侧：可滚轮浏览的原料列表（名称、样式、说明、数量）
     ///   └─ 右侧：单价、总价、购买
     ///   底部：成功 / 余量不足提示
-    ///
-    /// 颜色只展示不可选；购买时按原料默认色入库（颜色选择功能留给后续建筑系统）。
     /// </summary>
     public class ShopUI : MonoBehaviour
     {
@@ -308,8 +306,7 @@ namespace Yujian.UI
                 return;
             }
 
-            // 颜色选择已从商店移除：购买统一按原料默认色入库。
-            bool success = shop.TryBuy(selected.Material, selected.Material.DefaultColor, selected.Quantity);
+            bool success = shop.TryBuy(selected.Material, selected.Quantity);
 
             ShowStatus(success ? successMessage : failureMessage, success);
             RefreshMoney();

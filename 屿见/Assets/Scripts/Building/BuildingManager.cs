@@ -357,12 +357,12 @@ namespace Yujian.Building
         }
 
         /// <summary>
-        /// 在落位点生成实体建筑，并把每块材料的颜色刷到对应的楼层上。
+        /// 在落位点生成实体建筑，并把每块材料的外观色刷到对应的楼层上。
         /// 材料够不够由 BuildingConstruction 判定，本类不重复校验。
         /// </summary>
-        /// <param name="layerColors">自下而上的楼层颜色，长度 = 放进去的材料块数。</param>
+        /// <param name="layerMaterials">自下而上的楼层材料，长度 = 放进去的材料块数。</param>
         /// <returns>是否建造成功。</returns>
-        public bool BuildAtAnchor(IReadOnlyList<MaterialColor> layerColors)
+        public bool BuildAtAnchor(IReadOnlyList<MaterialData> layerMaterials)
         {
             if (selectedBuilding == null || currentBlueprint == null)
             {
@@ -420,8 +420,8 @@ namespace Yujian.Building
 
             placedBuildings.Add(instance);
 
-            ApplyLayerColors(instance, layerColors);
-            AttachPlacedBuildingInfo(instance, data, anchoredFootprintRect, layerColors, 1);
+            ApplyLayerMaterials(instance, layerMaterials);
+            AttachPlacedBuildingInfo(instance, data, anchoredFootprintRect, layerMaterials, 1);
 
             if (instance.GetComponentInChildren<Collider>() == null)
             {
@@ -432,7 +432,7 @@ namespace Yujian.Building
             if (logBuildingFlow)
             {
                 Debug.Log($"[BuildingManager] 已在 {anchoredPosition} 建成「{data.BuildingName}」，" +
-                          $"共 {layerColors?.Count ?? 0} 层，当前场上共 {placedBuildings.Count} 座建筑。");
+                          $"共 {layerMaterials?.Count ?? 0} 层，当前场上共 {placedBuildings.Count} 座建筑。");
             }
 
             // 落位值马上会被清空，先留一份给事件用
@@ -461,11 +461,11 @@ namespace Yujian.Building
         /// </summary>
         /// <param name="data">建筑静态数据。</param>
         /// <param name="rect">存档里的占地格子矩形。</param>
-        /// <param name="layerColors">自下而上的楼层颜色。</param>
+        /// <param name="layerMaterials">自下而上的楼层材料。</param>
         /// <param name="level">存档里的建筑等级，旧存档传 0 或 1 都按 1 级处理。</param>
         /// <param name="error">失败原因，供存档参与者写日志。</param>
         public bool RestoreBuilding(
-            BuildingData data, RectInt rect, IReadOnlyList<MaterialColor> layerColors,
+            BuildingData data, RectInt rect, IReadOnlyList<MaterialData> layerMaterials,
             int level, out string error)
         {
             error = null;
@@ -527,8 +527,8 @@ namespace Yujian.Building
             }
 
             placedBuildings.Add(instance);
-            ApplyLayerColors(instance, layerColors);
-            AttachPlacedBuildingInfo(instance, data, rect, layerColors, level);
+            ApplyLayerMaterials(instance, layerMaterials);
+            AttachPlacedBuildingInfo(instance, data, rect, layerMaterials, level);
 
             if (instance.GetComponentInChildren<Collider>() == null)
             {
@@ -539,7 +539,7 @@ namespace Yujian.Building
             if (logBuildingFlow)
             {
                 Debug.Log($"[BuildingManager] 已恢复建筑「{data.BuildingName}」于 {position}，" +
-                          $"占地 {rect}，共 {layerColors?.Count ?? 0} 层，" +
+                          $"占地 {rect}，共 {layerMaterials?.Count ?? 0} 层，" +
                           $"当前场上共 {placedBuildings.Count} 座。");
             }
 
@@ -589,10 +589,10 @@ namespace Yujian.Building
             return removed;
         }
 
-        /// <summary>把「属于哪座建筑、占哪几格、每层什么颜色、几级」写到实例上，供存档与升级读取。</summary>
+        /// <summary>把「属于哪座建筑、占哪几格、每层什么材料、几级」写到实例上，供存档与升级读取。</summary>
         private static void AttachPlacedBuildingInfo(
             GameObject instance, BuildingData data, RectInt rect,
-            IReadOnlyList<MaterialColor> layerColors, int level)
+            IReadOnlyList<MaterialData> layerMaterials, int level)
         {
             PlacedBuildingInfo info = instance.GetComponent<PlacedBuildingInfo>();
 
@@ -601,7 +601,7 @@ namespace Yujian.Building
                 info = instance.AddComponent<PlacedBuildingInfo>();
             }
 
-            info.Initialize(data, rect, layerColors, level);
+            info.Initialize(data, rect, layerMaterials, level);
         }
 
         /// <summary>
@@ -794,11 +794,11 @@ namespace Yujian.Building
         }
 
         /// <summary>
-        /// 把材料颜色刷到建筑的楼层上。
+        /// 把材料外观色刷到建筑的楼层上。
         /// 预制体上没挂 BuildingLayerStack 时明确报错，不静默——否则建筑会以预制体原样出现，
-        /// 玩家看不出"颜色没生效"和"这块料本来就是这颜色"的区别。
+        /// 玩家看不出"材料外观没生效"和"这块料本来就是这颜色"的区别。
         /// </summary>
-        private void ApplyLayerColors(GameObject instance, IReadOnlyList<MaterialColor> layerColors)
+        private void ApplyLayerMaterials(GameObject instance, IReadOnlyList<MaterialData> layerMaterials)
         {
             BuildingLayerStack stack = instance.GetComponent<BuildingLayerStack>();
 
@@ -810,7 +810,7 @@ namespace Yujian.Building
                 return;
             }
 
-            stack.Apply(layerColors);
+            stack.Apply(layerMaterials);
         }
 
         /// <summary>

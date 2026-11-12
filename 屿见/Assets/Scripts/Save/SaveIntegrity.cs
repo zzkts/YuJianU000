@@ -115,20 +115,10 @@ namespace Yujian.Save
                     return false;
                 }
 
-                if (building.layerColors == null)
+                if (building.layerMaterialIds == null)
                 {
-                    error = $"建筑「{building.buildingId}」的楼层颜色列表为空引用。";
+                    error = $"建筑「{building.buildingId}」的楼层材料列表为空引用。";
                     return false;
-                }
-
-                for (int j = 0; j < building.layerColors.Count; j++)
-                {
-                    if (!Enum.IsDefined(typeof(MaterialColor), building.layerColors[j]))
-                    {
-                        error = $"建筑「{building.buildingId}」第 {j} 层的颜色值 " +
-                                $"{building.layerColors[j]} 不是合法的 MaterialColor。";
-                        return false;
-                    }
                 }
             }
 
@@ -218,12 +208,6 @@ namespace Yujian.Save
                 if (entry.count <= 0)
                 {
                     error = $"{label}「{entry.materialId}」的数量为 {entry.count}。";
-                    return false;
-                }
-
-                if (!Enum.IsDefined(typeof(MaterialColor), entry.color))
-                {
-                    error = $"{label}「{entry.materialId}」的颜色值 {entry.color} 不是合法的 MaterialColor。";
                     return false;
                 }
             }

@@ -71,7 +71,6 @@ namespace Yujian.Save
                 data.blueprintRefund.Add(new MaterialSave
                 {
                     materialId = materialId,
-                    color = (int)placed.Color,
                     count = 1,
                 });
             }
@@ -133,14 +132,7 @@ namespace Yujian.Save
                     continue;
                 }
 
-                if (!System.Enum.IsDefined(typeof(MaterialColor), entry.color))
-                {
-                    Debug.LogError($"[BlueprintSaveParticipant] 存档里的颜色值 {entry.color} " +
-                                   "不是合法的 MaterialColor，已跳过这一块。", this);
-                    continue;
-                }
-
-                inventory.AddMaterial(material, (MaterialColor)entry.color, entry.count);
+                inventory.AddMaterial(material, entry.count);
                 refunded += entry.count;
             }
 

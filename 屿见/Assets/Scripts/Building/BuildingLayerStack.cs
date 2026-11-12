@@ -124,10 +124,10 @@ namespace Yujian.Building
             activeLayerCount = count;
         }
 
-        /// <summary>按材料颜色列表刷色：第 i 块材料刷第 i 层。列表长度同时决定层数。</summary>
-        public void Apply(IReadOnlyList<MaterialColor> colors)
+        /// <summary>按材料列表刷色：第 i 块材料刷第 i 层。列表长度同时决定层数。</summary>
+        public void Apply(IReadOnlyList<MaterialData> materials)
         {
-            int count = colors != null ? colors.Count : 0;
+            int count = materials != null ? materials.Count : 0;
 
             // 一条需求都没有的建筑（或调用方传空）也要看得见，至少给一层兜底色
             if (count <= 0)
@@ -139,9 +139,9 @@ namespace Yujian.Building
 
             for (int i = 0; i < count; i++)
             {
-                if (colors != null && i < colors.Count)
+                if (materials != null && i < materials.Count)
                 {
-                    SetLayerColor(i, colors[i]);
+                    SetLayerColor(i, materials[i]);
                 }
                 else
                 {
@@ -155,10 +155,10 @@ namespace Yujian.Building
             }
         }
 
-        /// <summary>把第 index 层刷成指定材料颜色。</summary>
-        public void SetLayerColor(int index, MaterialColor color)
+        /// <summary>把第 index 层刷成指定材料的固定外观色；材料为空时用兜底色。</summary>
+        public void SetLayerColor(int index, MaterialData material)
         {
-            SetLayerColor(index, color.ToDisplayColor());
+            SetLayerColor(index, material != null ? material.DisplayColor : fallbackColor);
         }
 
         /// <summary>把第 index 层刷成任意颜色（alpha 会被 layerAlpha 覆盖）。</summary>
@@ -320,10 +320,10 @@ namespace Yujian.Building
                            "或在 Inspector 里把 Layer Root 指到正确的节点。", this);
         }
 
-        [ContextMenu("调试：按 3 层红红蓝刷一次色")]
+        [ContextMenu("调试：按 3 层兜底色刷一次")]
         private void DebugApplySample()
         {
-            Apply(new List<MaterialColor> { MaterialColor.Red, MaterialColor.Red, MaterialColor.Blue });
+            Apply(new List<MaterialData> { null, null, null });
         }
     }
 }

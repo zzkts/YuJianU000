@@ -42,41 +42,32 @@ namespace Yujian.Shop
         }
 
         /// <summary>
-        /// 尝试购买指定颜色、指定数量的原料。
+        /// 尝试购买指定数量的原料。
         /// 货币不足时返回 false，此时既不扣钱也不增加原料（原子性：要么全成，要么全不动）。
         /// </summary>
         /// <param name="material">要购买的原料，不可为 null。</param>
-        /// <param name="color">颜色，必须是该原料允许的颜色。</param>
         /// <param name="amount">购买数量，必须为正数。</param>
         /// <returns>是否购买成功。</returns>
-        public bool TryBuy(MaterialData material, MaterialColor color, int amount = 1)
+        public bool TryBuy(MaterialData material, int amount = 1)
         {
             if (material == null)
             {
                 Debug.LogError("[Shop] TryBuy 收到空的 MaterialData，购买取消。", this);
-                EventBus.Publish(new PurchaseFailed(null, color, amount, "原料数据为空"));
+                EventBus.Publish(new PurchaseFailed(null, amount, "原料数据为空"));
                 return false;
             }
 
             if (amount <= 0)
             {
                 Debug.LogWarning($"[Shop] TryBuy 收到非正数数量({amount})，购买取消。", this);
-                EventBus.Publish(new PurchaseFailed(material, color, amount, "购买数量无效"));
-                return false;
-            }
-
-            if (!material.SupportsColor(color))
-            {
-                Debug.LogWarning($"[Shop] 原料「{material.MaterialName}」不支持颜色 {color}，购买取消。" +
-                                 "请在 MaterialData 的允许颜色列表里补上，或改掉按钮绑定的颜色。", this);
-                EventBus.Publish(new PurchaseFailed(material, color, amount, "该原料不支持这个颜色"));
+                EventBus.Publish(new PurchaseFailed(material, amount, "购买数量无效"));
                 return false;
             }
 
             if (playerCurrency == null || inventory == null)
             {
                 // Awake 已经打印过明确错误，这里不再重复刷屏
-                EventBus.Publish(new PurchaseFailed(material, color, amount, "商店依赖未配置"));
+                EventBus.Publish(new PurchaseFailed(material, amount, "商店依赖未配置"));
                 return false;
             }
 
@@ -87,23 +78,23 @@ namespace Yujian.Shop
             {
                 if (logPurchaseFlow)
                 {
-                    Debug.Log($"[Shop] 购买失败：{color.ToChineseName()}{material.MaterialName} ×{amount} " +
+                    Debug.Log($"[Shop] 购买失败：{material.MaterialName} ×{amount} " +
                               $"需要 {totalCost} 垃圾，当前只有 {playerCurrency.CurrentMoney}。垃圾与库存均未变动。");
                 }
 
-                EventBus.Publish(new PurchaseFailed(material, color, amount, "垃圾不足"));
+                EventBus.Publish(new PurchaseFailed(material, amount, "垃圾不足"));
                 return false;
             }
 
-            inventory.AddMaterial(material, color, amount);
+            inventory.AddMaterial(material, amount);
 
             if (logPurchaseFlow)
             {
-                Debug.Log($"[Shop] 购买成功：{color.ToChineseName()}{material.MaterialName} ×{amount}，" +
+                Debug.Log($"[Shop] 购买成功：{material.MaterialName} ×{amount}，" +
                           $"花费 {totalCost} 垃圾，剩余 {playerCurrency.CurrentMoney} 垃圾。");
             }
 
-            EventBus.Publish(new PurchaseSucceeded(material, color, amount, totalCost));
+            EventBus.Publish(new PurchaseSucceeded(material, amount, totalCost));
             return true;
         }
     }

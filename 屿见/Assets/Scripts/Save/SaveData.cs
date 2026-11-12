@@ -19,8 +19,9 @@ namespace Yujian.Save
         /// <summary>
         /// 当前存档结构版本。字段含义变化或新增迁移步骤时 +1。
         /// v2 起文件带 <see cref="checksum"/>，读取时校验完整性。
+        /// v3 移除了原料颜色：库存按原料合并，建筑楼层改存材料 ID。
         /// </summary>
-        public const int CurrentVersion = 2;
+        public const int CurrentVersion = 3;
 
         /// <summary>
         /// 存档结构版本。**默认 0 表示未知**，不能默认成 CurrentVersion——
@@ -41,7 +42,7 @@ namespace Yujian.Save
         /// <summary>玩家金币。</summary>
         public int currency;
 
-        /// <summary>材料库存：每条是 (原料 ID, 颜色, 数量)。</summary>
+        /// <summary>材料库存：每条是 (原料 ID, 数量)。旧存档里的颜色字段会被忽略并合并。</summary>
         public List<MaterialSave> materials = new List<MaterialSave>();
 
         /// <summary>已放置建筑。由 BuildingSaveParticipant 写入 / 恢复。</summary>
@@ -120,9 +121,9 @@ namespace Yujian.Save
             {
                 BuildingSave building = buildings[i];
 
-                if (building != null && building.layerColors == null)
+                if (building != null && building.layerMaterialIds == null)
                 {
-                    building.layerColors = new List<int>();
+                    building.layerMaterialIds = new List<string>();
                 }
             }
 
@@ -134,7 +135,6 @@ namespace Yujian.Save
     public class MaterialSave
     {
         public string materialId;
-        public int color;
         public int count;
     }
 
@@ -148,8 +148,8 @@ namespace Yujian.Save
         public int width;
         public int height;
 
-        /// <summary>自下而上的楼层颜色（MaterialColor 的整数值）。</summary>
-        public List<int> layerColors = new List<int>();
+        /// <summary>自下而上的楼层材料 ID。旧存档没有该字段时按建筑配方顺序补全。</summary>
+        public List<string> layerMaterialIds = new List<string>();
 
         /// <summary>
         /// 建筑等级（策划案 3.4）。旧存档没有该字段时为 0，读档按 1 级处理。

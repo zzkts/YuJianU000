@@ -16,8 +16,8 @@ namespace Yujian.UI
     /// Use Blueprint Actions 勾上时，本面板只保留材料列表，旧的两个按钮会被隐藏。
     ///
     /// 条目**全部由 BuildingData.RequiredMaterials 推导**：
-    ///   需求里的 MaterialData → 它的 AllowedColors → 每种颜色一个条目。
-    /// 所以风琴博物馆（小砖 ×3，允许红蓝绿）会列出「红色小砖 / 蓝色小砖 / 绿色小砖」三项，
+    ///   需求里的每种 MaterialData 一个条目（同种原料只列一次）。
+    /// 所以风琴博物馆（小砖 ×3 + 木板 ×1）会列出「小砖 / 木板」两项，
     /// 数量为 0 的也照样列出——不列的话，「原料不足，请购买」这条提示永远触发不到。
     /// 将来换成「原木 ×5 + 石头 ×2」的建筑，本类一行都不用改。
     ///
@@ -267,7 +267,7 @@ namespace Yujian.UI
         // ---------------- 给 MaterialDragItem 用的接口 ----------------
 
         /// <summary>这块材料现在能不能拖。不能拖时把原因写在 reason 里。</summary>
-        public bool CanDrag(MaterialData material, MaterialColor color, out string reason)
+        public bool CanDrag(MaterialData material, out string reason)
         {
             if (construction == null)
             {
@@ -275,11 +275,11 @@ namespace Yujian.UI
                 return false;
             }
 
-            return construction.CanAcceptMaterial(material, color, out reason);
+            return construction.CanAcceptMaterial(material, out reason);
         }
 
         /// <summary>把材料放到屏幕上某个位置。拖拽松手时由条目调用。</summary>
-        public void DropAt(Vector2 screenPosition, MaterialData material, MaterialColor color)
+        public void DropAt(Vector2 screenPosition, MaterialData material)
         {
             if (construction == null)
             {
@@ -287,7 +287,7 @@ namespace Yujian.UI
                 return;
             }
 
-            construction.TryPlaceMaterialAt(screenPosition, material, color);
+            construction.TryPlaceMaterialAt(screenPosition, material);
         }
 
         /// <summary>在状态行显示一条提示。</summary>
@@ -462,6 +462,9 @@ namespace Yujian.UI
 
             IReadOnlyList<BuildingMaterialRequirement> requirements = data.RequiredMaterials;
 
+            // 同一原料可能出现在多条需求里，只列一次
+            HashSet<MaterialData> seen = new HashSet<MaterialData>();
+
             for (int i = 0; i < requirements.Count; i++)
             {
                 BuildingMaterialRequirement requirement = requirements[i];
@@ -471,20 +474,9 @@ namespace Yujian.UI
                     continue;
                 }
 
-                MaterialData material = requirement.Material;
-                IReadOnlyList<MaterialColor> colors = material.AllowedColors;
-
-                // 同一原料可能出现在多条需求里；颜色的去重只针对本原料，用一个小 HashSet 够了
-                HashSet<MaterialColor> seenInThisMaterial = new HashSet<MaterialColor>();
-
-                for (int c = 0; c < colors.Count; c++)
+                if (seen.Add(requirement.Material))
                 {
-                    if (!seenInThisMaterial.Add(colors[c]))
-                    {
-                        continue;
-                    }
-
-                    CreateItem(material, colors[c]);
+                    CreateItem(requirement.Material);
                 }
             }
 
@@ -496,10 +488,10 @@ namespace Yujian.UI
             }
         }
 
-        private void CreateItem(MaterialData material, MaterialColor color)
+        private void CreateItem(MaterialData material)
         {
             RectTransform clone = Instantiate(itemTemplate, itemContainer);
-            clone.name = $"材料_{material.MaterialName}_{color}";
+            clone.name = $"材料_{material.MaterialName}";
             clone.gameObject.SetActive(true);
 
             MaterialDragItem item = clone.GetComponent<MaterialDragItem>();
@@ -511,7 +503,7 @@ namespace Yujian.UI
                 item = clone.gameObject.AddComponent<MaterialDragItem>();
             }
 
-            item.Initialize(this, material, color);
+            item.Initialize(this, material);
             items.Add(item);
         }
 
@@ -564,7 +556,7 @@ namespace Yujian.UI
                 }
 
                 int count = inventory != null
-                    ? inventory.GetMaterialCount(item.Material, item.Color)
+                    ? inventory.GetMaterialCount(item.Material)
                     : 0;
 
                 item.Refresh(count);

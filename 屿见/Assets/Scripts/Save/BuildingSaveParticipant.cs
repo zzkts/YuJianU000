@@ -97,11 +97,15 @@ namespace Yujian.Save
                     level = info.Level,
                 };
 
-                IReadOnlyList<MaterialColor> colors = info.LayerColors;
+                IReadOnlyList<MaterialData> materials = info.LayerMaterials;
 
-                for (int j = 0; j < colors.Count; j++)
+                for (int j = 0; j < materials.Count; j++)
                 {
-                    save.layerColors.Add((int)colors[j]);
+                    MaterialData material = materials[j];
+                    string materialId = material != null ? catalog.GetMaterialId(material) : string.Empty;
+
+                    // 空串表示「这一层没有材料」，读档时会用兜底色，层数不会错位
+                    save.layerMaterialIds.Add(materialId ?? string.Empty);
                 }
 
                 data.buildings.Add(save);
@@ -157,17 +161,12 @@ namespace Yujian.Save
                 }
 
                 RectInt rect = new RectInt(entry.x, entry.y, entry.width, entry.height);
-                List<MaterialColor> colors = new List<MaterialColor>(entry.layerColors.Count);
-
-                for (int j = 0; j < entry.layerColors.Count; j++)
-                {
-                    colors.Add((MaterialColor)entry.layerColors[j]);
-                }
+                List<MaterialData> materials = RestoreLayerMaterials(building, entry);
 
                 // 旧存档没有 level 字段时为 0，按 1 级恢复
                 int level = entry.level > 0 ? entry.level : 1;
 
-                if (buildingManager.RestoreBuilding(building, rect, colors, level, out string error))
+                if (buildingManager.RestoreBuilding(building, rect, materials, level, out string error))
                 {
                     restored++;
                 }
@@ -194,6 +193,66 @@ namespace Yujian.Save
                 Debug.LogWarning("[BuildingSaveParticipant] PlayerLevel 未配置，建筑恢复后等级不会立即刷新。" +
                                  "请运行菜单「屿见/通用模块/配置存档系统」自动接线。", this);
             }
+        }
+
+        /// <summary>
+        /// 把存档里的楼层材料 ID 解析回 MaterialData。
+        /// v2 旧档没有材料 ID，按建筑配方的条目顺序补全（例如 3 砖 + 1 木板 → 砖砖砖木）。
+        /// 空 ID 或解析失败时留 null，由 BuildingLayerStack 用兜底色，层数不会错位。
+        /// </summary>
+        private List<MaterialData> RestoreLayerMaterials(BuildingData building, BuildingSave entry)
+        {
+            List<MaterialData> materials = new List<MaterialData>();
+
+            if (entry.layerMaterialIds != null && entry.layerMaterialIds.Count > 0)
+            {
+                for (int i = 0; i < entry.layerMaterialIds.Count; i++)
+                {
+                    string materialId = entry.layerMaterialIds[i];
+
+                    if (string.IsNullOrEmpty(materialId))
+                    {
+                        materials.Add(null);
+                        continue;
+                    }
+
+                    if (catalog.TryGetMaterial(materialId, out MaterialData material))
+                    {
+                        materials.Add(material);
+                    }
+                    else
+                    {
+                        Debug.LogError($"[BuildingSaveParticipant] 建筑「{building.BuildingName}」第 {i} 层的" +
+                                       $"材料 ID「{materialId}」在 SaveCatalog 里找不到，该层用兜底色。", this);
+                        materials.Add(null);
+                    }
+                }
+
+                return materials;
+            }
+
+            // v2 旧档：只有颜色、没有材料，按配方顺序补全
+            IReadOnlyList<BuildingMaterialRequirement> requirements = building.RequiredMaterials;
+
+            for (int i = 0; i < requirements.Count; i++)
+            {
+                BuildingMaterialRequirement requirement = requirements[i];
+
+                if (!requirement.IsValid)
+                {
+                    continue;
+                }
+
+                for (int n = 0; n < requirement.Amount; n++)
+                {
+                    materials.Add(requirement.Material);
+                }
+            }
+
+            Debug.Log($"[BuildingSaveParticipant] 建筑「{building.BuildingName}」是 v2 旧档，" +
+                      $"没有楼层材料记录，已按配方补全 {materials.Count} 层。", this);
+
+            return materials;
         }
     }
 }

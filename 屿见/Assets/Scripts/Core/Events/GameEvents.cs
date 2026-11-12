@@ -31,13 +31,11 @@ namespace Yujian.Core.Events
     public readonly struct InventoryChanged
     {
         public readonly MaterialData Material;
-        public readonly MaterialColor Color;
         public readonly int Delta;
 
-        public InventoryChanged(MaterialData material, MaterialColor color, int delta)
+        public InventoryChanged(MaterialData material, int delta)
         {
             Material = material;
-            Color = color;
             Delta = delta;
         }
     }
@@ -163,12 +161,10 @@ namespace Yujian.Core.Events
     public readonly struct MaterialPlaced
     {
         public readonly MaterialData Material;
-        public readonly MaterialColor Color;
 
-        public MaterialPlaced(MaterialData material, MaterialColor color)
+        public MaterialPlaced(MaterialData material)
         {
             Material = material;
-            Color = color;
         }
     }
 
@@ -176,12 +172,10 @@ namespace Yujian.Core.Events
     public readonly struct MaterialUndone
     {
         public readonly MaterialData Material;
-        public readonly MaterialColor Color;
 
-        public MaterialUndone(MaterialData material, MaterialColor color)
+        public MaterialUndone(MaterialData material)
         {
             Material = material;
-            Color = color;
         }
     }
 
@@ -207,14 +201,12 @@ namespace Yujian.Core.Events
     public readonly struct PurchaseSucceeded
     {
         public readonly MaterialData Material;
-        public readonly MaterialColor Color;
         public readonly int Amount;
         public readonly int TotalCost;
 
-        public PurchaseSucceeded(MaterialData material, MaterialColor color, int amount, int totalCost)
+        public PurchaseSucceeded(MaterialData material, int amount, int totalCost)
         {
             Material = material;
-            Color = color;
             Amount = amount;
             TotalCost = totalCost;
         }
@@ -224,14 +216,12 @@ namespace Yujian.Core.Events
     public readonly struct PurchaseFailed
     {
         public readonly MaterialData Material;
-        public readonly MaterialColor Color;
         public readonly int Amount;
         public readonly string Reason;
 
-        public PurchaseFailed(MaterialData material, MaterialColor color, int amount, string reason)
+        public PurchaseFailed(MaterialData material, int amount, string reason)
         {
             Material = material;
-            Color = color;
             Amount = amount;
             Reason = reason;
         }

@@ -362,30 +362,6 @@ namespace Yujian.EditorTools
             Place(effectText.gameObject, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
                   new Vector2(4f, -24f), new Vector2(142f, 9f));
 
-            GameObject colorRow = CreateUIObject("ColorRow", root.transform);
-            Place(colorRow, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f),
-                  new Vector2(4f, 3f), new Vector2(94f, 8f));
-
-            HorizontalLayoutGroup colorLayout = colorRow.AddComponent<HorizontalLayoutGroup>();
-            colorLayout.spacing = 2f;
-            colorLayout.childAlignment = TextAnchor.MiddleLeft;
-            colorLayout.childControlWidth = true;
-            colorLayout.childControlHeight = true;
-            colorLayout.childForceExpandWidth = false;
-            colorLayout.childForceExpandHeight = false;
-
-            GameObject dotTemplate = CreateUIObject("ColorDotTemplate", colorRow.transform);
-            Image dotImage = dotTemplate.AddComponent<Image>();
-            dotImage.color = Color.white;
-            dotImage.raycastTarget = false;
-
-            LayoutElement dotLayout = dotTemplate.AddComponent<LayoutElement>();
-            dotLayout.preferredWidth = 8f;
-            dotLayout.preferredHeight = 8f;
-            dotLayout.minWidth = 8f;
-            dotLayout.minHeight = 8f;
-            dotTemplate.SetActive(false);
-
             GameObject quantityRoot = CreateUIObject("QuantityRoot", root.transform);
             Place(quantityRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f),
                   new Vector2(-4f, -3f), new Vector2(46f, 20f));
@@ -409,8 +385,8 @@ namespace Yujian.EditorTools
                   new Vector2(32f, 0f), new Vector2(14f, 12f));
 
             ShopItemUI item = root.AddComponent<ShopItemUI>();
-            WireShopItem(item, nameText, styleText, effectText, quantityText, colorRow.transform,
-                         dotImage, selectButton, highlightImage, minusButton, plusButton);
+            WireShopItem(item, nameText, styleText, effectText, quantityText,
+                         selectButton, highlightImage, minusButton, plusButton);
 
             root.SetActive(false);
             return (RectTransform)root.transform;
@@ -466,7 +442,7 @@ namespace Yujian.EditorTools
         }
 
         private static void WireShopItem(ShopItemUI item, Text nameText, Text styleText, Text effectText,
-                                         Text quantityText, Transform colorRow, Image colorDotTemplate,
+                                         Text quantityText,
                                          Button selectButton, Image selectionHighlight,
                                          Button minusButton, Button plusButton)
         {
@@ -475,8 +451,6 @@ namespace Yujian.EditorTools
             SetObject(so, "styleText", styleText);
             SetObject(so, "effectText", effectText);
             SetObject(so, "quantityText", quantityText);
-            SetObject(so, "colorRow", colorRow);
-            SetObject(so, "colorDotTemplate", colorDotTemplate);
             SetObject(so, "selectButton", selectButton);
             SetObject(so, "selectionHighlight", selectionHighlight);
             SetObject(so, "minusButton", minusButton);
@@ -599,16 +573,12 @@ namespace Yujian.EditorTools
             SetInt(so, "price", 2);
             SetFloat(so, "damageMultiplierBonus", 0f);
             SetFloat(so, "buildingDamageMultiplierBonus", 0.1f);
-            SetEnum(so, "defaultColor", (int)MaterialColor.Red);
 
-            SerializedProperty colors = so.FindProperty("allowedColors");
+            SerializedProperty displayColor = so.FindProperty("displayColor");
 
-            if (colors != null)
+            if (displayColor != null)
             {
-                colors.arraySize = 3;
-                colors.GetArrayElementAtIndex(0).enumValueIndex = (int)MaterialColor.Red;
-                colors.GetArrayElementAtIndex(1).enumValueIndex = (int)MaterialColor.Blue;
-                colors.GetArrayElementAtIndex(2).enumValueIndex = (int)MaterialColor.Green;
+                displayColor.colorValue = new Color(0.62f, 0.42f, 0.24f, 1f);
             }
 
             SetString(so, "saveId", guid);

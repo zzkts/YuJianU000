@@ -12,7 +12,7 @@ namespace Yujian.Core
     /// 或点建筑面板的「退出建造」，也会切回观察模式。
     /// 它没有面板、不能挖矿，相机由 ObservationCameraController 接管。
     ///
-    /// 新增区域时追加到末尾（与 MaterialColor / MaterialType 同一条约定：
+    /// 新增区域时追加到末尾（与 MaterialType 同一条约定：
     /// 枚举数值会进场景 YAML，改已有值会让旧数据错位）。
     /// </summary>
     public enum GameArea

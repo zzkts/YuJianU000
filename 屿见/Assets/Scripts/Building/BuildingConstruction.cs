@@ -15,7 +15,7 @@ namespace Yujian.Building
     ///   · 记住「蓝图里已经放了哪几块材料」，维护可撤回的顺序（后进先出）；
     ///   · 校验「这块材料能不能放」（种类对不对、放满了没、库存够不够）；
     ///   · 材料进蓝图时扣库存，撤回时退回库存；
-    ///   · 确认建造时把颜色列表交给 BuildingManager 生成实体建筑。
+    ///   · 确认建造时把材料列表交给 BuildingManager 生成实体建筑。
     ///
     /// 不做的事：不生成建筑、不销毁蓝图（那是 BuildingManager 的），
     /// 不算屏幕坐标（那是 BuildingPlacement 的），不画 UI（那是 BuildingMaterialPanel 的）。
@@ -26,30 +26,24 @@ namespace Yujian.Building
     public class BuildingConstruction : MonoBehaviour
     {
         /// <summary>
-        /// 蓝图里已放入的一块材料。颜色只在建成时影响外观，不参与需求匹配——
-        /// 「砖块 ×3」指的是任意颜色的砖块合计 3 个。
+        /// 蓝图里已放入的一块材料。原料种类决定需求匹配与楼层外观。
         /// </summary>
         [Serializable]
         public struct PlacedMaterial
         {
             [SerializeField] private MaterialData material;
-            [SerializeField] private MaterialColor color;
 
-            public PlacedMaterial(MaterialData material, MaterialColor color)
+            public PlacedMaterial(MaterialData material)
             {
                 this.material = material;
-                this.color = color;
             }
 
             public MaterialData Material => material;
 
-            public MaterialColor Color => color;
-
             public bool IsValid => material != null;
 
-            /// <summary>显示名，例如「红色小砖」。</summary>
-            public string DisplayName =>
-                IsValid ? $"{color.ToChineseName()}{material.MaterialName}" : "无效材料";
+            /// <summary>显示名，例如「小砖」。</summary>
+            public string DisplayName => IsValid ? material.MaterialName : "无效材料";
 
             public override string ToString() => DisplayName;
         }
@@ -183,7 +177,7 @@ namespace Yujian.Building
         /// （规格第三条要求「库存没有对应材料 → 不能生成拖拽物」）。
         /// </summary>
         /// <param name="reason">不能放的原因，可以直接显示给玩家。</param>
-        public bool CanAcceptMaterial(MaterialData material, MaterialColor color, out string reason)
+        public bool CanAcceptMaterial(MaterialData material, out string reason)
         {
             reason = null;
 
@@ -232,7 +226,7 @@ namespace Yujian.Building
                 return false;
             }
 
-            if (!inventory.HasMaterial(material, color, 1))
+            if (!inventory.HasMaterial(material, 1))
             {
                 // 规格指定的文案，不要改写
                 reason = "原料不足，请购买";
@@ -247,34 +241,34 @@ namespace Yujian.Building
         /// 这是最底层的入口，不关心材料是从哪块 UI 拖过来的。
         /// </summary>
         /// <returns>是否放入成功。</returns>
-        public bool TryPlaceMaterial(MaterialData material, MaterialColor color)
+        public bool TryPlaceMaterial(MaterialData material)
         {
-            if (!CanAcceptMaterial(material, color, out string reason))
+            if (!CanAcceptMaterial(material, out string reason))
             {
                 Report(reason, false);
                 return false;
             }
 
             // 先扣库存再记账：扣失败就什么都不做，不会出现「账上多了一块、库存没少」的状态
-            if (!inventory.RemoveMaterial(material, color, 1))
+            if (!inventory.RemoveMaterial(material, 1))
             {
                 Report("原料不足，请购买", false);
                 return false;
             }
 
-            placementHistory.Add(new PlacedMaterial(material, color));
+            placementHistory.Add(new PlacedMaterial(material));
             RefreshBlueprintPreview();
 
-            Report($"放入{color.ToChineseName()}{material.MaterialName}", true);
+            Report($"放入{material.MaterialName}", true);
 
             if (logConstructionFlow)
             {
-                Debug.Log($"[BuildingConstruction] 放入 {color.ToChineseName()}{material.MaterialName}，" +
+                Debug.Log($"[BuildingConstruction] 放入 {material.MaterialName}，" +
                           $"蓝图内共 {placementHistory.Count} 块，进度 {GetProgressText()}");
             }
 
             OnConstructionChanged?.Invoke();
-            EventBus.Publish(new MaterialPlaced(material, color));
+            EventBus.Publish(new MaterialPlaced(material));
             EventBus.Publish(new ConstructionChanged());
             return true;
         }
@@ -284,7 +278,7 @@ namespace Yujian.Building
         /// 先判断松手的地方是不是蓝图，是才真正放入。
         /// </summary>
         /// <returns>是否放入成功。</returns>
-        public bool TryPlaceMaterialAt(Vector2 screenPosition, MaterialData material, MaterialColor color)
+        public bool TryPlaceMaterialAt(Vector2 screenPosition, MaterialData material)
         {
             if (!IsOverBlueprint(screenPosition))
             {
@@ -292,7 +286,7 @@ namespace Yujian.Building
                 return false;
             }
 
-            return TryPlaceMaterial(material, color);
+            return TryPlaceMaterial(material);
         }
 
         // ---------------- 撤回 ----------------
@@ -328,7 +322,7 @@ namespace Yujian.Building
                 }
 
                 OnConstructionChanged?.Invoke();
-                EventBus.Publish(new MaterialUndone(last.Material, last.Color));
+                EventBus.Publish(new MaterialUndone(last.Material));
                 EventBus.Publish(new ConstructionChanged());
                 return;
             }
@@ -378,22 +372,22 @@ namespace Yujian.Building
                 return false;
             }
 
-            // 先把颜色列表拷出来：BuildAtAnchor 会销毁蓝图并触发 OnBlueprintClosed，
+            // 先把材料列表拷出来：BuildAtAnchor 会销毁蓝图并触发 OnBlueprintClosed，
             // 那时 placementHistory 已经被清空
-            List<MaterialColor> layerColors = new List<MaterialColor>(placementHistory.Count);
+            List<MaterialData> layerMaterials = new List<MaterialData>(placementHistory.Count);
 
             for (int i = 0; i < placementHistory.Count; i++)
             {
-                layerColors.Add(placementHistory[i].Color);
+                layerMaterials.Add(placementHistory[i].Material);
             }
 
             if (logConstructionFlow)
             {
-                Debug.Log($"[BuildingConstruction] 确认建造，共 {layerColors.Count} 块材料：" +
-                          $"{DescribeColors(layerColors)}");
+                Debug.Log($"[BuildingConstruction] 确认建造，共 {layerMaterials.Count} 块材料：" +
+                          $"{DescribeMaterials(layerMaterials)}");
             }
 
-            bool built = buildingManager.BuildAtAnchor(layerColors);
+            bool built = buildingManager.BuildAtAnchor(layerMaterials);
 
             if (!built)
             {
@@ -428,7 +422,7 @@ namespace Yujian.Building
 
         // ---------------- 查询 ----------------
 
-        /// <summary>蓝图里已放入的某类材料数量（不分颜色）。</summary>
+        /// <summary>蓝图里已放入的某类材料数量。</summary>
         public int PlacedCountOf(MaterialData material)
         {
             if (material == null)
@@ -563,7 +557,7 @@ namespace Yujian.Building
                 return;
             }
 
-            inventory.AddMaterial(placed.Material, placed.Color, 1);
+            inventory.AddMaterial(placed.Material, 1);
         }
 
         /// <summary>把当前的放入历史画到蓝图的楼层上：放进去了几块就亮几层。</summary>
@@ -590,7 +584,7 @@ namespace Yujian.Building
             {
                 if (i < placementHistory.Count)
                 {
-                    stack.SetLayerColor(i, placementHistory[i].Color);
+                    stack.SetLayerColor(i, placementHistory[i].Material);
                 }
                 else
                 {
@@ -663,23 +657,23 @@ namespace Yujian.Building
             return total;
         }
 
-        private static string DescribeColors(IReadOnlyList<MaterialColor> colors)
+        private static string DescribeMaterials(IReadOnlyList<MaterialData> materials)
         {
-            if (colors == null || colors.Count == 0)
+            if (materials == null || materials.Count == 0)
             {
                 return "无";
             }
 
             StringBuilder builder = new StringBuilder();
 
-            for (int i = 0; i < colors.Count; i++)
+            for (int i = 0; i < materials.Count; i++)
             {
                 if (i > 0)
                 {
                     builder.Append("、");
                 }
 
-                builder.Append(colors[i].ToChineseName());
+                builder.Append(materials[i] != null ? materials[i].MaterialName : "空材料");
             }
 
             return builder.ToString();

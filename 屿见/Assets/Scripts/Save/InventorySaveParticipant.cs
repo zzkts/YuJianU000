@@ -53,7 +53,6 @@ namespace Yujian.Save
                 data.materials.Add(new MaterialSave
                 {
                     materialId = materialId,
-                    color = (int)stack.Color,
                     count = stack.Count,
                 });
             }
@@ -103,14 +102,8 @@ namespace Yujian.Save
                     continue;
                 }
 
-                if (!System.Enum.IsDefined(typeof(MaterialColor), entry.color))
-                {
-                    Debug.LogError($"[InventorySaveParticipant] 存档里的颜色值 {entry.color} 不是合法的 MaterialColor，" +
-                                   "已跳过这一格。", this);
-                    continue;
-                }
-
-                restored.Add(new MaterialStack(material, (MaterialColor)entry.color, entry.count));
+                // 旧存档可能对同一种原料有多条颜色记录；RestoreStacks 会按原料合并求和
+                restored.Add(new MaterialStack(material, entry.count));
             }
 
             inventory.RestoreStacks(restored);

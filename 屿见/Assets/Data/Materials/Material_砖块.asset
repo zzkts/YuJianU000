@@ -16,7 +16,6 @@ MonoBehaviour:
   materialType: 0
   price: 2
   damageMultiplierBonus: 0.1
-  defaultColor: 0
-  allowedColors: 000000000100000002000000
+  displayColor: {r: 0.8, g: 0.22, b: 0.2, a: 1}
   prefab: {fileID: 0}
   saveId: 9f1a5c65d730e014daa9213d786dea96

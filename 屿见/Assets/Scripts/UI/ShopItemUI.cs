@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using Yujian.Shop;
@@ -9,7 +8,7 @@ namespace Yujian.UI
     /// 轻量化商店面板里的一个原料条目（2026-11-05 商店策划案）。
     ///
     /// 结构（由 ShopSetupWizard 生成）：
-    ///   原料名称 / 原料样式 / 原料说明 / 可选颜色色块（只展示不可选）
+    ///   原料名称 / 原料样式 / 原料说明
     ///   + 右侧「− 数量 +」单次购买数量调节
     ///
     /// 价格与购买键属于整个面板（右侧），不在条目里。点击条目把它设为当前选中项，
@@ -34,13 +33,6 @@ namespace Yujian.UI
         [Tooltip("当前单次购买数量，位于条目右侧")]
         [SerializeField] private Text quantityText;
 
-        [Header("颜色（只展示，不可选择）")]
-        [Tooltip("色块父物体")]
-        [SerializeField] private Transform colorRow;
-
-        [Tooltip("隐藏的小色块模板，运行时按可选颜色克隆")]
-        [SerializeField] private Image colorDotTemplate;
-
         [Header("交互")]
         [Tooltip("点击整条原料选中它")]
         [SerializeField] private Button selectButton;
@@ -62,9 +54,6 @@ namespace Yujian.UI
         private MaterialData material;
         private int quantity = 1;
 
-        /// <summary>运行时克隆出来的色块，重设时统一清掉。</summary>
-        private readonly List<Image> colorDots = new List<Image>();
-
         /// <summary>本条目代表的原料，可能为 null（尚未初始化）。</summary>
         public MaterialData Material => material;
 
@@ -80,7 +69,6 @@ namespace Yujian.UI
 
             ValidateReferences();
             RefreshStaticText();
-            BuildColorDots();
             RefreshQuantity();
             SetSelected(false);
         }
@@ -137,53 +125,6 @@ namespace Yujian.UI
             if (quantityText != null)
             {
                 quantityText.text = quantity.ToString();
-            }
-        }
-
-        /// <summary>
-        /// 只展示该原料允许的颜色，不生成任何可点击的颜色选择器。
-        /// 去重原因同旧实现：AllowedColors 文档明确说「可能含重复值」。
-        /// </summary>
-        private void BuildColorDots()
-        {
-            for (int i = 0; i < colorDots.Count; i++)
-            {
-                if (colorDots[i] != null)
-                {
-                    Destroy(colorDots[i].gameObject);
-                }
-            }
-
-            colorDots.Clear();
-
-            if (material == null)
-            {
-                return;
-            }
-
-            if (colorRow == null || colorDotTemplate == null)
-            {
-                Debug.LogWarning("[ShopItemUI] 色块父物体或色块模板未配置，可选颜色不会显示。", this);
-                return;
-            }
-
-            HashSet<MaterialColor> seen = new HashSet<MaterialColor>();
-            IReadOnlyList<MaterialColor> allowed = material.AllowedColors;
-
-            for (int i = 0; i < allowed.Count; i++)
-            {
-                if (!seen.Add(allowed[i]))
-                {
-                    continue;
-                }
-
-                Image dot = Instantiate(colorDotTemplate, colorRow);
-                dot.gameObject.SetActive(true);
-                dot.name = $"Color_{allowed[i]}";
-                dot.sprite = null;
-                dot.color = allowed[i].ToDisplayColor();
-                dot.raycastTarget = false;
-                colorDots.Add(dot);
             }
         }
 
@@ -244,7 +185,7 @@ namespace Yujian.UI
         private void ValidateReferences()
         {
             bool missing = nameText == null || styleText == null || effectText == null ||
-                           quantityText == null || colorRow == null || colorDotTemplate == null ||
+                           quantityText == null ||
                            selectButton == null || selectionHighlight == null ||
                            minusButton == null || plusButton == null;
 
