@@ -22,3 +22,15 @@ MonoBehaviour:
   - level: 3
     groups:
     - {fileID: 11400000, guid: 2935fb69662d9414d8cfb9a788253672, type: 2}
+  - level: 4
+    groups:
+    - {fileID: 11400000, guid: 071501bd12184800ab02920e819822b5, type: 2}
+  - level: 5
+    groups:
+    - {fileID: 11400000, guid: a36967ef67e74f9d98be4fd817bc38ac, type: 2}
+  - level: 6
+    groups:
+    - {fileID: 11400000, guid: 99fd2389aa6f482c92ab65175f40cf44, type: 2}
+  typeTable: {fileID: 11400000, guid: 9f2b7c14d3a54e0fb16c8d2a4e57b301, type: 2}
+  healthGrowthPerTier: 5
+  rewardGrowthPerTier: 5

@@ -10,11 +10,14 @@ namespace Yujian.Mining
     /// 它本身不发光——矿洞氛围由 MiningLightingController 负责。
     /// 这里只做玩法层的事：玩家买到的等级 → 暴击点刷新冷却 / 半径 / 数量 / 暴击倍率。
     ///
-    /// 等级（下标 = Level）：
+    /// 等级（下标 = Level），共 6 档：
     ///   0 未拥有：不生成暴击点
-    ///   1 火把 light_01：冷却 5 秒、半径 3、暴击 200%
-    ///   2 小型手电 light_02：冷却 / 半径沿用火把（策划表这两格为空，后续在 Inspector 补），
-    ///     暴击伤害区间 200%~1000%，当前满级按 1000% 处理
+    ///   1 火把 light_01：冷却 5.0 秒、半径 3.0、暴击点 1 个、暴击 200%
+    ///   2 小型手电 light_02：冷却 4.5 秒、半径 3.0、暴击点 2 个、暴击 210%
+    ///   3 矿灯 light_03：冷却 4.0 秒、半径 3.5、暴击点 2 个、暴击 220%
+    ///   4 强光灯 light_04：冷却 3.5 秒、半径 3.5、暴击点 3 个、暴击 230%
+    ///   5 探照灯 light_05：冷却 3.5 秒、半径 4.0、暴击点 3 个、暴击 240%
+    ///   6 头灯 light_06：冷却 3.0 秒、半径 4.0、暴击点 3 个、暴击 250%
     ///
     /// 数值全部在 Inspector 上可调，代码不写死。扣钱与升级入口与 MiningToolProgress 同一套规则。
     /// </summary>
@@ -30,36 +33,39 @@ namespace Yujian.Mining
         [SerializeField, Min(0)] private int startingLevel;
 
         [Header("等级名称（下标 = 等级）")]
-        [SerializeField] private string[] levelNames = { "未拥有", "火把", "小型手电" };
+        [SerializeField] private string[] levelNames =
+            { "未拥有", "火把", "小型手电", "矿灯", "强光灯", "探照灯", "头灯" };
 
         [Header("物品 ID（下标 = 等级）")]
-        [SerializeField] private string[] itemIds = { "none", "light_01", "light_02" };
+        [SerializeField] private string[] itemIds =
+            { "none", "light_01", "light_02", "light_03", "light_04", "light_05", "light_06" };
 
         [Header("暴击点上限（下标 = 等级；0 = 不生成）")]
-        [SerializeField] private int[] capacityByLevel = { 0, 2, 3 };
+        [SerializeField] private int[] capacityByLevel = { 0, 1, 2, 2, 3, 3, 3 };
 
         [Header("刷新冷却，秒（下标 = 等级；0 = 不生成）")]
         [Tooltip("该等级的照明工具每多少秒刷新一个暴击点。飞书：火把 5 秒")]
-        [SerializeField] private float[] refreshCooldownByLevel = { 0f, 5f, 5f };
+        [SerializeField] private float[] refreshCooldownByLevel = { 0f, 5f, 4.5f, 4f, 3.5f, 3.5f, 3f };
 
         [Header("暴击点半径（下标 = 等级）")]
         [Tooltip("暴击点在矿石平面中心附近随机生成的最大半径。飞书：火把 3")]
-        [SerializeField] private float[] critPointRadiusByLevel = { 0f, 3f, 3f };
+        [SerializeField] private float[] critPointRadiusByLevel = { 0f, 3f, 3f, 3.5f, 3.5f, 4f, 4f };
 
         [Header("暴击伤害倍率（下标 = 等级）")]
         [Tooltip("2 = 200%。飞书：火把 200%，小型手电 200%~1000%")]
-        [SerializeField] private float[] criticalDamageMultiplierByLevel = { 1f, 2f, 10f };
+        [SerializeField] private float[] criticalDamageMultiplierByLevel =
+            { 1f, 2f, 2.1f, 2.2f, 2.3f, 2.4f, 2.5f };
 
         [Header("暴击点停留")]
         [Tooltip("勾选后暴击点一直保留到被点击（飞书规则）。取消勾选则回到旧的倒计时逻辑")]
         [SerializeField] private bool critPointsPersist = true;
 
         [Header("暴击点停留时长，秒（下标 = 等级；仅倒计时模式使用）")]
-        [SerializeField] private float[] lifetimeByLevel = { 2.5f, 4f, 6f };
+        [SerializeField] private float[] lifetimeByLevel = { 2.5f, 4f, 4.5f, 5f, 5.5f, 6f, 6.5f };
 
         [Header("购买价格")]
         [Tooltip("从当前等级买到下一级需要的金币。长度 = 等级数 - 1")]
-        [SerializeField] private int[] upgradeCosts = { 40, 120 };
+        [SerializeField] private int[] upgradeCosts = { 286, 1508, 7800, 40950, 217750 };
 
         [Header("调试")]
         [SerializeField] private bool logUpgradeFlow = true;
@@ -230,33 +236,10 @@ namespace Yujian.Mining
         private void Awake()
         {
             currentLevel = Mathf.Clamp(startingLevel, 0, MaxLevel);
-            ClampLegacyCapacityValues();
 
             if (playerCurrency == null)
             {
                 playerCurrency = FindFirstObjectByType<PlayerCurrency>(FindObjectsInactive.Include);
-            }
-        }
-
-        /// <summary>
-        /// 兼容旧场景：之前写入的 3 / 5 上限自动压到当前策划需要的 2 / 3。
-        /// 数组后续如果要重新调大，删掉这段兼容即可。
-        /// </summary>
-        private void ClampLegacyCapacityValues()
-        {
-            if (capacityByLevel == null)
-            {
-                return;
-            }
-
-            if (capacityByLevel.Length > 1 && capacityByLevel[1] > 2)
-            {
-                capacityByLevel[1] = 2;
-            }
-
-            if (capacityByLevel.Length > 2 && capacityByLevel[2] > 3)
-            {
-                capacityByLevel[2] = 3;
             }
         }
 

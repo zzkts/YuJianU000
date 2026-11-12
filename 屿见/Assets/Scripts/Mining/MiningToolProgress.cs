@@ -31,28 +31,38 @@ namespace Yujian.Mining
         public PlayerCurrency Currency => playerCurrency;
         public int CurrentLevel => Mathf.Max(1, currentLevel);
 
+        /// <summary>工具最高等级（数据资产配置，默认 6）。</summary>
+        public int MaxLevel => toolData != null ? toolData.MaxLevel : 1;
+
+        /// <summary>是否已经到顶。满级后不再提供升级与升级费用。</summary>
+        public bool IsMaxLevel => CurrentLevel >= MaxLevel;
+
         /// <summary>当前攻击力。D7=A 起是几何曲线的浮点值，可能是 1.82 这种小数。</summary>
         public float CurrentAttack => toolData != null ? toolData.GetAttackAtLevel(CurrentLevel) : 1f;
 
-        public int NextUpgradeCost => toolData != null ? toolData.GetUpgradeCost(CurrentLevel) : 0;
+        /// <summary>升到下一级的费用。满级时为 0。</summary>
+        public int NextUpgradeCost => IsMaxLevel || toolData == null ? 0 : toolData.GetUpgradeCost(CurrentLevel);
 
         /// <summary>工具显示名（石头 / 后续的镐子等）。</summary>
         public string ToolName => toolData != null ? toolData.DisplayName : "石头";
 
-        /// <summary>当前等级的攻击力，供界面直接显示。</summary>
-        public float NextAttack => toolData != null ? toolData.GetAttackAtLevel(CurrentLevel + 1) : CurrentAttack;
+        /// <summary>下一等级的攻击力，供界面直接显示。满级时等于当前攻击力。</summary>
+        public float NextAttack => toolData != null
+            ? toolData.GetAttackAtLevel(IsMaxLevel ? CurrentLevel : CurrentLevel + 1)
+            : CurrentAttack;
 
         /// <summary>从当前等级连续升 count 级需要的总金币。</summary>
         public int GetUpgradeCostForLevels(int count)
         {
-            if (toolData == null || count <= 0)
+            if (toolData == null || count <= 0 || IsMaxLevel)
             {
                 return 0;
             }
 
+            int actualCount = Mathf.Min(count, MaxLevel - CurrentLevel);
             int total = 0;
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < actualCount; i++)
             {
                 total += toolData.GetUpgradeCost(CurrentLevel + i);
             }
@@ -63,7 +73,7 @@ namespace Yujian.Mining
         /// <summary>用当前金币一次性能升多少级（Max 模式用）。</summary>
         public int GetAffordableUpgradeCount(int money)
         {
-            if (toolData == null)
+            if (toolData == null || IsMaxLevel)
             {
                 return 0;
             }
@@ -71,11 +81,11 @@ namespace Yujian.Mining
             int count = 0;
             int spent = 0;
 
-            while (count < 9999)
+            while (CurrentLevel + count < MaxLevel)
             {
                 int cost = toolData.GetUpgradeCost(CurrentLevel + count);
 
-                if (spent + cost > money)
+                if (cost > 0 && spent + cost > money)
                 {
                     break;
                 }
@@ -92,7 +102,7 @@ namespace Yujian.Mining
 
         private void Awake()
         {
-            currentLevel = Mathf.Max(1, startingLevel);
+            currentLevel = Mathf.Clamp(startingLevel, 1, MaxLevel);
 
             if (playerCurrency == null)
             {
@@ -111,7 +121,7 @@ namespace Yujian.Mining
         {
             toolData = data;
             playerCurrency = currency;
-            startingLevel = Mathf.Max(1, level);
+            startingLevel = Mathf.Clamp(level, 1, MaxLevel);
             currentLevel = startingLevel;
         }
 
@@ -121,7 +131,7 @@ namespace Yujian.Mining
         /// </summary>
         public void SetLevel(int level)
         {
-            int restored = Mathf.Max(1, level);
+            int restored = Mathf.Clamp(level, 1, MaxLevel);
 
             if (restored == currentLevel)
             {
@@ -161,7 +171,18 @@ namespace Yujian.Mining
                 return false;
             }
 
-            int cost = GetUpgradeCostForLevels(count);
+            if (IsMaxLevel)
+            {
+                if (logUpgradeFlow)
+                {
+                    Debug.Log($"[MiningToolProgress]「{toolData.DisplayName}」已是 {MaxLevel} 级上限，不能再升。", this);
+                }
+
+                return false;
+            }
+
+            int actualCount = Mathf.Min(count, MaxLevel - CurrentLevel);
+            int cost = GetUpgradeCostForLevels(actualCount);
             if (cost > 0 && !playerCurrency.TrySpendMoney(cost))
             {
                 if (logUpgradeFlow)
@@ -172,13 +193,14 @@ namespace Yujian.Mining
                 return false;
             }
 
-            currentLevel += count;
+            currentLevel += actualCount;
             OnToolChanged?.Invoke(this);
 
             if (logUpgradeFlow)
             {
+                string next = IsMaxLevel ? "已满级" : $"下次升级需要 {NextUpgradeCost} 金币";
                 Debug.Log($"[MiningToolProgress]「{toolData.DisplayName}」升到 {CurrentLevel} 级，" +
-                          $"攻击力 {CurrentAttack}，下次升级需要 {NextUpgradeCost} 金币。", this);
+                          $"攻击力 {CurrentAttack}，{next}。", this);
             }
 
             return true;

@@ -14,7 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.MiningToolData
   displayName: "\u77F3\u5934"
   itemId: mine_01
-  baseAttack: 1
+  baseAttack: 2.2
+  attackGrowthPerLevel: 5.25
   attackPerLevel: 1
-  goldCostPerLevel: 15
+  goldCostPerLevel: 320
+  goldCostGrowthPerLevel: 5.25
   goldCostIncreasePerLevel: 15
+  maxLevel: 6

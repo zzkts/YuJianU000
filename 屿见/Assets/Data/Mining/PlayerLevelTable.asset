@@ -15,7 +15,13 @@ MonoBehaviour:
   thresholds:
   - buildingCount: 0
     level: 1
-  - buildingCount: 3
+  - buildingCount: 2
     level: 2
-  - buildingCount: 6
+  - buildingCount: 4
     level: 3
+  - buildingCount: 6
+    level: 4
+  - buildingCount: 8
+    level: 5
+  - buildingCount: 10
+    level: 6

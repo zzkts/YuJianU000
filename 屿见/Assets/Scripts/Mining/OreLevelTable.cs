@@ -40,8 +40,11 @@ namespace Yujian.Mining
         [Tooltip("按等级配置矿石组。等级不必连续，但不要重复")]
         [SerializeField] private List<OreLevelDefinition> levels = new List<OreLevelDefinition>();
 
+        [Tooltip("垃圾种类表：每种垃圾只写一次的基础生命 / 奖励。留空则退回矿石组条目上的覆盖值（旧行为）")]
+        [SerializeField] private OreTypeTable typeTable;
+
         [Header("逐层成长（D7=A 几何曲线）")]
-        [Tooltip("矿石生命值每升一层的倍数。2.2 表示第 2 层是第 1 层的 2.2 倍，第 3 层是 4.84 倍。" +
+        [Tooltip("矿石生命值每升一层的倍数。5 表示第 2 层是第 1 层的 5 倍，第 3 层是 25 倍。" +
                  "矿石组里填的是第 1 层的基准值，生成时按等级乘上去")]
         [SerializeField, Min(1f)] private float healthGrowthPerTier = 2.2f;
 
@@ -50,6 +53,9 @@ namespace Yujian.Mining
 
         /// <summary>全部等级配置。</summary>
         public IReadOnlyList<OreLevelDefinition> Levels => levels;
+
+        /// <summary>垃圾种类表（基础生命 / 奖励的唯一来源）。可能为空。</summary>
+        public OreTypeTable TypeTable => typeTable;
 
         /// <summary>生命值逐层成长倍数。</summary>
         public float HealthGrowthPerTier => Mathf.Max(1f, healthGrowthPerTier);

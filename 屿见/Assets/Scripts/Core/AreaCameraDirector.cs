@@ -1,5 +1,6 @@
 using UnityEngine;
 using Yujian.Building;
+using Yujian.Levels;
 
 namespace Yujian.Core
 {
@@ -52,6 +53,10 @@ namespace Yujian.Core
         [Tooltip("挖矿区机位的欧拉角")]
         [SerializeField] private Vector3 miningEulerAngles = Vector3.zero;
 
+        [Tooltip("挖矿机位锚点。填了以后用锚点的世界位置 / 旋转，忽略上面的数值字段。" +
+                 "「关卡战场」的相机机位会由关卡系统在进关时自动接进来")]
+        [SerializeField] private Transform miningPoseAnchor;
+
         [Header("商店机位")]
         [Tooltip("商店区机位。⚠️ 世界里现在还没有任何商店实体（Shop 只是个放逻辑的空物体，" +
                  "位于 (-23.49, 0, -1.28)），所以这个默认值是**按那个位置推算的俯视机位**，不是实拍。" +
@@ -94,6 +99,28 @@ namespace Yujian.Core
         private bool initialised;
         private GameArea appliedArea;
         private bool pendingObservationControl;
+
+        /// <summary>当前挖矿机位锚点；为空表示继续用数值字段。</summary>
+        public Transform MiningPoseAnchor => miningPoseAnchor;
+
+        /// <summary>
+        /// 切换挖矿机位锚点（关卡系统进关时调用）。
+        /// 如果此刻已经在挖矿区，会立即过渡到新机位，保证换了战场 / 背景后镜头跟上。
+        /// </summary>
+        public void SetMiningPoseAnchor(Transform anchor)
+        {
+            if (miningPoseAnchor == anchor)
+            {
+                return;
+            }
+
+            miningPoseAnchor = anchor;
+
+            if (anchor != null && areas != null && areas.CurrentArea == GameArea.Mining)
+            {
+                BeginTransition(anchor.position, anchor.rotation);
+            }
+        }
 
         /// <summary>建造模式（含过渡）期间，相机归 BuildingCameraDirector，本类让位。</summary>
         private bool CameraOwnedByBuildDirector =>
@@ -255,8 +282,18 @@ namespace Yujian.Core
                 return;
             }
 
-            Vector3 position = area == GameArea.Shop ? shopPosition : miningPosition;
-            Quaternion rotation = Quaternion.Euler(area == GameArea.Shop ? shopEulerAngles : miningEulerAngles);
+            Vector3 position;
+            Quaternion rotation;
+
+            if (area == GameArea.Shop)
+            {
+                position = shopPosition;
+                rotation = Quaternion.Euler(shopEulerAngles);
+            }
+            else
+            {
+                ResolveMiningPose(out position, out rotation);
+            }
 
             // 从建筑区切走：先退出建造模式。它会顺带取消还没放置的蓝图，
             // 蓝图里已放的材料按决策 21 全部退回库存（不吞料）——这是用户 2026-10-08 拍板的 S2。
@@ -366,6 +403,34 @@ namespace Yujian.Core
             }
         }
 
+        /// <summary>
+        /// 挖矿机位：有锚点用锚点，没有锚点用 Inspector 数值。
+        /// 锚点为空时会尝试找场景里第一个「关卡战场」的相机机位，保证老场景不接也能正常进关。
+        /// </summary>
+        private void ResolveMiningPose(out Vector3 position, out Quaternion rotation)
+        {
+            if (miningPoseAnchor == null)
+            {
+                LevelBattlefield battlefield =
+                    FindFirstObjectByType<LevelBattlefield>(FindObjectsInactive.Include);
+
+                if (battlefield != null)
+                {
+                    miningPoseAnchor = battlefield.CameraAnchor;
+                }
+            }
+
+            if (miningPoseAnchor != null)
+            {
+                position = miningPoseAnchor.position;
+                rotation = miningPoseAnchor.rotation;
+                return;
+            }
+
+            position = miningPosition;
+            rotation = Quaternion.Euler(miningEulerAngles);
+        }
+
         /// <summary>按「手动指定 → 本物体上的 Camera → Camera.main」的顺序找相机。</summary>
         private void ResolveCameraTransform()
         {
@@ -385,6 +450,18 @@ namespace Yujian.Core
 
             miningPosition = cameraTransform.position;
             miningEulerAngles = cameraTransform.eulerAngles;
+
+            // 有战场机位锚点时，真正生效的是锚点；把锚点也一起挪到当前相机位置
+            if (miningPoseAnchor != null)
+            {
+#if UNITY_EDITOR
+                UnityEditor.Undo.RecordObject(miningPoseAnchor, "移动战场相机机位");
+#endif
+                miningPoseAnchor.SetPositionAndRotation(cameraTransform.position, cameraTransform.rotation);
+                Debug.Log($"[AreaCameraDirector] 已记录挖矿机位（并移动了战场相机机位「{miningPoseAnchor.name}」）：" +
+                          $"位置 {miningPosition}，旋转 {miningEulerAngles}。");
+                return;
+            }
 
             Debug.Log($"[AreaCameraDirector] 已记录挖矿机位：位置 {miningPosition}，旋转 {miningEulerAngles}。");
         }

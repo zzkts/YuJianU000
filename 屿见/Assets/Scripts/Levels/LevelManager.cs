@@ -37,6 +37,9 @@ namespace Yujian.Levels
         [Tooltip("建筑网格。关卡污染区在这里登记为不可建，净化后解除封锁")]
         [SerializeField] private BuildingGrid buildingGrid;
 
+        [Tooltip("区域相机调度。进关时把当前战场的相机机位交给它；留空自动查找")]
+        [SerializeField] private AreaCameraDirector cameraDirector;
+
         [Header("关卡")]
         [Tooltip("场景里的所有关卡入口。留空时自动查找（包含未激活）")]
         [SerializeField] private LevelEntrance[] entrances = new LevelEntrance[0];
@@ -46,6 +49,9 @@ namespace Yujian.Levels
 
         [Tooltip("关卡内容根。ActiveLevel 没有配置内容根时使用；再留空则自动找矿石")]
         [SerializeField] private Transform fallbackContentRoot;
+
+        [Tooltip("默认战斗舞台。入口没有单独指定战场时用它；留空时自动找场景里第一个 LevelBattlefield")]
+        [SerializeField] private LevelBattlefield defaultBattlefield;
 
         [Header("转场")]
         [Tooltip("进入关卡时黑场渐入 / 渐出的时长（秒）")]
@@ -158,11 +164,9 @@ namespace Yujian.Levels
         {
             ResolveDependencies();
 
-            if (entrances == null || entrances.Length == 0)
-            {
-                entrances = FindObjectsByType<LevelEntrance>(
-                    FindObjectsInactive.Include, FindObjectsSortMode.None);
-            }
+            // 以 Inspector 里的顺序为准，把场景里漏登记的入口自动补进注册表。
+            // 不补的话，新加 / 复制出来的入口不会生成环境表现、不会灰化、占地也不封锁。
+            MergeSceneEntrances();
 
             if (areaController == null)
             {
@@ -186,6 +190,9 @@ namespace Yujian.Levels
 
             ApplyLockStates(ResolveCurrentLevel());
             ActiveLevel = ResolveDefaultEntrance();
+
+            // 相机在区域切换前就要知道默认关卡的机位（底部「清洁」按钮直接进区时没有 TryEnter）
+            ApplyBattlefieldCamera(ActiveLevel);
 
             // 开局在岛上：关卡内容先暂停。进入挖矿区时由区域事件恢复
             SetLevelRunning(areaController == null || areaController.CurrentArea == GameArea.Mining);
@@ -211,6 +218,67 @@ namespace Yujian.Levels
             {
                 Debug.Log($"[LevelManager] 就绪：入口 {entrances.Length} 个，当前等级 {ResolveCurrentLevel()}，" +
                           $"默认关卡 {(ActiveLevel != null ? ActiveLevel.name : "无")}。");
+            }
+        }
+
+        /// <summary>
+        /// 把场景里所有 <see cref="LevelEntrance"/> 并进注册表：
+        /// Inspector 里已有的顺序不变（第一个仍是默认门），场景里有而列表里没有的追加到末尾。
+        /// 这样新建 / 复制的关卡入口不用手动拖进数组，也能获得同样的环境表现、灰化与占地封锁。
+        /// </summary>
+        private void MergeSceneEntrances()
+        {
+            LevelEntrance[] found = FindObjectsByType<LevelEntrance>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            if (entrances == null || entrances.Length == 0)
+            {
+                entrances = found != null ? found : new LevelEntrance[0];
+                return;
+            }
+
+            if (found == null || found.Length == 0)
+            {
+                return;
+            }
+
+            List<LevelEntrance> merged = new List<LevelEntrance>(entrances.Length + found.Length);
+            HashSet<LevelEntrance> registered = new HashSet<LevelEntrance>();
+
+            for (int i = 0; i < entrances.Length; i++)
+            {
+                LevelEntrance entrance = entrances[i];
+
+                if (entrance != null && registered.Add(entrance))
+                {
+                    merged.Add(entrance);
+                }
+            }
+
+            int added = 0;
+
+            for (int i = 0; i < found.Length; i++)
+            {
+                LevelEntrance entrance = found[i];
+
+                if (entrance != null && registered.Add(entrance))
+                {
+                    merged.Add(entrance);
+                    added++;
+                }
+            }
+
+            if (added <= 0)
+            {
+                // 没有新入口时保持原来的数组引用，避免每帧无意义地换数组
+                return;
+            }
+
+            entrances = merged.ToArray();
+
+            if (logLevelFlow)
+            {
+                Debug.Log($"[LevelManager] 场景里有 {added} 个入口没登记到 entrances 数组，已自动补上（现在共 {entrances.Length} 个）。");
             }
         }
 
@@ -299,6 +367,15 @@ namespace Yujian.Levels
             fallbackContentRoot = newFallbackContentRoot;
         }
 
+        /// <summary>整理向导调用：还没设置默认战场时才接上，不覆盖以后手动指定。</summary>
+        public void EnsureDefaultBattlefieldForSetup(LevelBattlefield battlefield)
+        {
+            if (defaultBattlefield == null)
+            {
+                defaultBattlefield = battlefield;
+            }
+        }
+
         private IEnumerator EnterRoutine(LevelEntrance entrance)
         {
             transitioning = true;
@@ -309,6 +386,9 @@ namespace Yujian.Levels
             }
 
             yield return ScreenFadeUI.Instance.FadeToBlack(enterFadeDuration);
+
+            // 区域切换会立刻广播给相机；机位锚点必须在这一步之前换好
+            ApplyBattlefieldCamera(entrance);
 
             entrance.ActivateMiningArea();
 
@@ -365,6 +445,12 @@ namespace Yujian.Levels
             // 离开关卡：倒计时停表，击败 BOSS 后的自动退出也一并取消（手动退出优先）
             bossCountdownRemaining = 0f;
             CancelAutoExit();
+
+            // 离开关卡：解除档位锁定，回到岛上后重新跟随玩家等级
+            if (oreSpawner != null)
+            {
+                oreSpawner.SetTierOverride(0);
+            }
 
             // 离开关卡：BOSS 只“暂停”，已出现状态与通关进度保留；
             // 下次进入时 bossPresentationApplied 为 false，会按满血重新生成（策划案 2.3.3）
@@ -540,6 +626,93 @@ namespace Yujian.Levels
             bossRegenAccumulator = 0f;
         }
 
+        // ---------------- 战斗舞台 ----------------
+
+        /// <summary>入口自己的战场优先；没填就用默认战场，默认也没填则自动找场景里第一个。</summary>
+        private LevelBattlefield ResolveBattlefield(LevelEntrance entrance)
+        {
+            if (entrance != null && entrance.Battlefield != null)
+            {
+                return entrance.Battlefield;
+            }
+
+            if (defaultBattlefield == null)
+            {
+                defaultBattlefield = FindFirstObjectByType<LevelBattlefield>(FindObjectsInactive.Include);
+            }
+
+            return defaultBattlefield;
+        }
+
+        /// <summary>
+        /// 应用一个关卡的战斗舞台：
+        ///   · 只显示当前舞台的背景，隐藏其它舞台的背景；
+        ///   · 把共享怪物放到当前舞台的怪物生成点；
+        ///   · 把相机机位交给相机调度。
+        /// 只有一个舞台时这些都等价于原来的行为。
+        /// </summary>
+        private void ApplyBattlefield(LevelEntrance entrance)
+        {
+            LevelBattlefield target = ResolveBattlefield(entrance);
+
+            if (target == null)
+            {
+                return;
+            }
+
+            LevelBattlefield[] all = FindObjectsByType<LevelBattlefield>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null)
+                {
+                    all[i].SetBackgroundVisible(all[i] == target);
+                }
+            }
+
+            ApplyBattlefieldCamera(entrance);
+
+            EnsureTrackedOre();
+            Transform spawnPoint = target.EnemySpawnPoint;
+
+            if (trackedOre == null || spawnPoint == null || trackedOre.transform.IsChildOf(spawnPoint))
+            {
+                return;
+            }
+
+            // 保留世界缩放，只把位置对到生成点；怪物自身的组件引用不受换父影响
+            trackedOre.transform.SetParent(spawnPoint, true);
+            trackedOre.transform.localPosition = Vector3.zero;
+            trackedOre.transform.localRotation = Quaternion.identity;
+
+            if (logLevelFlow)
+            {
+                Debug.Log($"[LevelManager] 关卡 {entrance.LevelNumber}：怪物已放到战场「{target.name}」的生成点。");
+            }
+        }
+
+        /// <summary>把当前战场的相机机位交给 AreaCameraDirector；没配机位时保持相机组件上的数值。</summary>
+        private void ApplyBattlefieldCamera(LevelEntrance entrance)
+        {
+            LevelBattlefield target = ResolveBattlefield(entrance);
+
+            if (target == null || target.CameraAnchor == null)
+            {
+                return;
+            }
+
+            if (cameraDirector == null)
+            {
+                cameraDirector = FindFirstObjectByType<AreaCameraDirector>(FindObjectsInactive.Include);
+            }
+
+            if (cameraDirector != null)
+            {
+                cameraDirector.SetMiningPoseAnchor(target.CameraAnchor);
+            }
+        }
+
         /// <summary>
         /// 进入 / 回到关卡时把该关卡的波次、BOSS、通关状态接上。
         /// 可重复调用：同一状态下不会重置已经打掉的血量或进度。
@@ -551,6 +724,7 @@ namespace Yujian.Levels
                 return;
             }
 
+            ApplyBattlefield(entrance);
             EnsureTrackedOre();
 
             if (oreSpawner == null)
@@ -579,6 +753,9 @@ namespace Yujian.Levels
             }
 
             oreSpawner.SetGroupOverride(entrance.AggregateGroups);
+
+            // 每道门固定自己的怪物档位：玩家等级再高，进这一关也是这个档
+            oreSpawner.SetTierOverride(entrance.DifficultyTier);
 
             LevelProgress progress = GetProgress(entrance);
 
@@ -620,6 +797,9 @@ namespace Yujian.Levels
             {
                 oreSpawner.SetPaused(false);
             }
+
+            // 场上那块可能是进门前按玩家等级刷的，立刻按本关档位重刷，保证第一只就对得上
+            oreSpawner.RefreshCurrentOre();
 
             if (logLevelFlow)
             {
@@ -1044,6 +1224,11 @@ namespace Yujian.Levels
             if (oreSpawner == null)
             {
                 oreSpawner = FindFirstObjectByType<OreSpawner>(FindObjectsInactive.Include);
+            }
+
+            if (cameraDirector == null)
+            {
+                cameraDirector = FindFirstObjectByType<AreaCameraDirector>(FindObjectsInactive.Include);
             }
 
             if (buildingGrid == null)

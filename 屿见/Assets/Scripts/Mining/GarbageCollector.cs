@@ -35,6 +35,13 @@ namespace Yujian.Mining
         [Tooltip("单块垃圾从脱落点飞到资源栏的时长（秒）")]
         [SerializeField, Min(0.05f)] private float flightDuration = 0.45f;
 
+        [Header("等待回收")]
+        [Tooltip("垃圾脱落后在原地缩小的时长（秒）。0 = 不缩小，直接按原尺寸等待收集")]
+        [SerializeField, Min(0f)] private float shrinkDuration = 0.15f;
+
+        [Tooltip("缩小到脱落时尺寸的比例。0.45 = 缩到 45% 后停在原地排队")]
+        [SerializeField, Range(0.05f, 1f)] private float queuedScale = 0.45f;
+
         [Tooltip("飞行弧线的最高点高度（世界单位）")]
         [SerializeField, Min(0f)] private float arcHeight = 1.2f;
 
@@ -75,8 +82,18 @@ namespace Yujian.Mining
             public int Amount;
         }
 
+        /// <summary>正在原地缩小的垃圾块。缩小完就移出列表，停在 queuedScale 等待收集。</summary>
+        private struct ShrinkState
+        {
+            public GameObject Piece;
+            public Vector3 StartScale;
+            public Vector3 TargetScale;
+            public float Elapsed;
+        }
+
         private readonly Queue<PendingPiece> pending = new Queue<PendingPiece>();
         private readonly List<PendingPiece> batchBuffer = new List<PendingPiece>();
+        private readonly List<ShrinkState> shrinking = new List<ShrinkState>();
         private Coroutine collectRoutine;
         private Material runtimeTrailMaterial;
         private Material runtimeFlightMaterial;
@@ -113,6 +130,47 @@ namespace Yujian.Mining
             {
                 StopCoroutine(collectRoutine);
                 collectRoutine = null;
+            }
+        }
+
+        /// <summary>推进「脱落后原地缩小」的动画。缩小完的块停在 queuedScale 等待收集。</summary>
+        private void Update()
+        {
+            if (shrinking.Count == 0)
+            {
+                return;
+            }
+
+            float delta = Time.deltaTime;
+
+            for (int i = shrinking.Count - 1; i >= 0; i--)
+            {
+                ShrinkState state = shrinking[i];
+
+                if (state.Piece == null)
+                {
+                    shrinking.RemoveAt(i);
+                    continue;
+                }
+
+                state.Elapsed += delta;
+
+                float duration = Mathf.Max(0.0001f, shrinkDuration);
+                float t = Mathf.Clamp01(state.Elapsed / duration);
+
+                // 先快后慢：脱手那一下收得最快，像被压扁收拢
+                float eased = 1f - (1f - t) * (1f - t);
+                state.Piece.transform.localScale =
+                    Vector3.LerpUnclamped(state.StartScale, state.TargetScale, eased);
+
+                if (t >= 1f)
+                {
+                    shrinking.RemoveAt(i);
+                }
+                else
+                {
+                    shrinking[i] = state;
+                }
             }
         }
 
@@ -187,6 +245,9 @@ namespace Yujian.Mining
 
                 // 一脱落就换成不依赖光照的材质：垃圾在暗处等待收集时也看得见。
                 ApplyFlightMaterial(piece);
+
+                // 掉落表现：先在原地缩小，再停在缩小的尺寸上排队等这一批被收走
+                BeginShrink(piece);
 
                 pending.Enqueue(new PendingPiece
                 {
@@ -303,6 +364,9 @@ namespace Yujian.Mining
             GameObject piece = entry.Piece;
             TrailRenderer trail = AttachTrail(piece);
 
+            // 还在缩小的块直接落到目标尺寸再起飞，避免起飞后 Update 又把它改回大尺寸
+            FinishShrinkImmediately(piece);
+
             Vector3 start = piece.transform.position;
             Vector3 startScale = piece.transform.localScale;
             piece.transform.localScale = startScale * Mathf.Max(0.1f, flightScaleMultiplier);
@@ -368,6 +432,54 @@ namespace Yujian.Mining
 
             float depth = Mathf.Max(camera.nearClipPlane + 0.1f, targetDepth);
             return camera.ScreenToWorldPoint(new Vector3(screenPoint.x, screenPoint.y, depth));
+        }
+
+        /// <summary>开始「脱落后原地缩小」的动画。</summary>
+        private void BeginShrink(GameObject piece)
+        {
+            if (piece == null || shrinkDuration <= 0f)
+            {
+                return;
+            }
+
+            float ratio = Mathf.Clamp(queuedScale, 0.05f, 1f);
+
+            if (ratio >= 0.999f)
+            {
+                return;
+            }
+
+            Vector3 startScale = piece.transform.localScale;
+
+            shrinking.Add(new ShrinkState
+            {
+                Piece = piece,
+                StartScale = startScale,
+                TargetScale = startScale * ratio,
+                Elapsed = 0f,
+            });
+        }
+
+        /// <summary>立刻结束缩小（起飞时用），把块固定到排队尺寸。</summary>
+        private void FinishShrinkImmediately(GameObject piece)
+        {
+            if (piece == null)
+            {
+                return;
+            }
+
+            for (int i = shrinking.Count - 1; i >= 0; i--)
+            {
+                if (shrinking[i].Piece != piece)
+                {
+                    continue;
+                }
+
+                Vector3 target = shrinking[i].TargetScale;
+                shrinking.RemoveAt(i);
+                piece.transform.localScale = target;
+                return;
+            }
         }
 
         /// <summary>
@@ -519,6 +631,8 @@ namespace Yujian.Mining
         {
             collectInterval = Mathf.Max(0.01f, collectInterval);
             flightDuration = Mathf.Max(0.05f, flightDuration);
+            shrinkDuration = Mathf.Max(0f, shrinkDuration);
+            queuedScale = Mathf.Clamp(queuedScale, 0.05f, 1f);
             arcHeight = Mathf.Max(0f, arcHeight);
             targetDepth = Mathf.Max(0.1f, targetDepth);
             flightScaleMultiplier = Mathf.Max(0.1f, flightScaleMultiplier);

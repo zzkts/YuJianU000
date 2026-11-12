@@ -497,6 +497,12 @@ namespace Yujian.UI
                 return;
             }
 
+            if (miningTool.IsMaxLevel)
+            {
+                ShowFeedback($"清洁工具已满级（{miningTool.MaxLevel} 级）", false);
+                return;
+            }
+
             int count = ResolveMineUpgradeCount();
             int cost = miningTool.GetUpgradeCostForLevels(count);
 
@@ -535,13 +541,24 @@ namespace Yujian.UI
 
         private int ResolveMineUpgradeCount()
         {
-            if (!useMaxMode || miningTool == null)
+            if (miningTool == null)
+            {
+                return 1;
+            }
+
+            int available = Mathf.Max(0, miningTool.MaxLevel - miningTool.CurrentLevel);
+            if (available <= 0)
+            {
+                return 0;
+            }
+
+            if (!useMaxMode)
             {
                 return 1;
             }
 
             int affordable = miningTool.GetAffordableUpgradeCount(CurrentMoney());
-            return Mathf.Max(1, affordable);
+            return Mathf.Clamp(affordable, 1, available);
         }
 
         private int LightLevel()
@@ -613,7 +630,8 @@ namespace Yujian.UI
                 SetText(mineIconText, IconGlyph(miningTool.ToolName));
                 SetText(mineNameText, miningTool.ToolName);
                 SetText(mineStatsText,
-                    $"等级 {miningTool.CurrentLevel}\n" +
+                    $"等级 {miningTool.CurrentLevel}" +
+                    (miningTool.IsMaxLevel ? "（满级）" : string.Empty) + "\n" +
                     $"攻击力 {miningTool.CurrentAttack:0.##}");
             }
             else
@@ -699,16 +717,28 @@ namespace Yujian.UI
             }
 
             ToolRow row = mineRows[0];
+
+            SetText(row.Icon, IconGlyph(miningTool.ToolName));
+            SetText(row.Name, $"{miningTool.ToolName}　Lv.{miningTool.CurrentLevel}/{miningTool.MaxLevel}");
+            row.Background.color = rowColor;
+
+            if (miningTool.IsMaxLevel)
+            {
+                SetText(row.Gain, "已满级");
+                SetText(row.Cost, "—");
+                SetText(row.ButtonText, "已满级");
+                SetButtonInteractable(row.Button, false);
+                SetRowDim(row.Group, false);
+                return;
+            }
+
             int count = ResolveMineUpgradeCount();
             int cost = miningTool.GetUpgradeCostForLevels(count);
             bool affordable = CurrentMoney() >= cost;
 
-            SetText(row.Icon, IconGlyph(miningTool.ToolName));
-            SetText(row.Name, $"{miningTool.ToolName}　Lv.{miningTool.CurrentLevel}");
             SetText(row.Gain, $"升级 x{count}");
             SetText(row.Cost, $"共 {FormatNumber(cost)} 垃圾");
             SetText(row.ButtonText, "升级");
-            row.Background.color = rowColor;
             SetButtonInteractable(row.Button, true);
             SetRowDim(row.Group, !affordable);
         }
@@ -1808,7 +1838,9 @@ namespace Yujian.UI
         {
             return miningTool == null
                 ? "清洁工具未配置"
-                : $"{miningTool.ToolName}\n等级 {miningTool.CurrentLevel}　攻击力 {miningTool.CurrentAttack:0.##}";
+                : $"{miningTool.ToolName}\n等级 {miningTool.CurrentLevel}" +
+                  (miningTool.IsMaxLevel ? "（满级）" : string.Empty) +
+                  $"　攻击力 {miningTool.CurrentAttack:0.##}";
         }
 
         private ToolRow CreateToolRow(RectTransform content, string name)

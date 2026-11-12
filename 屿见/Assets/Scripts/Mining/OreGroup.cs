@@ -16,11 +16,11 @@ namespace Yujian.Mining
         [Tooltip("抽取权重，越大越容易被抽到。小于等于 0 的条目永远不会被抽到")]
         [SerializeField] private float weight = 1f;
 
-        [Tooltip("生成后的最大生命值，必须大于 0")]
-        [SerializeField] private float maxHealth = 10f;
+        [Tooltip("覆盖值：大于 0 时覆盖「垃圾种类表」里的基础生命；0 = 跟随种类表（推荐）")]
+        [SerializeField, Min(0f)] private float maxHealth;
 
-        [Tooltip("击碎后发放给玩家的金币")]
-        [SerializeField] private int reward = 10;
+        [Tooltip("覆盖值：大于 0 时覆盖「垃圾种类表」里的基础奖励；0 = 跟随种类表（推荐）")]
+        [SerializeField, Min(0)] private int reward;
 
         /// <summary>矿石种类。</summary>
         public OreType Type => type;
@@ -34,8 +34,12 @@ namespace Yujian.Mining
         /// <summary>击碎奖励。</summary>
         public int Reward => reward;
 
-        /// <summary>是否能参与抽取。权重非正或生命值非正的条目会被跳过，避免生成出零血矿石。</summary>
-        public bool IsSelectable => weight > 0f && maxHealth > 0f;
+        /// <summary>
+        /// 是否能参与抽取。权重非正的条目永远不会被抽到。
+        /// 生命值是否有效要等生成时按「垃圾种类表」解析出来才知道（条目上的 maxHealth 只是覆盖值，
+        /// 0 表示跟随种类表），所以这里不再用生命值做过滤，由 OreSpawner 在解析后兜底。
+        /// </summary>
+        public bool IsSelectable => weight > 0f;
 
         /// <summary>供编辑器向导生成默认数据用。</summary>
         public void Configure(OreType newType, float newWeight, float newMaxHealth, int newReward)

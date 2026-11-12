@@ -173,6 +173,13 @@ namespace Yujian.UI
                 return;
             }
 
+            if (tool.IsMaxLevel)
+            {
+                ShowFeedback($"已是满级（{tool.MaxLevel} 级）。", false);
+                RefreshBase();
+                return;
+            }
+
             int cost = tool.NextUpgradeCost;
             int moneyBefore = currency.CurrentMoney;
 
@@ -213,10 +220,21 @@ namespace Yujian.UI
 
             int level = tool.CurrentLevel;
             float attack = tool.CurrentAttack;
-            float nextAttack = tool.Data.GetAttackAtLevel(level + 1);
+            float nextAttack = tool.NextAttack;
 
             SetText(titleText, $"清洁工具 · {tool.Data.DisplayName}（{tool.Data.ItemId}）");
-            SetText(statsText, $"等级 {level}　攻击力 {attack:0.##} → {nextAttack:0.##}");
+
+            if (tool.IsMaxLevel)
+            {
+                SetText(statsText, $"等级 {level}/{tool.MaxLevel}（满级）　攻击力 {attack:0.##}");
+                SetText(costText, "已达最高等级");
+                SetText(upgradeButtonText, "已满级");
+                SetCostColor(false);
+                SetButtonInteractable(false);
+                return;
+            }
+
+            SetText(statsText, $"等级 {level}/{tool.MaxLevel}　攻击力 {attack:0.##} → {nextAttack:0.##}");
 
             if (currency == null)
             {

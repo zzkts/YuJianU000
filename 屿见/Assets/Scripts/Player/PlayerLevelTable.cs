@@ -33,7 +33,7 @@ namespace Yujian.Player
     /// <summary>
     /// 建筑数 → 玩家等级表。
     /// 职责：只做数值判定，不统计建筑、不监听建造事件——那些由 PlayerLevel 负责。
-    /// 文档默认值：0 座 → 1 级，3 座 → 2 级，6 座 → 3 级。
+    /// 当前资产为 6 档临时阈值：0 / 2 / 4 / 6 / 8 / 10 座 → 1~6 级（等建筑机制定稿后可能要改）。
     /// </summary>
     [CreateAssetMenu(menuName = "屿见/玩家/等级表", fileName = "PlayerLevelTable")]
     public class PlayerLevelTable : ScriptableObject

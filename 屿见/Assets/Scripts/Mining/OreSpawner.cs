@@ -26,7 +26,7 @@ namespace Yujian.Mining
         [Tooltip("玩家等级，提供建筑数换算出的当前等级")]
         [SerializeField] private PlayerLevel playerLevel;
 
-        [Tooltip("矿石等级表：等级 → 该等级的矿石组")]
+        [Tooltip("矿石等级表：等级 → 该等级的矿石组；垃圾种类表也挂在它上面")]
         [SerializeField] private OreLevelTable levelTable;
 
         [Header("节奏")]
@@ -50,6 +50,12 @@ namespace Yujian.Mining
         /// <summary>关卡系统 2.3.1「垃圾聚合体组」：非空时只从这些组里抽，忽略等级表里的组。</summary>
         private OreGroup[] groupOverride;
         private readonly HashSet<OreEntry> overrideDrawn = new HashSet<OreEntry>();
+
+        /// <summary>
+        /// 关卡锁定的怪物档位。0 = 不锁，跟随玩家等级。
+        /// 锁定期间不看玩家等级、也不自动跳档，本档抽完就清记录循环。
+        /// </summary>
+        private int tierOverride;
 
         /// <summary>当前使用的矿石等级。</summary>
         public int CurrentTier => currentTier;
@@ -93,7 +99,8 @@ namespace Yujian.Mining
                 return;
             }
 
-            currentTier = ResolveTier(Mathf.Max(1, playerLevel != null ? playerLevel.CurrentLevel : 1));
+            // 关卡可能比本组件先 Start（直接开局在关卡里），优先用已经锁定的档位
+            currentTier = ResolveTier(tierOverride > 0 ? tierOverride : GetBaseTierLevel());
             initialized = true;
 
             if (logSpawnFlow)
@@ -125,6 +132,12 @@ namespace Yujian.Mining
             {
                 Debug.LogError("[OreSpawner] OreLevelTable 是空表，没有任何等级配置。", this);
                 return false;
+            }
+
+            if (levelTable.TypeTable == null)
+            {
+                Debug.LogWarning("[OreSpawner] 矿石等级表上没有接垃圾种类表，将退回矿石组条目上的生命 / 奖励数值。" +
+                                 "新数据里条目的数值是 0（跟随种类表），不接表会生成不出矿石。", this);
             }
 
             if (!ore.UsesExternalSpawnControl)
@@ -191,6 +204,72 @@ namespace Yujian.Mining
                     ? $"[OreSpawner] 本关使用专属聚合体组，共 {normalized.Length} 组。"
                     : "[OreSpawner] 本关没有专属聚合体组，改回按矿石等级表抽取。");
             }
+        }
+
+        /// <summary>
+        /// 锁定本关卡的怪物档位（关卡入口的 difficultyTier）。
+        /// 传 0 解除锁定，恢复成跟随玩家等级。
+        /// 锁定期间：不响应玩家等级变化，本档种类抽完也不跳档，而是清记录从头循环。
+        /// </summary>
+        public void SetTierOverride(int tier)
+        {
+            int normalized = Mathf.Max(0, tier);
+
+            if (tierOverride == normalized)
+            {
+                return;
+            }
+
+            tierOverride = normalized;
+
+            if (tierOverride > 0)
+            {
+                int resolvedTier = ResolveTier(tierOverride);
+
+                // 同一档反复进出关卡时保留抽取记录，换档才重来
+                if (resolvedTier != currentTier)
+                {
+                    GetDrawnSet(resolvedTier).Clear();
+                }
+
+                currentTier = resolvedTier;
+
+                if (logSpawnFlow)
+                {
+                    Debug.Log($"[OreSpawner] 本关锁定怪物档位 {tierOverride}（实际使用 {currentTier} 档），" +
+                              "不跟玩家等级走。");
+                }
+
+                return;
+            }
+
+            int playerTier = ResolveTier(GetBaseTierLevel());
+
+            if (playerTier > currentTier)
+            {
+                currentTier = playerTier;
+            }
+
+            if (logSpawnFlow)
+            {
+                Debug.Log($"[OreSpawner] 解除档位锁定，恢复跟随玩家等级（当前 {currentTier} 档）。");
+            }
+        }
+
+        /// <summary>
+        /// 按当前档位与专属组立刻重刷场上这一块（暂停 / 未初始化时不做）。
+        /// 进入关卡时调用，把进门前按玩家等级刷出来的那块换成门的档位。
+        /// </summary>
+        public void RefreshCurrentOre()
+        {
+            if (!initialized || paused || ore == null)
+            {
+                return;
+            }
+
+            // 丢弃欠下的那次刷新，避免下一秒又补一块
+            StopSpawning();
+            SpawnNextOre();
         }
 
         /// <summary>
@@ -319,18 +398,41 @@ namespace Yujian.Mining
                 return;
             }
 
-            // D7=A：矿石组里填的是第 1 层基准值，实际生成时按当前矿层乘上几何成长
+            // 数值来源：垃圾种类表（每种垃圾只写一次基础值）
+            // 条目上的 maxHealth / reward 是覆盖值，0 表示跟随种类表；没有种类表时退回旧算法
             int tier = Mathf.Max(1, currentTier);
-            float health = entry.MaxHealth * levelTable.GetHealthMultiplier(tier);
-            int reward = levelTable.GetRewardAtTier(entry.Reward, tier);
+            float baseHealth;
+            int baseReward;
+            float health;
+            int reward;
+
+            if (levelTable.TypeTable != null)
+            {
+                levelTable.TypeTable.Resolve(entry, tier, levelTable,
+                    out baseHealth, out baseReward, out health, out reward);
+            }
+            else
+            {
+                baseHealth = entry.MaxHealth;
+                baseReward = entry.Reward;
+                health = baseHealth * levelTable.GetHealthMultiplier(tier);
+                reward = levelTable.GetRewardAtTier(baseReward, tier);
+            }
+
+            if (health <= 0f)
+            {
+                Debug.LogError($"[OreSpawner] 「{OreTypeInfo.DisplayName(entry.Type)}」解析出的生命值不大于 0，" +
+                               "请检查垃圾种类表里是否配置了这一种（或条目上的生命覆盖值）。矿石保持隐藏。", this);
+                return;
+            }
 
             ore.ApplyDefinition(entry.Type, health, reward);
 
             if (logSpawnFlow)
             {
                 Debug.Log($"[OreSpawner] 等级 {currentTier} / 组「{group.name}」生成" +
-                          $"「{OreTypeInfo.DisplayName(entry.Type)}」（基准 HP {entry.MaxHealth} → " +
-                          $"实际 HP {health:0.##}，奖励 {entry.Reward} → {reward}）");
+                          $"「{OreTypeInfo.DisplayName(entry.Type)}」（基础 HP {baseHealth:0.##} → " +
+                          $"实际 HP {health:0.##}，基础奖励 {baseReward} → {reward}）");
             }
         }
 
@@ -369,6 +471,26 @@ namespace Yujian.Mining
 
                 if (candidates.Count == 0)
                 {
+                    // 关卡锁了档位：本档抽完不跳档，清记录从头循环，保证整关都在同一档
+                    if (tierOverride > 0)
+                    {
+                        if (!HasAnySelectableEntry(definition))
+                        {
+                            Debug.LogError($"[OreSpawner] 锁定的等级 {currentTier} 没有任何可抽取条目" +
+                                           "（权重与生命值都必须大于 0）。", this);
+                            return null;
+                        }
+
+                        if (logSpawnFlow)
+                        {
+                            Debug.Log($"[OreSpawner] 锁定的等级 {currentTier} 已全部抽过一遍，" +
+                                      "重置抽取记录后继续循环（不跳档）。");
+                        }
+
+                        drawn.Clear();
+                        continue;
+                    }
+
                     int nextTier = FindNextConfiguredTier(currentTier);
 
                     if (nextTier > currentTier)
@@ -678,11 +800,23 @@ namespace Yujian.Mining
             return next == int.MaxValue ? currentLevel : next;
         }
 
+        /// <summary>关卡没锁档位时用来算档位的基础等级：玩家等级。</summary>
+        private int GetBaseTierLevel()
+        {
+            return Mathf.Max(1, playerLevel != null ? playerLevel.CurrentLevel : 1);
+        }
+
         private void HandleLevelChanged(int newLevel)
         {
             if (!initialized)
             {
                 // 还没初始化时由 Start 读取 CurrentLevel，不需要在这里响应
+                return;
+            }
+
+            if (tierOverride > 0)
+            {
+                // 关卡锁了档位：玩家升级不影响本关的怪物血量 / 奖励
                 return;
             }
 

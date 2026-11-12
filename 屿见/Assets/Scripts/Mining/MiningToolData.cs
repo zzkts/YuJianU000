@@ -16,8 +16,8 @@ namespace Yujian.Mining
         [Tooltip("物品 id，例如：mine_01")]
         [SerializeField] private string itemId = "mine_01";
 
-        [Tooltip("1 级时的基础攻击力")]
-        [SerializeField, Min(0)] private int baseAttack = 1;
+        [Tooltip("1 级时的基础攻击力。允许小数，例如 2.2 = 每只垃圾正好 5 次击碎")]
+        [SerializeField, Min(0f)] private float baseAttack = 1f;
 
         [Tooltip("每升一级的攻击力成长倍数（几何曲线，D7=A）。1.35 表示每级 ×1.35。" +
                  "填 1 或更小则退回旧的「每级固定加 attackPerLevel」线性模式")]
@@ -36,14 +36,18 @@ namespace Yujian.Mining
         [Tooltip("线性模式下每升一级增加的金币花费。仅当 goldCostGrowthPerLevel <= 1 时生效")]
         [SerializeField, Min(0)] private int goldCostIncreasePerLevel = 15;
 
+        [Tooltip("工具最高等级。到顶后不再提供升级，攻击力停在满级值")]
+        [SerializeField, Min(1)] private int maxLevel = 6;
+
         public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? name : displayName;
         public string ItemId => itemId;
-        public int BaseAttack => Mathf.Max(0, baseAttack);
+        public float BaseAttack => Mathf.Max(0f, baseAttack);
         public float AttackGrowthPerLevel => Mathf.Max(1f, attackGrowthPerLevel);
         public int AttackPerLevel => Mathf.Max(0, attackPerLevel);
         public int GoldCostPerLevel => Mathf.Max(0, goldCostPerLevel);
         public float GoldCostGrowthPerLevel => Mathf.Max(1f, goldCostGrowthPerLevel);
         public int GoldCostIncreasePerLevel => Mathf.Max(0, goldCostIncreasePerLevel);
+        public int MaxLevel => Mathf.Max(1, maxLevel);
 
         /// <summary>
         /// 指定等级的工具攻击力。1 级 = 基础攻击力。
@@ -51,7 +55,7 @@ namespace Yujian.Mining
         /// </summary>
         public float GetAttackAtLevel(int level)
         {
-            int safeLevel = Mathf.Max(1, level);
+            int safeLevel = Mathf.Clamp(level, 1, MaxLevel);
 
             if (AttackGrowthPerLevel > 1.0001f)
             {
@@ -67,7 +71,13 @@ namespace Yujian.Mining
         /// </summary>
         public int GetUpgradeCost(int level)
         {
-            int safeLevel = Mathf.Max(1, level);
+            int safeLevel = Mathf.Clamp(level, 1, MaxLevel);
+
+            // 满级后没有「下一级」，费用按 0 处理，由调用方判断是否还能升级
+            if (safeLevel >= MaxLevel)
+            {
+                return 0;
+            }
 
             if (GoldCostGrowthPerLevel > 1.0001f)
             {
@@ -79,18 +89,19 @@ namespace Yujian.Mining
         }
 
         public void ConfigureForSetup(string newDisplayName, string newItemId,
-            int newBaseAttack, int newAttackPerLevel, int newGoldCostPerLevel,
+            float newBaseAttack, int newAttackPerLevel, int newGoldCostPerLevel,
             int newGoldCostIncreasePerLevel = 15, float newAttackGrowthPerLevel = 1.35f,
-            float newGoldCostGrowthPerLevel = 1.35f)
+            float newGoldCostGrowthPerLevel = 1.35f, int newMaxLevel = 6)
         {
             displayName = string.IsNullOrWhiteSpace(newDisplayName) ? "石头" : newDisplayName;
             itemId = string.IsNullOrWhiteSpace(newItemId) ? "mine_01" : newItemId;
-            baseAttack = Mathf.Max(0, newBaseAttack);
+            baseAttack = Mathf.Max(0f, newBaseAttack);
             attackPerLevel = Mathf.Max(0, newAttackPerLevel);
             goldCostPerLevel = Mathf.Max(0, newGoldCostPerLevel);
             goldCostIncreasePerLevel = Mathf.Max(0, newGoldCostIncreasePerLevel);
             attackGrowthPerLevel = Mathf.Max(1f, newAttackGrowthPerLevel);
             goldCostGrowthPerLevel = Mathf.Max(1f, newGoldCostGrowthPerLevel);
+            maxLevel = Mathf.Max(1, newMaxLevel);
         }
     }
 }

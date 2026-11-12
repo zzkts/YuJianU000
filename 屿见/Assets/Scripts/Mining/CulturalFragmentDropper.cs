@@ -15,7 +15,7 @@ namespace Yujian.Mining
         [Range(0f, 1f)]
         [SerializeField] private float dropChance = 0.08f;
 
-        [Tooltip("花岗岩这种稀有矿击碎必掉一片，避免玩家一直刷不到彩蛋")]
+        [Tooltip("稀有矿（垃圾聚合体4）击碎必掉一片，避免玩家一直刷不到彩蛋")]
         [SerializeField] private bool rareOreAlwaysDrop = true;
 
         [Header("提示")]

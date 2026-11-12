@@ -28,6 +28,10 @@ namespace Yujian.Levels
         [Tooltip("解锁等级。玩家等级小于它时关卡灰化、不能进入")]
         [SerializeField, Min(1)] private int unlockLevel = 1;
 
+        [Tooltip("本关怪物档位（决定垃圾血量 / 奖励）。0 = 自动取解锁等级；" +
+                 "填 N 表示固定用第 N 档。进关后档位锁死，不会跟玩家等级走，也不会自动跳档")]
+        [SerializeField, Min(0)] private int difficultyTier;
+
         [Tooltip("关卡在岛屿建筑网格上占用的格数（阶段 3 使用）")]
         [SerializeField] private Vector2Int footprintCells = new Vector2Int(4, 4);
 
@@ -58,6 +62,12 @@ namespace Yujian.Levels
 
         [Tooltip("BOSS 使用的占位矿石种类。阶段 3 换正式 BOSS 外观后不再使用")]
         [SerializeField] private OreType bossOreType = OreType.HuaGangYan;
+
+        [Header("战斗舞台")]
+        [Tooltip("本关使用的战斗舞台（背景 / 怪物生成点 / 相机机位）。" +
+                 "留空则使用 LevelManager 的默认战场。多个关卡共用同一套背景时都填同一个舞台；" +
+                 "以后要换背景，复制一份「关卡战场」并把这里指过去")]
+        [SerializeField] private LevelBattlefield battlefield;
 
         [Header("场景引用")]
         [Tooltip("灰化作用的根物体。解锁前这一整棵子树里的 Renderer 都会换成灰色材质。" +
@@ -98,6 +108,12 @@ namespace Yujian.Levels
         /// <summary>解锁等级。</summary>
         public int UnlockLevel => unlockLevel;
 
+        /// <summary>
+        /// 本关怪物档位（决定垃圾血量 / 奖励）。
+        /// 0 表示没单独填，自动取解锁等级：门越靠后档位越高。
+        /// </summary>
+        public int DifficultyTier => difficultyTier > 0 ? difficultyTier : Mathf.Max(1, unlockLevel);
+
         /// <summary>关卡占用格数（阶段 3）。</summary>
         public Vector2Int FootprintCells => footprintCells;
 
@@ -127,6 +143,9 @@ namespace Yujian.Levels
 
         /// <summary>BOSS 占位矿石种类。</summary>
         public OreType BossOreType => bossOreType;
+
+        /// <summary>本关使用的战斗舞台；为空表示用 LevelManager 的默认战场。</summary>
+        public LevelBattlefield Battlefield => battlefield;
 
         /// <summary>关卡内容根，离开关卡时暂停它。</summary>
         public Transform ContentRoot => contentRoot;
@@ -245,10 +264,11 @@ namespace Yujian.Levels
             int newWaveCount = 3, OreGroup[] newAggregateGroups = null,
             float newBossMaxHealth = 40f, int newBossReward = 80, float newBossHealthRegenPerSecond = 0.5f,
             float newBossScale = 1.6f, OreType newBossOreType = OreType.HuaGangYan,
-            float newBossCountdownSeconds = 30f)
+            float newBossCountdownSeconds = 30f, int newDifficultyTier = 0)
         {
             levelNumber = Mathf.Max(1, newLevelNumber);
             unlockLevel = Mathf.Max(1, newUnlockLevel);
+            difficultyTier = Mathf.Max(0, newDifficultyTier);
             footprintCells = new Vector2Int(
                 Mathf.Max(1, newFootprintCells.x),
                 Mathf.Max(1, newFootprintCells.y));
@@ -278,6 +298,18 @@ namespace Yujian.Levels
             if (lockedMaterial == null)
             {
                 lockedMaterial = material;
+            }
+        }
+
+        /// <summary>
+        /// 整理向导调用：入口还没绑定战场时才接上默认战场，
+        /// 不覆盖以后手动指定的其它背景。
+        /// </summary>
+        public void EnsureBattlefieldForSetup(LevelBattlefield defaultBattlefield)
+        {
+            if (battlefield == null)
+            {
+                battlefield = defaultBattlefield;
             }
         }
 

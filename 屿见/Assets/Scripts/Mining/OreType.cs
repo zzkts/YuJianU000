@@ -7,10 +7,10 @@ namespace Yujian.Mining
     /// </summary>
     public enum OreType
     {
-        QingShi = 0,     // 青石：最常见
-        HongZhuan = 1,   // 红砖
-        MuLiao = 2,      // 木料
-        HuaGangYan = 3,  // 花岗岩：稀有
+        QingShi = 0,     // 垃圾聚合体1（原青石）：最常见
+        HongZhuan = 1,   // 垃圾聚合体2（原红砖）
+        MuLiao = 2,      // 垃圾聚合体3（原木料）
+        HuaGangYan = 3,  // 垃圾聚合体4（原花岗岩）：稀有
     }
 
     /// <summary>
@@ -22,10 +22,10 @@ namespace Yujian.Mining
         {
             switch (type)
             {
-                case OreType.QingShi: return "青石";
-                case OreType.HongZhuan: return "红砖";
-                case OreType.MuLiao: return "木料";
-                case OreType.HuaGangYan: return "花岗岩";
+                case OreType.QingShi: return "垃圾聚合体1";
+                case OreType.HongZhuan: return "垃圾聚合体2";
+                case OreType.MuLiao: return "垃圾聚合体3";
+                case OreType.HuaGangYan: return "垃圾聚合体4";
                 default: return "未知垃圾";
             }
         }
