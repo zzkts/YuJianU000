@@ -44,7 +44,7 @@ namespace Yujian.Mining
         [SerializeField] private OreTypeTable typeTable;
 
         [Header("逐层成长（D7=A 几何曲线）")]
-        [Tooltip("矿石生命值每升一层的倍数。5 表示第 2 层是第 1 层的 5 倍，第 3 层是 25 倍。" +
+        [Tooltip("矿石生命值每升一层的倍数。6 表示第 2 层是第 1 层的 6 倍，第 3 层是 36 倍。" +
                  "矿石组里填的是第 1 层的基准值，生成时按等级乘上去")]
         [SerializeField, Min(1f)] private float healthGrowthPerTier = 2.2f;
 

@@ -32,5 +32,5 @@ MonoBehaviour:
     groups:
     - {fileID: 11400000, guid: 99fd2389aa6f482c92ab65175f40cf44, type: 2}
   typeTable: {fileID: 11400000, guid: 9f2b7c14d3a54e0fb16c8d2a4e57b301, type: 2}
-  healthGrowthPerTier: 5
+  healthGrowthPerTier: 6
   rewardGrowthPerTier: 5
