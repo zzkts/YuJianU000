@@ -16,9 +16,9 @@ namespace Yujian.UI
     /// Use Blueprint Actions 勾上时，本面板只保留材料列表，旧的两个按钮会被隐藏。
     ///
     /// 条目**全部由 BuildingData.RequiredMaterials 推导**：
-    ///   需求里的 MaterialData → 它的 AllowedColors → 每种颜色一个条目。
-    /// 所以风琴博物馆（小砖 ×3，允许红蓝绿）会列出「红色小砖 / 蓝色小砖 / 绿色小砖」三项，
-    /// 数量为 0 的也照样列出——不列的话，「原料不足，请购买」这条提示永远触发不到。
+    ///   需求里的 MaterialData → 一个原料条目（使用原料的默认色）。
+    /// 2026-11-12 起按策划案 3.6 的分支版本去除颜色选择：同一种原料不再拆成
+    /// 「红色小砖 / 蓝色小砖 / 绿色小砖」三个条目，玩家只按原料种类拖拽。
     /// 将来换成「原木 ×5 + 石头 ×2」的建筑，本类一行都不用改。
     ///
     /// 本类只读库存、只转发点击，不修改任何数值。
@@ -434,7 +434,7 @@ namespace Yujian.UI
         /// 面板刚显示出来时补一次刷新。
         /// 条目是在面板**隐藏**的时候克隆出来的（选中建筑那一刻容器还没激活），
         /// 那时它们不在激活层级里，数量就停在初始化时的 0。
-        /// 露头时统一刷一次，面板一出现就是「红色小砖 ×3」而不是 ×0。
+        /// 露头时统一刷一次，面板一出现就是「小砖 ×3」而不是 ×0。
         /// </summary>
         private void OnPanelRevealed()
         {
@@ -472,20 +472,10 @@ namespace Yujian.UI
                 }
 
                 MaterialData material = requirement.Material;
-                IReadOnlyList<MaterialColor> colors = material.AllowedColors;
 
-                // 同一原料可能出现在多条需求里；颜色的去重只针对本原料，用一个小 HashSet 够了
-                HashSet<MaterialColor> seenInThisMaterial = new HashSet<MaterialColor>();
-
-                for (int c = 0; c < colors.Count; c++)
-                {
-                    if (!seenInThisMaterial.Add(colors[c]))
-                    {
-                        continue;
-                    }
-
-                    CreateItem(material, colors[c]);
-                }
+                // 颜色选择已从建筑系统移除：每种原料只生成一个条目，库存记在默认色上。
+                // 数据结构仍保留颜色字段，旧存档里的红/蓝/绿库存不会失效。
+                CreateItem(material, material.DefaultColor);
             }
 
             LayoutItems();

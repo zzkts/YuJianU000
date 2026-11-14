@@ -9,7 +9,7 @@ namespace Yujian.UI
     /// 轻量化商店面板里的一个原料条目（2026-11-05 商店策划案）。
     ///
     /// 结构（由 ShopSetupWizard 生成）：
-    ///   原料名称 / 原料样式 / 原料说明 / 可选颜色色块（只展示不可选）
+    ///   原料名称 / 原料样式 / 原料说明 / 默认颜色色块（只展示不可选）
     ///   + 右侧「− 数量 +」单次购买数量调节
     ///
     /// 价格与购买键属于整个面板（右侧），不在条目里。点击条目把它设为当前选中项，
@@ -34,11 +34,11 @@ namespace Yujian.UI
         [Tooltip("当前单次购买数量，位于条目右侧")]
         [SerializeField] private Text quantityText;
 
-        [Header("颜色（只展示，不可选择）")]
+        [Header("颜色（只展示默认色，不可选择）")]
         [Tooltip("色块父物体")]
         [SerializeField] private Transform colorRow;
 
-        [Tooltip("隐藏的小色块模板，运行时按可选颜色克隆")]
+        [Tooltip("隐藏的小色块模板，运行时只克隆默认颜色")]
         [SerializeField] private Image colorDotTemplate;
 
         [Header("交互")]
@@ -141,8 +141,9 @@ namespace Yujian.UI
         }
 
         /// <summary>
-        /// 只展示该原料允许的颜色，不生成任何可点击的颜色选择器。
-        /// 去重原因同旧实现：AllowedColors 文档明确说「可能含重复值」。
+        /// 只展示该原料的默认色，不生成任何可点击的颜色选择器。
+        /// 2026-11-12 按建筑系统 3.6 分支版本移除颜色选择后，商店也不再罗列红/蓝/绿三种色块；
+        /// 玩家买到的始终是默认色，避免界面暗示还能选颜色。
         /// </summary>
         private void BuildColorDots()
         {
@@ -167,24 +168,14 @@ namespace Yujian.UI
                 return;
             }
 
-            HashSet<MaterialColor> seen = new HashSet<MaterialColor>();
-            IReadOnlyList<MaterialColor> allowed = material.AllowedColors;
-
-            for (int i = 0; i < allowed.Count; i++)
-            {
-                if (!seen.Add(allowed[i]))
-                {
-                    continue;
-                }
-
-                Image dot = Instantiate(colorDotTemplate, colorRow);
-                dot.gameObject.SetActive(true);
-                dot.name = $"Color_{allowed[i]}";
-                dot.sprite = null;
-                dot.color = allowed[i].ToDisplayColor();
-                dot.raycastTarget = false;
-                colorDots.Add(dot);
-            }
+            MaterialColor defaultColor = material.DefaultColor;
+            Image dot = Instantiate(colorDotTemplate, colorRow);
+            dot.gameObject.SetActive(true);
+            dot.name = $"Color_{defaultColor}";
+            dot.sprite = null;
+            dot.color = defaultColor.ToDisplayColor();
+            dot.raycastTarget = false;
+            colorDots.Add(dot);
         }
 
         private void HandleSelectClicked()

@@ -47,9 +47,8 @@ namespace Yujian.Building
 
             public bool IsValid => material != null;
 
-            /// <summary>显示名，例如「红色小砖」。</summary>
-            public string DisplayName =>
-                IsValid ? $"{color.ToChineseName()}{material.MaterialName}" : "无效材料";
+            /// <summary>显示名，例如「小砖」。颜色选择已移除，不再拼颜色前缀。</summary>
+            public string DisplayName => IsValid ? material.MaterialName : "无效材料";
 
             public override string ToString() => DisplayName;
         }
@@ -265,11 +264,11 @@ namespace Yujian.Building
             placementHistory.Add(new PlacedMaterial(material, color));
             RefreshBlueprintPreview();
 
-            Report($"放入{color.ToChineseName()}{material.MaterialName}", true);
+            Report($"放入{material.MaterialName}", true);
 
             if (logConstructionFlow)
             {
-                Debug.Log($"[BuildingConstruction] 放入 {color.ToChineseName()}{material.MaterialName}，" +
+                Debug.Log($"[BuildingConstruction] 放入 {material.MaterialName}，" +
                           $"蓝图内共 {placementHistory.Count} 块，进度 {GetProgressText()}");
             }
 

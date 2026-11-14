@@ -6,7 +6,7 @@ using Yujian.Shop;
 namespace Yujian.UI
 {
     /// <summary>
-    /// 材料面板里的一个可拖拽条目，例如「红色小砖 ×2」。
+    /// 材料面板里的一个可拖拽条目，例如「小砖 ×2」。
     ///
     /// 职责：按下时问一次「这块料现在能放吗」，不能放就只弹提示、**不生成拖拽残影**
     /// （规格第三条要求）；能放就生成一个跟着指针走的残影，松手时把屏幕坐标交给面板。
@@ -21,7 +21,7 @@ namespace Yujian.UI
         [Tooltip("底图。拖拽时残影会照抄它的 sprite")]
         [SerializeField] private Image background;
 
-        [Tooltip("文字，显示「红色小砖 ×2」")]
+        [Tooltip("文字，显示「小砖 ×2」")]
         [SerializeField] private Text label;
 
         [Header("外观")]
@@ -132,7 +132,8 @@ namespace Yujian.UI
                 return;
             }
 
-            label.text = $"{color.ToChineseName()}{material.MaterialName} ×{count}";
+            // 颜色选择已移除，条目只报原料名与数量；颜色仍保留在内部用于库存与存档兼容。
+            label.text = $"{material.MaterialName} ×{count}";
         }
 
         /// <summary>
