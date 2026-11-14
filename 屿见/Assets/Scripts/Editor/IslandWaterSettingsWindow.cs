@@ -13,6 +13,7 @@ namespace Yujian.EditorTools
         private const string MenuPath = "屿见/场景/海面参数调节";
         private const string DefaultMaterialPath = "Assets/Materials/Island/Ocean_Water.mat";
         private const string WaterShaderName = "Yujian/Island Water";
+        private const string LowPolyWaterShaderName = "Yujian/Island Water Low Poly";
 
         private Material _material;
         private Vector2 _scroll;
@@ -30,8 +31,8 @@ namespace Yujian.EditorTools
             new Dictionary<string, float>
             {
                 { "_DepthRange", 3f },
-                { "_ShallowAlpha", 0.35f },
-                { "_DeepAlpha", 0.92f },
+                { "_ShallowAlpha", 0.65f },
+                { "_DeepAlpha", 0.98f },
 
                 { "_ShoreFoamDistance", 0.30f },
                 { "_FoamStrength", 0.85f },
@@ -87,7 +88,12 @@ namespace Yujian.EditorTools
 
         private void OnEnable()
         {
-            if (_material == null)
+            // 优先使用当前选中的水面材质，方便从低模海面窗口直接打开并调色。
+            if (Selection.activeObject is Material selected && IsWaterMaterial(selected))
+            {
+                _material = selected;
+            }
+            else if (_material == null)
             {
                 _material = AssetDatabase.LoadAssetAtPath<Material>(DefaultMaterialPath);
             }
@@ -111,7 +117,13 @@ namespace Yujian.EditorTools
 
         private static bool IsWaterMaterial(Material material)
         {
-            return material != null && material.shader != null && material.shader.name == WaterShaderName;
+            if (material == null || material.shader == null)
+            {
+                return false;
+            }
+
+            string shaderName = material.shader.name;
+            return shaderName == WaterShaderName || shaderName == LowPolyWaterShaderName;
         }
 
         private void OnGUI()
@@ -156,8 +168,8 @@ namespace Yujian.EditorTools
             DrawSection(ref _showDepth, "深度与透明度", () =>
             {
                 DrawFloat("_DepthRange", "水深范围（世界单位）", 0.1f, 10f);
-                DrawFloat("_ShallowAlpha", "浅水透明度", 0f, 1f);
-                DrawFloat("_DeepAlpha", "深水透明度", 0f, 1f);
+                DrawFloat("_ShallowAlpha", "浅水不透明度", 0f, 1f);
+                DrawFloat("_DeepAlpha", "深水不透明度", 0f, 1f);
             });
 
             DrawSection(ref _showShore, "岸线泡沫", () =>
@@ -310,6 +322,18 @@ namespace Yujian.EditorTools
                 if (_material.HasProperty(pair.Key))
                 {
                     _material.SetColor(pair.Key, pair.Value);
+                }
+            }
+
+            // 低模水面需要更实的水体、并默认关掉原海面噪点，否则分面会被盖住。
+            if (_material.shader != null
+                && _material.shader.name == LowPolyWaterShaderName)
+            {
+                _material.SetFloat("_ShallowAlpha", 0.58f);
+                _material.SetFloat("_DeepAlpha", 0.98f);
+                if (_material.HasProperty("_NoiseStrength"))
+                {
+                    _material.SetFloat("_NoiseStrength", 0f);
                 }
             }
 

@@ -15820,7 +15820,7 @@ MeshRenderer:
   - {fileID: 2100000, guid: b6ea87b893da15b40ab308c7ab4aa18d, type: 2}
   - {fileID: 2100000, guid: af8153c2d7ccf784a978139f6331d15a, type: 2}
   - {fileID: 2100000, guid: aa8c29b8157bea446ae6161b54534b0b, type: 2}
-  - {fileID: 2100000, guid: b0ba522b29011c8498c4eecdcfbb2119, type: 2}
+  - {fileID: 2100000, guid: ca648807d3001754db8678640b900977, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -20257,8 +20257,9 @@ MonoBehaviour:
   unlockLevel: 1
   difficultyTier: 0
   footprintCells: {x: 4, y: 4}
-  waveCount: 3
+  waveCount: 15
   aggregateGroups:
+  - {fileID: 11400000, guid: a80eae0165b99374c8346420a0015ef8, type: 2}
   - {fileID: 11400000, guid: a80eae0165b99374c8346420a0015ef8, type: 2}
   bossMaxHealth: 40
   bossReward: 80

@@ -17,14 +17,23 @@ MonoBehaviour:
     halfSizeX: 52
     halfSizeZ: 52
     cornerRadius: 14
-    beachWidth: 9
+    beachWidth: 10
     coastWidth: 18
+    shoreVariation: 0.85
+    headlandCount: 3
+    wetSandBand: 0.22
     waterLevel: -1.4
     seabedDepth: -4
-    gridSize: 2
+    gridSize: 0.5
     seed: 20261017
     coastNoiseLarge: 4
     coastNoiseSmall: 1.5
     hillCenter: {x: 0, y: 61.5}
     hillRadius: 10
     hillHeight: 14
+    rockClusterCount: 40
+    rockDensity: 0.85
+    rockSizeMin: 0.8
+    rockSizeMax: 3.2
+    rockClusterSpread: 5
+    rockMaxAboveWater: 0.9

@@ -109,13 +109,15 @@ namespace Yujian.EditorTools
             Material grass = EnsureMaterial("Island_Grass", new Color(0.553f, 0.733f, 0.388f), 0.08f, litShader);
             Material sand = EnsureMaterial("Island_Sand", new Color(0.902f, 0.827f, 0.639f), 0.08f, litShader);
             Material rock = EnsureMaterial("Island_Rock", new Color(0.639f, 0.612f, 0.549f), 0.08f, litShader);
-            Material seabed = EnsureMaterial("Island_Seabed", new Color(0.310f, 0.549f, 0.510f), 0.05f, litShader);
+            // 第 4 个 submesh 是湿沙带；颜色比干沙深，贴在水线上下。
+            Material wetSand = EnsureMaterial(
+                "Island_WetSand", new Color(0.58f, 0.50f, 0.38f), 0.12f, litShader);
             int depthTextureChanges = EnsureWaterDepthTexture();
             Material water = EnsureWaterMaterial(waterShader);
 
             Mesh mesh = EnsureMesh(settings);
             GameObject islandObject = CreateOrUpdateIsland(
-                activeScene, settings, mesh, grass, sand, rock, seabed, groundLayer);
+                activeScene, settings, mesh, grass, sand, rock, wetSand, groundLayer);
             CreateOrUpdateOcean(activeScene, settings, water);
             PreparePlane(plane, groundLayer);
 
@@ -200,7 +202,7 @@ namespace Yujian.EditorTools
             Material grass,
             Material sand,
             Material rock,
-            Material seabed,
+            Material wetSand,
             int groundLayer)
         {
             GameObject islandObject = FindUniqueRoot(scene, "Island");
@@ -231,7 +233,7 @@ namespace Yujian.EditorTools
                 renderer = Undo.AddComponent<MeshRenderer>(islandObject);
             }
             Undo.RecordObject(renderer, "设置海岛材质");
-            renderer.sharedMaterials = new[] { grass, sand, rock, seabed };
+            renderer.sharedMaterials = new[] { grass, sand, rock, wetSand };
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = true;
             renderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
@@ -283,6 +285,29 @@ namespace Yujian.EditorTools
                 }
             }
 
+            // 如果之前挂过低模海面状态，先移除，避免还原数据残留。
+            LowPolyOceanState lowPolyState = oceanObject.GetComponent<LowPolyOceanState>();
+            if (lowPolyState != null)
+            {
+                Undo.DestroyObjectImmediate(lowPolyState);
+            }
+
+            // 向导负责恢复“原海面”：内置 Plane 网格 + Ocean_Water。
+            // 否则低模海面应用过之后，重新生成海岛会保留旧网格。
+            MeshFilter filter = oceanObject.GetComponent<MeshFilter>();
+            if (filter == null)
+            {
+                filter = Undo.AddComponent<MeshFilter>(oceanObject);
+            }
+            Undo.RecordObject(filter, "恢复原海面网格");
+            filter.sharedMesh = GetBuiltinPlaneMesh();
+
+            Collider[] oceanColliders = oceanObject.GetComponents<Collider>();
+            for (int i = 0; i < oceanColliders.Length; i++)
+            {
+                Undo.DestroyObjectImmediate(oceanColliders[i]);
+            }
+
             int waterLayer = LayerMask.NameToLayer("Water");
             if (waterLayer < 0)
             {
@@ -309,6 +334,21 @@ namespace Yujian.EditorTools
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
             renderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+        }
+
+        private static Mesh GetBuiltinPlaneMesh()
+        {
+            Mesh mesh = Resources.GetBuiltinResource<Mesh>("New-Plane.fbx");
+            if (mesh != null)
+            {
+                return mesh;
+            }
+
+            GameObject temporary = GameObject.CreatePrimitive(PrimitiveType.Plane);
+            MeshFilter filter = temporary.GetComponent<MeshFilter>();
+            mesh = filter != null ? filter.sharedMesh : null;
+            UnityEngine.Object.DestroyImmediate(temporary);
+            return mesh;
         }
 
         private static void PreparePlane(GameObject plane, int groundLayer)

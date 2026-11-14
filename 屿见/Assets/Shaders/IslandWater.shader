@@ -9,8 +9,8 @@ Shader "Yujian/Island Water"
 
         [Header(Depth And Alpha)]
         _DepthRange ("Depth Range (world units)", Float) = 3.0
-        _ShallowAlpha ("Shallow Alpha", Range(0, 1)) = 0.35
-        _DeepAlpha ("Deep Alpha", Range(0, 1)) = 0.92
+        _ShallowAlpha ("Shallow Alpha", Range(0, 1)) = 0.65
+        _DeepAlpha ("Deep Alpha", Range(0, 1)) = 0.98
 
         [Header(Shore Foam)]
         _ShoreFoamDistance ("Shore Foam Distance (world units)", Float) = 0.30
