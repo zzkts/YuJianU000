@@ -6485,7 +6485,7 @@ MonoBehaviour:
   - 5.5
   - 6
   - 6.5
-  upgradeCosts: 1e010000e4050000781e0000f69f000096520300
+  upgradeCosts: 1e010000e4050000781e0000f69f000096520300d8701100
   logUpgradeFlow: 1
 --- !u!1 &588071604
 GameObject:

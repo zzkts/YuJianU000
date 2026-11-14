@@ -132,17 +132,20 @@ namespace Yujian.Tests
             Assert.That(tool.GetUpgradeCostAt(2), Is.EqualTo(7800));
             Assert.That(tool.GetUpgradeCostAt(3), Is.EqualTo(40950));
             Assert.That(tool.GetUpgradeCostAt(4), Is.EqualTo(217750));
+            Assert.That(tool.GetUpgradeCostAt(5), Is.EqualTo(1143000));
 
             Assert.That(tool.GetUpgradeCostAt(-1), Is.EqualTo(0));
             Assert.That(tool.GetUpgradeCostAt(6), Is.EqualTo(0));
         }
 
         [Test]
-        public void UpgradeCosts_LastStepHasNoPrice_CurrentData()
+        public void UpgradeCosts_EveryOwnedLevelHasPrice()
         {
-            // 6 档却只配了 5 个价格：5 → 6（探照灯 → 头灯）实际免费。
-            // 先按现状钉住行为；如果这是漏配，改数据后这里会提醒同步更新。
-            Assert.That(tool.GetUpgradeCostAt(5), Is.EqualTo(0));
+            for (int level = 0; level < tool.MaxLevel; level++)
+            {
+                Assert.That(tool.GetUpgradeCostAt(level), Is.GreaterThan(0),
+                    $"等级 {level} → {level + 1} 缺少价格");
+            }
         }
 
         [Test]
@@ -150,7 +153,7 @@ namespace Yujian.Tests
         {
             tool.SetLevel(1);
             Assert.That(tool.GetUpgradeCostForLevels(2), Is.EqualTo(9308));  // 1508 + 7800
-            Assert.That(tool.GetUpgradeCostForLevels(99), Is.EqualTo(268008)); // 到 5 级为止（最后一步免费）
+            Assert.That(tool.GetUpgradeCostForLevels(99), Is.EqualTo(1411008)); // 1508 + 7800 + 40950 + 217750 + 1143000
 
             tool.SetLevel(6);
             Assert.That(tool.GetUpgradeCostForLevels(1), Is.EqualTo(0));
@@ -164,7 +167,11 @@ namespace Yujian.Tests
             Assert.That(tool.GetAffordableUpgradeCount(1507), Is.EqualTo(0));
             Assert.That(tool.GetAffordableUpgradeCount(1508), Is.EqualTo(1));
             Assert.That(tool.GetAffordableUpgradeCount(9308), Is.EqualTo(2));
-            Assert.That(tool.GetAffordableUpgradeCount(999999), Is.EqualTo(5));
+            Assert.That(tool.GetAffordableUpgradeCount(999999), Is.EqualTo(4));
+
+            tool.SetLevel(5);
+            Assert.That(tool.GetAffordableUpgradeCount(1142999), Is.EqualTo(0));
+            Assert.That(tool.GetAffordableUpgradeCount(1143000), Is.EqualTo(1));
 
             tool.SetLevel(6);
             Assert.That(tool.GetAffordableUpgradeCount(999999), Is.EqualTo(0));
@@ -222,6 +229,18 @@ namespace Yujian.Tests
             Assert.That(tool.TryUpgrade(2), Is.False);
             Assert.That(tool.Level, Is.EqualTo(1));
             Assert.That(currency.CurrentMoney, Is.EqualTo(9307));
+        }
+
+        [Test]
+        public void TryUpgrade_LastLevel_ChargesNewPrice()
+        {
+            tool.SetLevel(5);
+            currency.RestoreMoney(1143000);
+
+            Assert.That(tool.TryUpgrade(), Is.True);
+
+            Assert.That(tool.Level, Is.EqualTo(6));
+            Assert.That(currency.CurrentMoney, Is.EqualTo(0));
         }
 
         [Test]

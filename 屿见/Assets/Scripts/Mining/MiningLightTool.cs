@@ -65,7 +65,7 @@ namespace Yujian.Mining
 
         [Header("购买价格")]
         [Tooltip("从当前等级买到下一级需要的金币。长度 = 等级数 - 1")]
-        [SerializeField] private int[] upgradeCosts = { 286, 1508, 7800, 40950, 217750 };
+        [SerializeField] private int[] upgradeCosts = { 286, 1508, 7800, 40950, 217750, 1143000 };
 
         [Header("调试")]
         [SerializeField] private bool logUpgradeFlow = true;
