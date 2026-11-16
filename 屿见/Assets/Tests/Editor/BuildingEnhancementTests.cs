@@ -1,9 +1,11 @@
 using System.Collections.Generic;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UI;
 using Yujian.Building;
+using Yujian.EditorTools;
 using Yujian.Player;
 using Yujian.Save;
 using Yujian.UI;
@@ -349,34 +351,102 @@ namespace Yujian.Tests
             Assert.That(info.EnhancementOptionIds, Is.Empty);
         }
 
-        // ---------- 占位 UI 能正常自建 ----------
+        // ---------- 选项模板 / 克隆体 ----------
 
         [Test]
-        public void NodeUI_BuildsRuntimeOverlayUnderCanvas()
+        public void OptionTemplate_BindUpdatesCloneTexts_NotTemplate()
+        {
+            GameObject container = NewGameObject("选项列表");
+            GameObject host = NewGameObject("选项模板");
+            host.transform.SetParent(container.transform, false);
+
+            Image image = AddComponent<Image>(host);
+            Button button = AddComponent<Button>(host);
+            button.targetGraphic = image;
+
+            GameObject nameObject = NewGameObject("名称");
+            nameObject.transform.SetParent(host.transform, false);
+            Text nameText = AddComponent<Text>(nameObject);
+            nameText.text = "模板占位名称";
+
+            GameObject descriptionObject = NewGameObject("描述");
+            descriptionObject.transform.SetParent(host.transform, false);
+            Text descriptionText = AddComponent<Text>(descriptionObject);
+            descriptionText.text = "模板占位描述";
+
+            BuildingUpgradeOptionUI template = AddComponent<BuildingUpgradeOptionUI>(host);
+            template.ConfigureForSetup(button, nameText, descriptionText);
+
+            BuildingEnhancementOption option = MakeOption(
+                "Opt_Bind", "承重加固",
+                BuildingEnhancementScope.Individual, BuildingEnhancementStat.BuildingDamage, 0.15f);
+
+            BuildingUpgradeOptionUI clone = Track(
+                Object.Instantiate(template, container.transform));
+            clone.Bind(option, null);
+
+            Text[] cloneTexts = clone.GetComponentsInChildren<Text>(true);
+            Assert.That(cloneTexts[0].text, Does.Contain("承重加固"));
+            Assert.That(cloneTexts[0].text, Does.Contain("个体"));
+            Assert.That(cloneTexts[1].text, Does.Contain("+15%"));
+            Assert.That(nameText.text, Is.EqualTo("模板占位名称"), "克隆体绑定不能写到模板上");
+        }
+
+        // ---------- 场景 UI 生成器 ----------
+
+        [Test]
+        public void Wizard_BuildsEditableSceneUI()
         {
             GameObject canvasHost = NewGameObject("Canvas");
             Canvas canvas = AddComponent<Canvas>(canvasHost);
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             AddComponent<GraphicRaycaster>(canvasHost);
 
-            GameObject uiHost = NewGameObject("节点界面");
-            uiHost.transform.SetParent(canvasHost.transform, false);
+            GameObject upgradeHost = NewGameObject("升级");
+            upgradeHost.SetActive(false);
+            BuildingUpgrade upgrade = AddComponent<BuildingUpgrade>(upgradeHost);
 
-            BuildingUpgradeNodeUI nodeUI = AddComponent<BuildingUpgradeNodeUI>(uiHost);
+            MethodInfo build = typeof(BuildingEnhancementSetupWizard).GetMethod(
+                "Build", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(build, Is.Not.Null, "向导的 Build 入口应存在");
 
-            // EditMode 下 MonoBehaviour 的 Awake 不会自动跑，显式调用公开的接线入口
-            nodeUI.Configure(null);
+            BuildingUpgradeNodeUI nodeUI = (BuildingUpgradeNodeUI)build.Invoke(
+                null, new object[] { canvas, upgrade });
+            Assert.That(nodeUI, Is.Not.Null);
 
-            RectTransform root = TestReflect.Get<RectTransform>(nodeUI, "root");
-
-            Assert.That(root, Is.Not.Null, "Awake 应该自建好全屏遮罩");
-            Assert.That(root.parent, Is.EqualTo(canvasHost.transform));
-            Assert.That(root.gameObject.activeSelf, Is.False, "没有待选节点时应默认收起");
-
+            GameObject root = TestReflect.Get<GameObject>(nodeUI, "root");
+            Assert.That(root, Is.Not.Null);
+            Assert.That(root.activeSelf, Is.False, "生成的遮罩默认收起");
             Image overlay = root.GetComponent<Image>();
             Assert.That(overlay, Is.Not.Null);
-            Assert.That(overlay.color.a, Is.EqualTo(0.5f).Within(1e-3f), "策划案要求黑底 50%");
+            Assert.That(overlay.color.a, Is.EqualTo(0.5f).Within(1e-3f));
             Assert.That(overlay.raycastTarget, Is.True, "遮罩必须挡住后面的点击");
+
+            RectTransform optionContainer = TestReflect.Get<RectTransform>(nodeUI, "optionContainer");
+            Assert.That(optionContainer, Is.Not.Null);
+
+            GridLayoutGroup grid = optionContainer.GetComponent<GridLayoutGroup>();
+            Assert.That(grid, Is.Not.Null, "选项按分栏排布");
+            Assert.That(grid.constraint, Is.EqualTo(GridLayoutGroup.Constraint.FixedColumnCount));
+            Assert.That(grid.constraintCount, Is.EqualTo(2), "默认 2 列；可在 Inspector 改列数");
+
+            BuildingUpgradeOptionUI template = TestReflect.Get<BuildingUpgradeOptionUI>(
+                nodeUI, "optionTemplate");
+            Assert.That(template, Is.Not.Null);
+            Assert.That(template.gameObject.activeSelf, Is.False, "模板本身不能显示");
+            Assert.That(template.GetComponent<Button>(), Is.Not.Null);
+            Assert.That(template.GetComponentsInChildren<Text>(true).Length, Is.EqualTo(2),
+                "模板应有名称与描述两个文本");
+
+            // 场景里被误开也要在运行时强制隐藏，否则占位文字会被当成一张真实选项
+            template.gameObject.SetActive(true);
+            TestReflect.Invoke(nodeUI, "HideOptionTemplate");
+            Assert.That(template.gameObject.activeSelf, Is.False, "运行时必须强制隐藏选项模板");
+
+            GameObject confirmPanel = TestReflect.Get<GameObject>(nodeUI, "confirmPanel");
+            Assert.That(confirmPanel, Is.Not.Null);
+            Assert.That(confirmPanel.activeSelf, Is.False);
+            Assert.That(TestReflect.Get<BuildingUpgrade>(nodeUI, "upgrade"), Is.SameAs(upgrade));
         }
 
         // ---------- 实际占位资产 ----------

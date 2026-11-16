@@ -118,19 +118,22 @@ namespace Yujian.UI
         }
 
         /// <summary>
-        /// 强化节点窗口默认在运行时自建（占位），不需要跑向导改场景。
-        /// 若以后要用场景里手工排版的窗口，把引用挂到 nodeUI 字段即可。
+        /// 强化节点窗口是场景里可自由编辑的 UI，不在运行时生成。
+        /// 优先用 Inspector 里接好的引用；没接就从场景里找。
+        /// 找不到时明确提示去点菜单，不静默失败。
         /// </summary>
         private void EnsureNodeUI()
         {
             if (nodeUI == null)
             {
-                nodeUI = GetComponent<BuildingUpgradeNodeUI>();
+                nodeUI = FindFirstObjectByType<BuildingUpgradeNodeUI>(FindObjectsInactive.Include);
             }
 
             if (nodeUI == null)
             {
-                nodeUI = gameObject.AddComponent<BuildingUpgradeNodeUI>();
+                Debug.LogWarning("[BuildingUpgradeUI] 场景里没有建筑强化节点界面。" +
+                                 "请运行菜单「屿见/建筑/配置建筑强化节点界面」生成可自由编辑的 UI。", this);
+                return;
             }
 
             nodeUI.Configure(upgrade);
