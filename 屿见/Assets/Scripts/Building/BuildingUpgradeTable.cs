@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Yujian.Building
@@ -59,8 +60,16 @@ namespace Yujian.Building
         [Tooltip("升到大间隔那一级时，费用额外乘的倍数（优先于小间隔倍数）")]
         [SerializeField, Min(1f)] private float majorCostMultiplier = 3f;
 
+        [Header("强化节点（策划案 3.4）")]
+        [Tooltip("这张升级表使用的强化节点组。留空表示升级时不会弹出强化选择。" +
+                 "节点触发等级完全由节点表配置，代码不写死")]
+        [SerializeField] private BuildingEnhancementNodeTable enhancementNodeTable;
+
         /// <summary>配置表里的升级表名称。</summary>
         public string TableId => string.IsNullOrEmpty(tableId) ? name : tableId;
+
+        /// <summary>强化节点组，可能为 null（不弹出强化选择）。</summary>
+        public BuildingEnhancementNodeTable EnhancementNodeTable => enhancementNodeTable;
 
         /// <summary>等级上限，至少 1。</summary>
         public int MaxLevel => Mathf.Max(1, maxLevel);
@@ -121,9 +130,11 @@ namespace Yujian.Building
 
         /// <summary>
         /// 「Max」模式一次要升到哪一级：**下一个间隔**（interval 的整数倍，严格大于当前等级），
-        /// 不超过等级上限。例如 7 级 → 10 级，10 级 → 20 级，满级时返回上限。
+        /// 不超过等级上限，也不会跨过下一个强化节点。例如 7 级 → 10 级，10 级 → 20 级，
+        /// 若 25 级有强化节点，则 20 级 → 25 级。满级时返回上限。
         ///
         /// 用户 2026-10-29 拍板：按策划案字面「升级到等级间隔处」，不是一次点满。
+        /// 2026-11-16 起再叠加「节点前必须停下」，节点选择是强制的。
         /// </summary>
         public int GetMaxModeTargetLevel(int currentLevel)
         {
@@ -136,6 +147,18 @@ namespace Yujian.Building
 
             int step = Interval;
             int boundary = (clamped / step + 1) * step;
+
+            // 不能一次跨过强化节点：节点选择是强制的，Max 模式必须停在节点等级
+            if (enhancementNodeTable != null)
+            {
+                int nextNodeLevel = enhancementNodeTable.GetNextTriggerLevel(clamped);
+
+                if (nextNodeLevel > 0)
+                {
+                    boundary = Mathf.Min(boundary, nextNodeLevel);
+                }
+            }
+
             return Mathf.Min(boundary, MaxLevel);
         }
 
@@ -195,6 +218,24 @@ namespace Yujian.Building
             {
                 Debug.LogWarning($"[BuildingUpgradeTable]「{name}」的大间隔 {majorInterval} 小于小间隔 {interval}，" +
                                  "50 级的大提升会比 10 级先到，配置可能写反了。", this);
+            }
+
+            if (enhancementNodeTable == null)
+            {
+                return;
+            }
+
+            IReadOnlyList<BuildingEnhancementNode> nodes = enhancementNodeTable.Nodes;
+
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                BuildingEnhancementNode node = nodes[i];
+
+                if (node != null && node.TriggerLevel > maxLevel)
+                {
+                    Debug.LogWarning($"[BuildingUpgradeTable]「{name}」引用的节点「{node.NodeId}」" +
+                                     $"触发等级 {node.TriggerLevel} 超过等级上限 {maxLevel}，永远不会触发。", this);
+                }
             }
         }
     }

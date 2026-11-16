@@ -463,10 +463,11 @@ namespace Yujian.Building
         /// <param name="rect">存档里的占地格子矩形。</param>
         /// <param name="layerMaterials">自下而上的楼层材料。</param>
         /// <param name="level">存档里的建筑等级，旧存档传 0 或 1 都按 1 级处理。</param>
+        /// <param name="enhancementOptionIds">存档里的强化选项 ID，旧存档传 null。</param>
         /// <param name="error">失败原因，供存档参与者写日志。</param>
         public bool RestoreBuilding(
             BuildingData data, RectInt rect, IReadOnlyList<MaterialData> layerMaterials,
-            int level, out string error)
+            int level, out string error, IReadOnlyList<string> enhancementOptionIds = null)
         {
             error = null;
 
@@ -528,7 +529,7 @@ namespace Yujian.Building
 
             placedBuildings.Add(instance);
             ApplyLayerMaterials(instance, layerMaterials);
-            AttachPlacedBuildingInfo(instance, data, rect, layerMaterials, level);
+            AttachPlacedBuildingInfo(instance, data, rect, layerMaterials, level, enhancementOptionIds);
 
             if (instance.GetComponentInChildren<Collider>() == null)
             {
@@ -589,10 +590,11 @@ namespace Yujian.Building
             return removed;
         }
 
-        /// <summary>把「属于哪座建筑、占哪几格、每层什么材料、几级」写到实例上，供存档与升级读取。</summary>
+        /// <summary>把「属于哪座建筑、占哪几格、每层什么材料、几级、选过哪些强化」写到实例上。</summary>
         private static void AttachPlacedBuildingInfo(
             GameObject instance, BuildingData data, RectInt rect,
-            IReadOnlyList<MaterialData> layerMaterials, int level)
+            IReadOnlyList<MaterialData> layerMaterials, int level,
+            IReadOnlyList<string> enhancementOptionIds = null)
         {
             PlacedBuildingInfo info = instance.GetComponent<PlacedBuildingInfo>();
 
@@ -601,7 +603,7 @@ namespace Yujian.Building
                 info = instance.AddComponent<PlacedBuildingInfo>();
             }
 
-            info.Initialize(data, rect, layerMaterials, level);
+            info.Initialize(data, rect, layerMaterials, level, enhancementOptionIds);
         }
 
         /// <summary>

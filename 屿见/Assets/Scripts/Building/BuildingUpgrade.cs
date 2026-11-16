@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Yujian.Core.Events;
 using Yujian.Player;
@@ -25,9 +26,11 @@ namespace Yujian.Building
     ///
     /// 不做的事：不处理输入（点击谁的判定在 <see cref="BuildingPointerInteraction"/>）、
     /// 不投影 UI（<see cref="Yujian.UI.BuildingUpgradeUI"/>）、不建建筑、不碰存档
-    /// （等级由 PlacedBuildingInfo 带进 BuildingSaveParticipant）。
+    /// （等级与强化选择由 PlacedBuildingInfo 带进 BuildingSaveParticipant）。
     ///
-    /// 每座建筑的等级互相独立，存在实例的 <see cref="PlacedBuildingInfo.Level"/> 上。
+    /// 每座建筑的等级互相独立，存在实例的 <see cref="PlacedBuildingInfo.Level"/> 上；
+    /// 强化节点到达后升级会被锁住，必须先 <see cref="TrySelectEnhancement"/>。
+    ///
     /// </summary>
     public class BuildingUpgrade : MonoBehaviour
     {
@@ -71,6 +74,26 @@ namespace Yujian.Building
         /// <summary>是否选中了一座可以升级的建筑。</summary>
         public bool HasSelection => SelectedInfo != null && SelectedTable != null;
 
+        /// <summary>
+        /// 当前建筑待选择的强化节点。没有待选节点时返回 null。
+        /// 有值时升级会被锁住，必须先调用 <see cref="TrySelectEnhancement"/>。
+        /// </summary>
+        public BuildingEnhancementNode PendingNode => SelectedInfo?.PendingEnhancementNode;
+
+        /// <summary>当前是否有必须完成的强化选择。</summary>
+        public bool HasPendingNode => PendingNode != null;
+
+        /// <summary>待选节点对应的强化节点组；没有待选节点时为 null。</summary>
+        public BuildingEnhancementNodeTable PendingNodeTable => SelectedTable?.EnhancementNodeTable;
+
+        /// <summary>待选节点的选项列表（已解析成对象）。只在 UI 重建时调用。</summary>
+        public List<BuildingEnhancementOption> GetPendingNodeOptions()
+        {
+            BuildingEnhancementNodeTable table = PendingNodeTable;
+            BuildingEnhancementNode node = PendingNode;
+            return table != null ? table.ResolveOptions(node) : new List<BuildingEnhancementOption>();
+        }
+
         /// <summary>下一级升级费用。满级或没选中时返回 0。</summary>
         public int NextCost
         {
@@ -105,6 +128,17 @@ namespace Yujian.Building
         {
             if (building == selectedBuilding)
             {
+                return false;
+            }
+
+            // 强化节点是强制选择：弹窗没选完之前不允许切到别的建筑或点空地退出
+            if (HasPendingNode)
+            {
+                if (logUpgradeFlow)
+                {
+                    Debug.Log("[BuildingUpgrade] 当前建筑还有待选择的强化节点，先完成选择再切换。");
+                }
+
                 return false;
             }
 
@@ -154,7 +188,7 @@ namespace Yujian.Building
         {
             BuildingUpgradeTable table = SelectedTable;
 
-            if (table == null || currency == null || IsMaxed)
+            if (table == null || currency == null || IsMaxed || HasPendingNode)
             {
                 return 0;
             }
@@ -163,7 +197,10 @@ namespace Yujian.Building
             return table.GetAffordableLevelCount(CurrentLevel, target, currency.CurrentMoney);
         }
 
-        /// <summary>当前模式下的目标等级：x1 = 下一级，Max = 下一个 10 级边界（不超过上限）。</summary>
+        /// <summary>
+        /// 当前模式下的目标等级：x1 = 下一级，Max = 下一个 10 级边界（不超过上限）。
+        /// 有待选节点时目标就是当前等级（按钮只用于重新打开选择窗口）。
+        /// </summary>
         public int GetTargetLevel(BuildingUpgradeMode mode)
         {
             BuildingUpgradeTable table = SelectedTable;
@@ -173,6 +210,11 @@ namespace Yujian.Building
                 return 0;
             }
 
+            if (HasPendingNode)
+            {
+                return CurrentLevel;
+            }
+
             return mode == BuildingUpgradeMode.MaxToInterval
                 ? table.GetMaxModeTargetLevel(CurrentLevel)
                 : Mathf.Min(CurrentLevel + 1, table.MaxLevel);
@@ -180,6 +222,7 @@ namespace Yujian.Building
 
         /// <summary>
         /// 按当前模式升级一次。x1 升 1 级；Max 尽量升到下一个间隔，钱不够就停在买得起的那级。
+        /// 升到强化节点等级时**立刻停下**，等玩家选完强化才能继续。
         /// </summary>
         /// <param name="mode">升级方式。</param>
         /// <param name="message">给玩家看的提示。</param>
@@ -192,6 +235,12 @@ namespace Yujian.Building
             if (info == null || table == null)
             {
                 message = "请先点击一座建筑";
+                return false;
+            }
+
+            if (HasPendingNode)
+            {
+                message = "请先选择强化节点";
                 return false;
             }
 
@@ -210,6 +259,7 @@ namespace Yujian.Building
             int previousLevel = info.Level;
             int target = GetTargetLevel(mode);
             int upgraded = 0;
+            BuildingEnhancementNode reachedNode = null;
 
             while (info.Level < target)
             {
@@ -227,6 +277,14 @@ namespace Yujian.Building
 
                 info.SetLevel(info.Level + 1);
                 upgraded++;
+
+                // 这一级正好是节点：立刻停，UI 弹出选择窗口
+                reachedNode = info.PendingEnhancementNode;
+
+                if (reachedNode != null)
+                {
+                    break;
+                }
             }
 
             if (upgraded <= 0)
@@ -237,15 +295,65 @@ namespace Yujian.Building
                 return false;
             }
 
-            message = $"升级到 {info.Level} 级（+{upgraded}）";
+            message = reachedNode != null
+                ? $"升级到 {info.Level} 级，请选择强化节点「{reachedNode.NodeId}」"
+                : $"升级到 {info.Level} 级（+{upgraded}）";
 
             if (logUpgradeFlow)
             {
                 Debug.Log($"[BuildingUpgrade]「{info.Data.BuildingName}」{previousLevel} → {info.Level} 级" +
-                          $"（{mode}，本次升 {upgraded} 级），剩余垃圾 {currency.CurrentMoney}。");
+                          $"（{mode}，本次升 {upgraded} 级），剩余垃圾 {currency.CurrentMoney}。" +
+                          (reachedNode != null ? $" 触发节点「{reachedNode.NodeId}」，等待玩家选择。" : string.Empty));
             }
 
             EventBus.Publish(new BuildingUpgraded(info.Data, previousLevel, info.Level));
+            OnUpgradeStateChanged?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// 为当前待选节点选择一项强化。
+        /// 成功后会清除待选状态、广播 <see cref="BuildingEnhancementSelected"/>，
+        /// 并触发升级状态刷新（UI 据此关闭弹窗 / 处理下一个节点）。
+        /// </summary>
+        /// <param name="optionId">选项 ID。</param>
+        /// <param name="message">给玩家看的提示。</param>
+        /// <returns>是否选择成功。</returns>
+        public bool TrySelectEnhancement(string optionId, out string message)
+        {
+            PlacedBuildingInfo info = SelectedInfo;
+            BuildingEnhancementNodeTable table = PendingNodeTable;
+            BuildingEnhancementNode node = PendingNode;
+
+            if (info == null || table == null || node == null)
+            {
+                message = "当前没有待选择的强化节点";
+                return false;
+            }
+
+            if (!table.TryGetOption(optionId, out BuildingEnhancementOption option) ||
+                !option.IsValid || !node.ContainsOption(optionId))
+            {
+                message = "该强化选项不属于当前节点";
+                return false;
+            }
+
+            if (!option.Stackable && info.HasEnhancementOption(optionId))
+            {
+                message = $"「{option.DisplayName}」不可叠加，已经选过了";
+                return false;
+            }
+
+            info.AddEnhancementOption(optionId);
+            message = $"已选择「{option.DisplayName}」：{option.GetEffectSummary()}";
+
+            if (logUpgradeFlow)
+            {
+                Debug.Log($"[BuildingUpgrade]「{info.Data.BuildingName}」在节点「{node.NodeId}」" +
+                          $"选择了强化「{option.DisplayName}」（{option.OptionId}）。");
+            }
+
+            EventBus.Publish(new BuildingEnhancementSelected(info.Data, node.NodeId, optionId));
             OnUpgradeStateChanged?.Invoke();
             return true;
         }

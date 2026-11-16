@@ -21,6 +21,10 @@ namespace Yujian.Building.Effects
     ///   建成时一定凑齐了全部需求，所以两者等价；反推还能让读档直接得到正确结果，
     ///   不必把倍率写进存档，也不会出现两份真相。
     ///
+    /// 2026-11-16 起也负责汇总**全局强化**（策划案 3.4 的「全局」选项）：
+    ///   玩家伤害 / 全建筑伤害的全局加成与材料加成写进同一组 PlayerStats 倍率，
+    ///   避免出现第二个汇总入口。个体强化不进这里，由建筑效果自己读施工实例。
+    ///
     /// 不修改基础倍率、不碰金币、不处理输入。
     /// </summary>
     [DisallowMultipleComponent]
@@ -101,8 +105,12 @@ namespace Yujian.Building.Effects
                     continue;
                 }
 
-                playerTotal += CalculateBonus(info.Data);
-                buildingTotal += CalculateBuildingBonus(info.Data);
+                playerTotal += CalculateBonus(info.Data) +
+                    info.GetEnhancementBonus(
+                        BuildingEnhancementScope.Global, BuildingEnhancementStat.PlayerDamage);
+                buildingTotal += CalculateBuildingBonus(info.Data) +
+                    info.GetEnhancementBonus(
+                        BuildingEnhancementScope.Global, BuildingEnhancementStat.BuildingDamage);
             }
 
             if (Mathf.Approximately(playerTotal, CurrentBonus) &&
@@ -213,6 +221,7 @@ namespace Yujian.Building.Effects
 
             EventBus.Subscribe<BuildingPlaced>(HandleBuildingPlaced);
             EventBus.Subscribe<BuildingRemoved>(HandleBuildingRemoved);
+            EventBus.Subscribe<BuildingEnhancementSelected>(HandleBuildingEnhancementSelected);
             EventBus.Subscribe<LoadCompleted>(HandleLoadCompleted);
             subscribed = true;
         }
@@ -226,6 +235,7 @@ namespace Yujian.Building.Effects
 
             EventBus.Unsubscribe<BuildingPlaced>(HandleBuildingPlaced);
             EventBus.Unsubscribe<BuildingRemoved>(HandleBuildingRemoved);
+            EventBus.Unsubscribe<BuildingEnhancementSelected>(HandleBuildingEnhancementSelected);
             EventBus.Unsubscribe<LoadCompleted>(HandleLoadCompleted);
             subscribed = false;
         }
@@ -237,6 +247,12 @@ namespace Yujian.Building.Effects
 
         private void HandleBuildingRemoved(BuildingRemoved _)
         {
+            Recalculate();
+        }
+
+        private void HandleBuildingEnhancementSelected(BuildingEnhancementSelected _)
+        {
+            // 全局强化会改玩家 / 全建筑倍率，必须立刻重算；个体强化不经过这里
             Recalculate();
         }
 

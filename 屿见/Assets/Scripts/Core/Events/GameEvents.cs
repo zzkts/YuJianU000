@@ -157,6 +157,21 @@ namespace Yujian.Core.Events
         }
     }
 
+    /// <summary>玩家为一座建筑选择了强化选项（策划案 3.4）。</summary>
+    public readonly struct BuildingEnhancementSelected
+    {
+        public readonly BuildingData Data;
+        public readonly string NodeId;
+        public readonly string OptionId;
+
+        public BuildingEnhancementSelected(BuildingData data, string nodeId, string optionId)
+        {
+            Data = data;
+            NodeId = nodeId;
+            OptionId = optionId;
+        }
+    }
+
     /// <summary>一块材料放入蓝图。</summary>
     public readonly struct MaterialPlaced
     {

@@ -121,9 +121,19 @@ namespace Yujian.Save
             {
                 BuildingSave building = buildings[i];
 
-                if (building != null && building.layerMaterialIds == null)
+                if (building == null)
+                {
+                    continue;
+                }
+
+                if (building.layerMaterialIds == null)
                 {
                     building.layerMaterialIds = new List<string>();
+                }
+
+                if (building.enhancementOptionIds == null)
+                {
+                    building.enhancementOptionIds = new List<string>();
                 }
             }
 
@@ -155,6 +165,12 @@ namespace Yujian.Save
         /// 建筑等级（策划案 3.4）。旧存档没有该字段时为 0，读档按 1 级处理。
         /// </summary>
         public int level;
+
+        /// <summary>
+        /// 该建筑选过的强化选项 ID（策划案 3.4 的升级节点）。
+        /// 旧存档没有该字段时为空列表，升级到节点等级后会重新要求选择。
+        /// </summary>
+        public List<string> enhancementOptionIds = new List<string>();
     }
 
     /// <summary>矿石生成进度：当前档位 + 每个档位已经抽过的条目。</summary>

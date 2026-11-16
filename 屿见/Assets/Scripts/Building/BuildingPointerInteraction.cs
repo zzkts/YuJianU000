@@ -85,6 +85,13 @@ namespace Yujian.Building
                 return;
             }
 
+            // 强化节点是强制选择：弹窗期间不接受任何建筑点选 / 长按迁移
+            if (upgrade != null && upgrade.HasPendingNode)
+            {
+                ResetPress();
+                return;
+            }
+
             // 蓝图在场时归 BuildingPlacement，这里完全让开
             if (buildingManager.IsPlacing || !IsInBuildingArea())
             {

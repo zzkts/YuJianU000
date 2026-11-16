@@ -20,6 +20,9 @@ namespace Yujian.Building
         private RectInt footprintRect;
         private readonly List<MaterialData> layerMaterials = new List<MaterialData>();
 
+        /// <summary>玩家在这座建筑上选过的强化选项 ID。存档按 ID 恢复。</summary>
+        private readonly List<string> enhancementOptionIds = new List<string>();
+
         [Tooltip("建筑等级。建成与读档恢复时写入，升级时由 BuildingUpgrade 更新。" +
                  "旧存档没有该字段时按 1 级处理")]
         [SerializeField, Min(1)] private int level = 1;
@@ -36,13 +39,103 @@ namespace Yujian.Building
         /// <summary>建筑等级，恒 >= 1。</summary>
         public int Level => Mathf.Max(1, level);
 
+        /// <summary>这座建筑选过的强化选项 ID，只读。</summary>
+        public IReadOnlyList<string> EnhancementOptionIds => enhancementOptionIds;
+
         /// <summary>
-        /// 由 BuildingManager 在建造成 / 读档恢复时调用。会复制材料列表，
+        /// 当前等级下还没有选择的强化节点。没有升级表 / 节点表或已全部选完时返回 null。
+        /// 读档后按“等级 + 已选 ID”现算，不单独保存待选状态。
+        /// </summary>
+        public BuildingEnhancementNode PendingEnhancementNode
+        {
+            get
+            {
+                BuildingEnhancementNodeTable table = NodeTable;
+                return table != null ? table.GetLowestUnresolvedNode(Level, enhancementOptionIds) : null;
+            }
+        }
+
+        /// <summary>是否已经选过某个强化选项。</summary>
+        public bool HasEnhancementOption(string optionId)
+        {
+            if (string.IsNullOrEmpty(optionId))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < enhancementOptionIds.Count; i++)
+            {
+                if (enhancementOptionIds[i] == optionId)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>某个强化节点是否已经选择过。</summary>
+        public bool HasEnhancementForNode(BuildingEnhancementNode node)
+        {
+            BuildingEnhancementNodeTable table = NodeTable;
+            return table != null && table.IsNodeResolved(node, enhancementOptionIds);
+        }
+
+        /// <summary>
+        /// 把当前等级下所有强化加成按「作用范围 + 数值类型」汇总。
+        /// 返回的是可直接参与乘法的加成值，例如 0.15 表示 +15%。
+        /// 未知 ID（配置改过 / 存档脏数据）会被静默跳过。
+        /// </summary>
+        public float GetEnhancementBonus(BuildingEnhancementScope scope, BuildingEnhancementStat stat)
+        {
+            BuildingEnhancementNodeTable table = NodeTable;
+
+            if (table == null || enhancementOptionIds.Count == 0)
+            {
+                return 0f;
+            }
+
+            HashSet<string> countedNonStackable = null;
+            float total = 0f;
+
+            for (int i = 0; i < enhancementOptionIds.Count; i++)
+            {
+                if (!table.TryGetOption(enhancementOptionIds[i], out BuildingEnhancementOption option) ||
+                    !option.IsValid)
+                {
+                    continue;
+                }
+
+                if (option.Scope != scope || option.Stat != stat)
+                {
+                    continue;
+                }
+
+                if (!option.Stackable)
+                {
+                    countedNonStackable = countedNonStackable ?? new HashSet<string>();
+
+                    if (!countedNonStackable.Add(option.OptionId))
+                    {
+                        continue;
+                    }
+                }
+
+                total += option.Magnitude;
+            }
+
+            return total;
+        }
+
+        /// <summary>
+        /// 由 BuildingManager 在建造成 / 读档恢复时调用。会复制材料列表与强化选择，
         /// 调用方之后修改自己的列表不会影响这里。
         /// </summary>
         /// <param name="initialLevel">初始等级。建成默认 1，读档传入存档等级。</param>
+        /// <param name="enhancements">存档里的强化选项 ID。旧存档传 null。</param>
         public void Initialize(
-            BuildingData source, RectInt rect, IReadOnlyList<MaterialData> materials, int initialLevel = 1)
+            BuildingData source, RectInt rect, IReadOnlyList<MaterialData> materials, int initialLevel = 1,
+            IReadOnlyList<string> enhancements = null)
         {
             data = source;
             footprintRect = rect;
@@ -50,15 +143,15 @@ namespace Yujian.Building
 
             layerMaterials.Clear();
 
-            if (materials == null)
+            if (materials != null)
             {
-                return;
+                for (int i = 0; i < materials.Count; i++)
+                {
+                    layerMaterials.Add(materials[i]);
+                }
             }
 
-            for (int i = 0; i < materials.Count; i++)
-            {
-                layerMaterials.Add(materials[i]);
-            }
+            SetEnhancementOptionIds(enhancements);
         }
 
         /// <summary>写入建筑等级。低于 1 的一律按 1 处理。</summary>
@@ -67,10 +160,46 @@ namespace Yujian.Building
             level = Mathf.Max(1, value);
         }
 
+        /// <summary>记录一个强化选择。重复 ID 不会重复写入。</summary>
+        public void AddEnhancementOption(string optionId)
+        {
+            if (string.IsNullOrEmpty(optionId) || HasEnhancementOption(optionId))
+            {
+                return;
+            }
+
+            enhancementOptionIds.Add(optionId);
+        }
+
+        /// <summary>整体写入强化选择。未知 ID 会保留（表以后可能补回来），计算时跳过。</summary>
+        public void SetEnhancementOptionIds(IReadOnlyList<string> ids)
+        {
+            enhancementOptionIds.Clear();
+
+            if (ids == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < ids.Count; i++)
+            {
+                string optionId = ids[i];
+
+                if (!string.IsNullOrEmpty(optionId))
+                {
+                    enhancementOptionIds.Add(optionId);
+                }
+            }
+        }
+
         /// <summary>迁移后更新占地矩形。占用登记本身由 BuildingManager 负责。</summary>
         public void SetFootprintRect(RectInt rect)
         {
             footprintRect = rect;
         }
+
+        /// <summary>本建筑升级表上的强化节点组，可能为 null。</summary>
+        private BuildingEnhancementNodeTable NodeTable =>
+            data != null && data.UpgradeTable != null ? data.UpgradeTable.EnhancementNodeTable : null;
     }
 }

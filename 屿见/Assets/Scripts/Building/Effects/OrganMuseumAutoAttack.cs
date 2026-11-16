@@ -83,6 +83,23 @@ namespace Yujian.Building.Effects
         /// <summary>实际出射点。</summary>
         private Transform Origin => attackOrigin != null ? attackOrigin : transform;
 
+        /// <summary>
+        /// 当前实际攻击间隔 = 基础间隔 ÷（1 + 本建筑攻速强化）。
+        /// 每帧现算，选完强化后下一帧立即生效。
+        /// </summary>
+        private float EffectiveAttackInterval
+        {
+            get
+            {
+                float speedBonus = ownerInfo != null
+                    ? ownerInfo.GetEnhancementBonus(
+                        BuildingEnhancementScope.Individual, BuildingEnhancementStat.AttackSpeed)
+                    : 0f;
+
+                return attackInterval / Mathf.Max(0.01f, 1f + speedBonus);
+            }
+        }
+
         protected override void OnInitialized()
         {
             if (attackInterval <= 0f)
@@ -103,12 +120,17 @@ namespace Yujian.Building.Effects
 
             canAttack = true;
 
+            if (ownerInfo == null)
+            {
+                ownerInfo = GetComponentInParent<PlacedBuildingInfo>();
+            }
+
             // 建成立刻打第一发：策划案"每 1 秒攻击一次"，同时也让验收一眼就能看到效果
-            timer = attackInterval;
+            timer = EffectiveAttackInterval;
 
             if (logAttackFlow)
             {
-                Debug.Log($"[OrganMuseumAutoAttack] {name} 已启动：每 {attackInterval} 秒自动攻击一次，" +
+                Debug.Log($"[OrganMuseumAutoAttack] {name} 已启动：每 {EffectiveAttackInterval:0.##} 秒自动攻击一次，" +
                           "目标是场景里的矿石（不受距离限制），伤害取玩家当前单次攻击伤害。", this);
             }
         }
@@ -151,7 +173,7 @@ namespace Yujian.Building.Effects
 
             timer += Time.deltaTime;
 
-            if (timer < attackInterval)
+            if (timer < EffectiveAttackInterval)
             {
                 return;
             }
@@ -206,7 +228,8 @@ namespace Yujian.Building.Effects
             // 2026-11-05 起改用建筑伤害公式：玩家最终伤害 × 建筑伤害倍率（木板提供 +0.1）
             float baseDamage = Context.DamageSystem.CalculateBuildingDamage();
             float upgradeMultiplier = GetUpgradeMultiplier();
-            float damage = baseDamage * upgradeMultiplier;
+            float enhancementMultiplier = GetIndividualDamageMultiplier();
+            float damage = baseDamage * upgradeMultiplier * enhancementMultiplier;
 
             if (damage <= 0f)
             {
@@ -231,7 +254,8 @@ namespace Yujian.Building.Effects
             {
                 Debug.Log($"[OrganMuseumAutoAttack] {name} 自动攻击 {targetName}，" +
                           $"造成 {damage} 点伤害{(destroyed ? "，已击碎" : string.Empty)}。" +
-                          $"（建筑伤害 {baseDamage:0.##} × 建筑 {CurrentLevel} 级倍率 {upgradeMultiplier:0.##}）", this);
+                          $"（建筑伤害 {baseDamage:0.##} × 建筑 {CurrentLevel} 级倍率 {upgradeMultiplier:0.##}" +
+                          $" × 强化 {enhancementMultiplier:0.##}）", this);
             }
 
             if (!destroyed || !grantRewardOnKill || reward <= 0)
@@ -280,6 +304,27 @@ namespace Yujian.Building.Effects
 
             BuildingUpgradeTable table = ownerInfo.Data.UpgradeTable;
             return table != null ? table.GetEffectMultiplier(ownerInfo.Level) : 1f;
+        }
+
+        /// <summary>
+        /// 本建筑选过的「个体·建筑伤害」强化倍率（1 + 加成）。
+        /// 每次攻击现读，选完强化后下一发立即生效。
+        /// </summary>
+        private float GetIndividualDamageMultiplier()
+        {
+            if (ownerInfo == null)
+            {
+                ownerInfo = GetComponentInParent<PlacedBuildingInfo>();
+            }
+
+            if (ownerInfo == null)
+            {
+                return 1f;
+            }
+
+            float bonus = ownerInfo.GetEnhancementBonus(
+                BuildingEnhancementScope.Individual, BuildingEnhancementStat.BuildingDamage);
+            return Mathf.Max(0f, 1f + bonus);
         }
 
         /// <summary>

@@ -55,6 +55,13 @@ namespace Yujian.UI
         [Tooltip("左下角的 x1 / Max 切换块")]
         [SerializeField] private BuildingUpgradeModeToggle modeToggle;
 
+        [Tooltip("强化节点选择窗口。留空会在运行时自动挂一个（占位 UI，不需要改场景）")]
+        [SerializeField] private BuildingUpgradeNodeUI nodeUI;
+
+        [Header("强化节点配色")]
+        [Tooltip("有待选强化节点时，升级按钮变绿")]
+        [SerializeField] private Color pendingNodeColor = new Color(0.35f, 0.9f, 0.45f, 1f);
+
         [Header("布局")]
         [Tooltip("按钮组中心相对建筑顶部的屏幕偏移（像素）")]
         [SerializeField] private Vector2 screenOffset = new Vector2(0f, 90f);
@@ -66,6 +73,9 @@ namespace Yujian.UI
         [SerializeField] private bool logActions = true;
 
         private bool wired;
+        private ColorBlock defaultButtonColors;
+        private bool buttonColorsCaptured;
+        private bool pendingColorsApplied;
 
         private void Awake()
         {
@@ -103,6 +113,27 @@ namespace Yujian.UI
                                "隐藏它会把组件一起停掉。请指向其 Content 子物体。", this);
                 actionRoot = null;
             }
+
+            EnsureNodeUI();
+        }
+
+        /// <summary>
+        /// 强化节点窗口默认在运行时自建（占位），不需要跑向导改场景。
+        /// 若以后要用场景里手工排版的窗口，把引用挂到 nodeUI 字段即可。
+        /// </summary>
+        private void EnsureNodeUI()
+        {
+            if (nodeUI == null)
+            {
+                nodeUI = GetComponent<BuildingUpgradeNodeUI>();
+            }
+
+            if (nodeUI == null)
+            {
+                nodeUI = gameObject.AddComponent<BuildingUpgradeNodeUI>();
+            }
+
+            nodeUI.Configure(upgrade);
         }
 
         private void OnEnable()
@@ -160,12 +191,17 @@ namespace Yujian.UI
             int affordable = upgrade.GetAffordableLevelCount(mode);
             bool maxed = upgrade.IsMaxed;
             bool hasTable = upgrade.SelectedTable != null;
+            bool pendingNode = upgrade.HasPendingNode;
 
             if (upgradeButtonText != null)
             {
                 if (!hasTable)
                 {
                     upgradeButtonText.text = "未配置升级表";
+                }
+                else if (pendingNode)
+                {
+                    upgradeButtonText.text = "选择强化节点";
                 }
                 else if (maxed)
                 {
@@ -179,8 +215,11 @@ namespace Yujian.UI
 
             if (upgradeButton != null)
             {
-                upgradeButton.interactable = hasTable && !maxed && affordable > 0;
+                upgradeButton.interactable = hasTable &&
+                    (pendingNode || (!maxed && affordable > 0));
             }
+
+            ApplyPendingNodeButtonColor(pendingNode);
 
             if (levelText != null)
             {
@@ -193,6 +232,18 @@ namespace Yujian.UI
             }
 
             SetVisible(true);
+
+            if (nodeUI != null)
+            {
+                if (pendingNode)
+                {
+                    nodeUI.ShowPendingNode();
+                }
+                else
+                {
+                    nodeUI.HideIfNoPending();
+                }
+            }
         }
 
         private bool ShouldShow()
@@ -223,6 +274,11 @@ namespace Yujian.UI
             if (upgrade.SelectedTable == null)
             {
                 return $"Lv.{level}";
+            }
+
+            if (upgrade.HasPendingNode)
+            {
+                return $"Lv.{level} / {max}｜请选择强化节点";
             }
 
             if (upgrade.IsMaxed)
@@ -269,6 +325,17 @@ namespace Yujian.UI
                 return;
             }
 
+            // 待选节点时，这个按钮只负责把选择窗口重新拉到最前
+            if (upgrade.HasPendingNode)
+            {
+                if (nodeUI != null)
+                {
+                    nodeUI.ShowPendingNode();
+                }
+
+                return;
+            }
+
             BuildingUpgradeMode mode = modeToggle != null ? modeToggle.Mode : BuildingUpgradeMode.OneLevel;
             bool success = upgrade.TryUpgrade(mode, out string message);
 
@@ -279,6 +346,44 @@ namespace Yujian.UI
 
             EventBus.Publish(new MessageShown(message, success));
             Refresh();
+        }
+
+        /// <summary>
+        /// 策划案 3.4：到达升级节点时升级按钮变绿。
+        /// 改 ColorBlock 而不是直接改 Image.color，避免鼠标悬停时被 Selectable 的过渡色盖掉。
+        /// </summary>
+        private void ApplyPendingNodeButtonColor(bool pending)
+        {
+            if (upgradeButton == null)
+            {
+                return;
+            }
+
+            if (!buttonColorsCaptured)
+            {
+                defaultButtonColors = upgradeButton.colors;
+                buttonColorsCaptured = true;
+            }
+
+            if (pending == pendingColorsApplied)
+            {
+                return;
+            }
+
+            pendingColorsApplied = pending;
+
+            if (!pending)
+            {
+                upgradeButton.colors = defaultButtonColors;
+                return;
+            }
+
+            ColorBlock colors = defaultButtonColors;
+            colors.normalColor = pendingNodeColor;
+            colors.highlightedColor = Color.Lerp(pendingNodeColor, Color.white, 0.2f);
+            colors.pressedColor = Color.Lerp(pendingNodeColor, Color.black, 0.2f);
+            colors.selectedColor = pendingNodeColor;
+            upgradeButton.colors = colors;
         }
 
         private void SetVisible(bool visible)
@@ -312,6 +417,12 @@ namespace Yujian.UI
             if (modeToggle != null && modeToggle.gameObject.activeSelf)
             {
                 modeToggle.gameObject.SetActive(false);
+            }
+
+            // 有待选节点时窗口必须留着（强制选择），否则玩家可以靠切区域逃掉
+            if (nodeUI != null)
+            {
+                nodeUI.HideIfNoPending();
             }
         }
     }

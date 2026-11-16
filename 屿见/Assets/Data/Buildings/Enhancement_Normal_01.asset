@@ -1,0 +1,112 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1fccdfe14824760a9577edc0f72f57e, type: 3}
+  m_Name: Enhancement_Normal_01
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Building.BuildingEnhancementNodeTable
+  tableId: Enhancement_Normal_01
+  options:
+  - optionId: Opt_10_Damage
+    displayName: 承重加固
+    description: 建筑主体采用更厚的砖石结构，自动攻击伤害提高。
+    scope: 0
+    stat: 0
+    stackable: 0
+    magnitude: 0.15
+  - optionId: Opt_10_Speed
+    displayName: 快速装填
+    description: 优化攻击机构的运转，缩短两次攻击之间的间隔。
+    scope: 0
+    stat: 1
+    stackable: 0
+    magnitude: 0.1
+  - optionId: Opt_20_GlobalBuilding
+    displayName: 全岛协作
+    description: 岛上的建筑共享施工经验，所有建筑的攻击伤害提高。
+    scope: 1
+    stat: 0
+    stackable: 0
+    magnitude: 0.08
+  - optionId: Opt_20_GlobalPlayer
+    displayName: 观光热潮
+    description: 游客慕名而来，玩家自身的攻击伤害提高。
+    scope: 1
+    stat: 2
+    stackable: 0
+    magnitude: 0.05
+  - optionId: Opt_30_Damage
+    displayName: 精工修缮
+    description: 每块砖都经过重新打磨，本建筑的自动攻击伤害大幅提高。
+    scope: 0
+    stat: 0
+    stackable: 0
+    magnitude: 0.25
+  - optionId: Opt_30_Speed
+    displayName: 齿轮加速
+    description: 更换高效率传动齿轮，本建筑的攻击速度提高。
+    scope: 0
+    stat: 1
+    stackable: 0
+    magnitude: 0.2
+  - optionId: Opt_40_GlobalBuilding
+    displayName: 全岛共鸣
+    description: 建筑之间形成共鸣，所有建筑的攻击伤害明显提高。
+    scope: 1
+    stat: 0
+    stackable: 0
+    magnitude: 0.12
+  - optionId: Opt_40_GlobalPlayer
+    displayName: 声名远扬
+    description: 鼓浪屿的名声传开，玩家自身的攻击伤害提高。
+    scope: 1
+    stat: 2
+    stackable: 0
+    magnitude: 0.08
+  - optionId: Opt_50_Damage
+    displayName: 建筑大师
+    description: 这座建筑成为岛上的标杆，本建筑的自动攻击伤害极大幅提高。
+    scope: 0
+    stat: 0
+    stackable: 0
+    magnitude: 0.4
+  - optionId: Opt_50_GlobalBuilding
+    displayName: 全岛交响
+    description: 全岛建筑合奏共鸣，所有建筑的攻击伤害大幅提高。
+    scope: 1
+    stat: 0
+    stackable: 0
+    magnitude: 0.2
+  nodes:
+  - nodeId: Node_10
+    triggerLevel: 10
+    optionIds:
+    - Opt_10_Damage
+    - Opt_10_Speed
+  - nodeId: Node_20
+    triggerLevel: 20
+    optionIds:
+    - Opt_20_GlobalBuilding
+    - Opt_20_GlobalPlayer
+  - nodeId: Node_30
+    triggerLevel: 30
+    optionIds:
+    - Opt_30_Damage
+    - Opt_30_Speed
+  - nodeId: Node_40
+    triggerLevel: 40
+    optionIds:
+    - Opt_40_GlobalBuilding
+    - Opt_40_GlobalPlayer
+  - nodeId: Node_50
+    triggerLevel: 50
+    optionIds:
+    - Opt_50_Damage
+    - Opt_50_GlobalBuilding

@@ -9,7 +9,8 @@ namespace Yujian.Save
     /// <summary>
     /// 已放置建筑的存档适配器。
     ///
-    /// 每座建筑写：稳定 buildingId、占地格子矩形（x/y/width/height）、自下而上的楼层颜色。
+    /// 每座建筑写：稳定 buildingId、占地格子矩形（x/y/width/height）、自下而上的楼层材料、
+    /// 建筑等级与已选强化选项 ID（策划案 3.4）。
     /// 读档时先清空 BuildingManager 记录的现存建筑，再按存档逐座重建；
     /// 重建使用新的 InstanceID 重新登记占地，最后统一重算玩家等级。
     ///
@@ -108,6 +109,13 @@ namespace Yujian.Save
                     save.layerMaterialIds.Add(materialId ?? string.Empty);
                 }
 
+                IReadOnlyList<string> enhancements = info.EnhancementOptionIds;
+
+                for (int j = 0; j < enhancements.Count; j++)
+                {
+                    save.enhancementOptionIds.Add(enhancements[j]);
+                }
+
                 data.buildings.Add(save);
             }
         }
@@ -166,7 +174,8 @@ namespace Yujian.Save
                 // 旧存档没有 level 字段时为 0，按 1 级恢复
                 int level = entry.level > 0 ? entry.level : 1;
 
-                if (buildingManager.RestoreBuilding(building, rect, materials, level, out string error))
+                if (buildingManager.RestoreBuilding(
+                        building, rect, materials, level, out string error, entry.enhancementOptionIds))
                 {
                     restored++;
                 }
