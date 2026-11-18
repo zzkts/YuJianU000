@@ -16,6 +16,7 @@ namespace Yujian.UI
         private const int SortingOrder = 30010;
         private const float FadeInDuration = 0.12f;
         private const float FadeOutDuration = 0.25f;
+        private static readonly Color DefaultTextColor = new Color(0.96f, 0.96f, 0.96f, 1f);
 
         private static ToastUI instance;
 
@@ -65,6 +66,12 @@ namespace Yujian.UI
         /// <summary>弹一条提示。duration 是保持在全亮状态的时间（秒，不受时间缩放影响）。</summary>
         public static void Show(string message, float duration = 1.2f)
         {
+            Show(message, duration, DefaultTextColor);
+        }
+
+        /// <summary>弹一条带文字颜色的提示，本轮提示结束后颜色恢复默认。</summary>
+        public static void Show(string message, float duration, Color textColor)
+        {
             ToastUI toast = Instance;
 
             if (toast == null)
@@ -72,10 +79,10 @@ namespace Yujian.UI
                 return;
             }
 
-            toast.ShowInternal(message, duration);
+            toast.ShowInternal(message, duration, textColor);
         }
 
-        private void ShowInternal(string message, float duration)
+        private void ShowInternal(string message, float duration, Color textColor)
         {
             if (string.IsNullOrEmpty(message))
             {
@@ -87,13 +94,14 @@ namespace Yujian.UI
                 StopCoroutine(routine);
             }
 
-            routine = StartCoroutine(Play(message, Mathf.Max(0.1f, duration)));
+            routine = StartCoroutine(Play(message, Mathf.Max(0.1f, duration), textColor));
         }
 
-        private IEnumerator Play(string message, float duration)
+        private IEnumerator Play(string message, float duration, Color textColor)
         {
             panel.gameObject.SetActive(true);
             label.text = message;
+            label.color = textColor.a > 0f ? textColor : DefaultTextColor;
             group.alpha = 0f;
 
             float elapsed = 0f;
@@ -214,7 +222,7 @@ namespace Yujian.UI
             text.fontSize = 26;
             text.fontStyle = FontStyle.Bold;
             text.alignment = TextAnchor.MiddleCenter;
-            text.color = new Color(0.96f, 0.96f, 0.96f, 1f);
+            text.color = DefaultTextColor;
             text.raycastTarget = false;
             text.horizontalOverflow = HorizontalWrapMode.Overflow;
             text.verticalOverflow = VerticalWrapMode.Overflow;

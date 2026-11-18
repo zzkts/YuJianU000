@@ -218,6 +218,20 @@ namespace Yujian.UI
                 items.Add(item);
             }
 
+            Canvas.ForceUpdateCanvases();
+
+            if (itemContainer is RectTransform contentRect)
+            {
+                LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
+            }
+
+            ScrollRect scroll = itemContainer != null ? itemContainer.GetComponentInParent<ScrollRect>() : null;
+
+            if (scroll != null)
+            {
+                scroll.verticalNormalizedPosition = 1f;
+            }
+
             if (items.Count > 0)
             {
                 SelectItem(items[0]);

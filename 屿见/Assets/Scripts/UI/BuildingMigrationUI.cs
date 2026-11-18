@@ -38,6 +38,9 @@ namespace Yujian.UI
         [Tooltip("按钮下方的状态文字：可放置 = 绿字，不可放置 = 红字 + 原因")]
         [SerializeField] private Text statusText;
 
+        [Tooltip("拆除入口。留空会在运行时自动挂到本物体上")]
+        [SerializeField] private BuildingDemolitionUI demolitionUI;
+
         [Tooltip("可放置时状态文字的颜色")]
         [SerializeField] private Color validColor = new Color(0.35f, 0.9f, 0.45f, 1f);
 
@@ -89,6 +92,7 @@ namespace Yujian.UI
 
             WarnIfMissing(confirmButton, "确认");
             WarnIfMissing(undoButton, "撤回");
+            EnsureDemolitionUI();
         }
 
         private void OnEnable()
@@ -100,6 +104,12 @@ namespace Yujian.UI
         private void OnDisable()
         {
             UnwireButtons();
+
+            if (demolitionUI != null)
+            {
+                demolitionUI.ClosePopup();
+            }
+
             SetVisible(false);
         }
 
@@ -249,6 +259,21 @@ namespace Yujian.UI
             {
                 transform.SetAsLastSibling();
             }
+        }
+
+        private void EnsureDemolitionUI()
+        {
+            if (demolitionUI == null)
+            {
+                demolitionUI = GetComponent<BuildingDemolitionUI>();
+            }
+
+            if (demolitionUI == null)
+            {
+                demolitionUI = gameObject.AddComponent<BuildingDemolitionUI>();
+            }
+
+            demolitionUI.Configure(migration, actionRoot, confirmButton, canvas);
         }
 
         private void WarnIfMissing(Button button, string label)

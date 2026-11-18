@@ -503,6 +503,21 @@ namespace Yujian.Building
             EndMigration();
         }
 
+        /// <summary>
+        /// 拆除专用退出：只清掉迁移状态与预览材质，不把建筑移回原位。
+        /// 随后由拆除系统按建筑当前所在位置移除它，尘埃与音效也落在这里。
+        /// </summary>
+        public bool ExitForRemoval(GameObject building)
+        {
+            if (!IsActive || building == null || target != building)
+            {
+                return false;
+            }
+
+            EndMigration();
+            return true;
+        }
+
         // ---------------- 内部 ----------------
 
         /// <summary>
