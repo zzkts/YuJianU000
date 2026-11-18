@@ -98,6 +98,16 @@ namespace Yujian.Building
                  "建筑上方的升级按钮会提示「未配置升级表」")]
         [SerializeField] private BuildingUpgradeTable upgradeTable;
 
+        [Header("建筑栏位（策划案 3.7）")]
+        [Tooltip("解锁需要的玩家等级。1 = 开局就能建；填小于 1 的数一律按 1 处理")]
+        [SerializeField] private int unlockLevel = 1;
+
+        [Tooltip("场上最多同时存在几座。0 = 不限制。主要建筑（里程碑）会被强制按 1 座处理")]
+        [SerializeField] private int buildLimit = 0;
+
+        [Tooltip("在建筑栏位里归入「特殊」分组。主要建筑（里程碑）即使不勾也会自动算作特殊")]
+        [SerializeField] private bool specialGroup = false;
+
         [Header("所需材料（阶段 3 只记录，不消耗）")]
         [Tooltip("建造该建筑需要的原料清单。阶段 3 完全不读取这张表——" +
                  "即使玩家一个原料都没有也允许放置。材料检查与扣除是阶段 4 的事")]
@@ -125,6 +135,15 @@ namespace Yujian.Building
 
         /// <summary>采用的升级表，可能为 null（不可升级）。</summary>
         public BuildingUpgradeTable UpgradeTable => upgradeTable;
+
+        /// <summary>解锁需要的玩家等级，最小为 1。</summary>
+        public int UnlockLevel => Mathf.Max(1, unlockLevel);
+
+        /// <summary>场上数量上限，0 表示不限制。</summary>
+        public int BuildLimit => Mathf.Max(0, buildLimit);
+
+        /// <summary>是否归入建筑栏位的「特殊」分组。</summary>
+        public bool IsSpecial => specialGroup;
 
         /// <summary>所需材料清单，只读。阶段 3 不消费它。</summary>
         public IReadOnlyList<BuildingMaterialRequirement> RequiredMaterials =>
