@@ -171,6 +171,12 @@ namespace Yujian.Save
         /// 旧存档没有该字段时为空列表，升级到节点等级后会重新要求选择。
         /// </summary>
         public List<string> enhancementOptionIds = new List<string>();
+
+        /// <summary>
+        /// 建筑朝向：旋转了几个 90°（0~3，策划案 3.3 第 4 条）。
+        /// 旧存档没有该字段时为 0，等价于不旋转；宽高已按朝向写入 width / height。
+        /// </summary>
+        public int rotation;
     }
 
     /// <summary>矿石生成进度：当前档位 + 每个档位已经抽过的条目。</summary>

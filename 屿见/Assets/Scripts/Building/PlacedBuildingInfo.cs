@@ -27,6 +27,10 @@ namespace Yujian.Building
                  "旧存档没有该字段时按 1 级处理")]
         [SerializeField, Min(1)] private int level = 1;
 
+        [Tooltip("建筑朝向：旋转了几个 90°（0~3）。迁移旋转功能写入，" +
+                 "存档按这个值恢复；旧存档没有该字段时为 0（不旋转）")]
+        [SerializeField, Range(0, 3)] private int quarterTurns;
+
         /// <summary>建筑静态数据。可能为空（旧实例或手动挂载），调用方需判空。</summary>
         public BuildingData Data => data;
 
@@ -38,6 +42,9 @@ namespace Yujian.Building
 
         /// <summary>建筑等级，恒 >= 1。</summary>
         public int Level => Mathf.Max(1, level);
+
+        /// <summary>建筑朝向：0~3 个 90°，恒为合法值。</summary>
+        public int QuarterTurns => BuildingRotation.Normalize(quarterTurns);
 
         /// <summary>这座建筑选过的强化选项 ID，只读。</summary>
         public IReadOnlyList<string> EnhancementOptionIds => enhancementOptionIds;
@@ -135,11 +142,12 @@ namespace Yujian.Building
         /// <param name="enhancements">存档里的强化选项 ID。旧存档传 null。</param>
         public void Initialize(
             BuildingData source, RectInt rect, IReadOnlyList<MaterialData> materials, int initialLevel = 1,
-            IReadOnlyList<string> enhancements = null)
+            IReadOnlyList<string> enhancements = null, int initialQuarterTurns = 0)
         {
             data = source;
             footprintRect = rect;
             level = Mathf.Max(1, initialLevel);
+            quarterTurns = BuildingRotation.Normalize(initialQuarterTurns);
 
             layerMaterials.Clear();
 
@@ -196,6 +204,15 @@ namespace Yujian.Building
         public void SetFootprintRect(RectInt rect)
         {
             footprintRect = rect;
+        }
+
+        /// <summary>
+        /// 写入建筑朝向。只改记录，不转 transform——旋转外观由 BuildingManager / BuildingMigration 负责，
+        /// 这样存档参与者不必关心表现层。
+        /// </summary>
+        public void SetQuarterTurns(int turns)
+        {
+            quarterTurns = BuildingRotation.Normalize(turns);
         }
 
         /// <summary>本建筑升级表上的强化节点组，可能为 null。</summary>

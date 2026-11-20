@@ -41,6 +41,22 @@ namespace Yujian.UI
         [Tooltip("拆除入口。留空会在运行时自动挂到本物体上")]
         [SerializeField] private BuildingDemolitionUI demolitionUI;
 
+        [Header("旋转（3.3 第 4 条）")]
+        [Tooltip("建筑下方的旋转按钮容器。留空会在运行时自动生成")]
+        [SerializeField] private RectTransform rotationRoot;
+
+        [Tooltip("左边按钮：顺时针转 90°。留空会按确认按钮的样式自动生成")]
+        [SerializeField] private Button rotateLeftButton;
+
+        [Tooltip("右边按钮：逆时针转 90°。留空会按确认按钮的样式自动生成")]
+        [SerializeField] private Button rotateRightButton;
+
+        [Tooltip("旋转按钮相对建筑底部的屏幕偏移（像素）。负 Y = 往屏幕下方")]
+        [SerializeField] private Vector2 rotationScreenOffset = new Vector2(0f, -84f);
+
+        [Tooltip("投影用的世界高度：0 = 建筑轴心（一般就是地面）")]
+        [SerializeField] private float rotationWorldHeightOffset = 0.1f;
+
         [Tooltip("可放置时状态文字的颜色")]
         [SerializeField] private Color validColor = new Color(0.35f, 0.9f, 0.45f, 1f);
 
@@ -58,6 +74,7 @@ namespace Yujian.UI
         [SerializeField] private bool logActions = true;
 
         private bool wired;
+        private bool rotationWired;
 
         private void Awake()
         {
@@ -93,17 +110,20 @@ namespace Yujian.UI
             WarnIfMissing(confirmButton, "确认");
             WarnIfMissing(undoButton, "撤回");
             EnsureDemolitionUI();
+            EnsureRotationControls();
         }
 
         private void OnEnable()
         {
             WireButtons();
+            WireRotationButtons();
             Refresh();
         }
 
         private void OnDisable()
         {
             UnwireButtons();
+            UnwireRotationButtons();
 
             if (demolitionUI != null)
             {
@@ -111,6 +131,7 @@ namespace Yujian.UI
             }
 
             SetVisible(false);
+            SetRotationVisible(false);
         }
 
         private void LateUpdate()
@@ -119,6 +140,12 @@ namespace Yujian.UI
         }
 
         private void Refresh()
+        {
+            RefreshActionPanel();
+            RefreshRotationControls();
+        }
+
+        private void RefreshActionPanel()
         {
             if (actionRoot == null || migration == null || !migration.IsPendingConfirm)
             {
@@ -167,6 +194,35 @@ namespace Yujian.UI
             SetVisible(true);
         }
 
+        private void RefreshRotationControls()
+        {
+            if (rotationRoot == null || migration == null || !migration.CanRotate)
+            {
+                SetRotationVisible(false);
+                return;
+            }
+
+            GameObject target = migration.Target;
+
+            if (target == null)
+            {
+                SetRotationVisible(false);
+                return;
+            }
+
+            Vector3 worldPosition = target.transform.position + Vector3.up * rotationWorldHeightOffset;
+
+            if (!WorldToCanvas.TryProject(viewCamera, canvas, worldPosition, rotationScreenOffset,
+                    out Vector2 localPosition))
+            {
+                SetRotationVisible(false);
+                return;
+            }
+
+            rotationRoot.anchoredPosition = WorldToCanvas.ClampToCanvas(localPosition, rotationRoot, canvas);
+            SetRotationVisible(true);
+        }
+
         private void WireButtons()
         {
             if (wired)
@@ -207,6 +263,46 @@ namespace Yujian.UI
             }
         }
 
+        private void WireRotationButtons()
+        {
+            if (rotationWired)
+            {
+                return;
+            }
+
+            rotationWired = true;
+
+            if (rotateLeftButton != null)
+            {
+                rotateLeftButton.onClick.AddListener(HandleRotateClockwiseClicked);
+            }
+
+            if (rotateRightButton != null)
+            {
+                rotateRightButton.onClick.AddListener(HandleRotateCounterClockwiseClicked);
+            }
+        }
+
+        private void UnwireRotationButtons()
+        {
+            if (!rotationWired)
+            {
+                return;
+            }
+
+            rotationWired = false;
+
+            if (rotateLeftButton != null)
+            {
+                rotateLeftButton.onClick.RemoveListener(HandleRotateClockwiseClicked);
+            }
+
+            if (rotateRightButton != null)
+            {
+                rotateRightButton.onClick.RemoveListener(HandleRotateCounterClockwiseClicked);
+            }
+        }
+
         private void HandleConfirmClicked()
         {
             if (migration == null)
@@ -241,6 +337,38 @@ namespace Yujian.UI
             Refresh();
         }
 
+        /// <summary>左边按钮：顺时针 90°（策划案 3.3 第 4 条）。</summary>
+        private void HandleRotateClockwiseClicked()
+        {
+            if (migration == null || !migration.RotateClockwise())
+            {
+                return;
+            }
+
+            if (logActions)
+            {
+                Debug.Log($"[BuildingMigrationUI] 顺时针旋转，当前朝向 {migration.QuarterTurns * 90}°。");
+            }
+
+            Refresh();
+        }
+
+        /// <summary>右边按钮：逆时针 90°（策划案 3.3 第 4 条）。</summary>
+        private void HandleRotateCounterClockwiseClicked()
+        {
+            if (migration == null || !migration.RotateCounterClockwise())
+            {
+                return;
+            }
+
+            if (logActions)
+            {
+                Debug.Log($"[BuildingMigrationUI] 逆时针旋转，当前朝向 {migration.QuarterTurns * 90}°。");
+            }
+
+            Refresh();
+        }
+
         private void SetVisible(bool visible)
         {
             if (actionRoot == null)
@@ -258,6 +386,182 @@ namespace Yujian.UI
             if (visible)
             {
                 transform.SetAsLastSibling();
+            }
+        }
+
+        private void SetRotationVisible(bool visible)
+        {
+            if (rotationRoot == null)
+            {
+                return;
+            }
+
+            if (rotationRoot.gameObject.activeSelf == visible)
+            {
+                return;
+            }
+
+            rotationRoot.gameObject.SetActive(visible);
+
+            if (visible)
+            {
+                rotationRoot.SetAsLastSibling();
+            }
+        }
+
+        /// <summary>
+        /// 场景里没手工摆按钮时，按「确认」按钮的样式自动生成建筑下方的左 / 右旋转按钮。
+        /// 和拆除按钮同一个思路：运行时生成，策划不用改场景也能直接用。
+        /// </summary>
+        private void EnsureRotationControls()
+        {
+            if (rotationRoot != null && rotateLeftButton != null && rotateRightButton != null)
+            {
+                return;
+            }
+
+            if (actionRoot == null)
+            {
+                return;
+            }
+
+            if (rotationRoot == null)
+            {
+                Transform parent = actionRoot.parent != null ? actionRoot.parent : actionRoot;
+                GameObject rootObject = new GameObject("RotationControls", typeof(RectTransform));
+                rootObject.layer = 5;
+                rotationRoot = (RectTransform)rootObject.transform;
+                rotationRoot.SetParent(parent, false);
+                rotationRoot.anchorMin = new Vector2(0.5f, 0.5f);
+                rotationRoot.anchorMax = new Vector2(0.5f, 0.5f);
+                rotationRoot.pivot = new Vector2(0.5f, 0.5f);
+                rotationRoot.sizeDelta = new Vector2(150f, 60f);
+                rotationRoot.gameObject.SetActive(false);
+            }
+
+            if (rotateLeftButton == null)
+            {
+                rotateLeftButton = CreateRotationButton("Button_顺时针", -38f, '↻', '◀');
+            }
+
+            if (rotateRightButton == null)
+            {
+                rotateRightButton = CreateRotationButton("Button_逆时针", 38f, '↺', '▶');
+            }
+        }
+
+        private Button CreateRotationButton(string name, float x, char preferredGlyph, char fallbackGlyph)
+        {
+            Button template = confirmButton != null ? confirmButton : undoButton;
+            Button button = null;
+
+            if (template != null)
+            {
+                GameObject clone = Instantiate(template.gameObject, rotationRoot, false);
+                clone.name = name;
+                clone.SetActive(true);
+                button = clone.GetComponent<Button>();
+
+                if (button != null)
+                {
+                    // 克隆会带走模板按钮上的监听，先清空再挂旋转自己的
+                    button.onClick.RemoveAllListeners();
+                }
+            }
+
+            if (button == null)
+            {
+                GameObject go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
+                go.layer = 5;
+                go.transform.SetParent(rotationRoot, false);
+
+                Image image = go.GetComponent<Image>();
+                image.color = new Color(0.16f, 0.18f, 0.22f, 0.85f);
+
+                button = go.GetComponent<Button>();
+                button.targetGraphic = image;
+                button.navigation = new Navigation { mode = Navigation.Mode.None };
+            }
+
+            if (button.transform is RectTransform rect)
+            {
+                rect.anchorMin = new Vector2(0.5f, 0.5f);
+                rect.anchorMax = new Vector2(0.5f, 0.5f);
+                rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.anchoredPosition = new Vector2(x, 0f);
+                rect.sizeDelta = new Vector2(62f, 62f);
+                rect.localScale = Vector3.one;
+            }
+
+            // 黑底：模板按钮是白底，白箭头会完全看不见
+            if (button.targetGraphic != null)
+            {
+                button.targetGraphic.color = new Color(0.07f, 0.08f, 0.1f, 0.95f);
+            }
+
+            ApplyRotationButtonColors(button);
+
+            LayoutElement layout = button.GetComponent<LayoutElement>();
+
+            if (layout != null)
+            {
+                layout.ignoreLayout = true;
+            }
+
+            Text label = button.GetComponentInChildren<Text>(true);
+
+            if (label != null)
+            {
+                Font font = label.font != null
+                    ? label.font
+                    : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+                label.font = font;
+                label.text = PickRotationGlyph(font, preferredGlyph, fallbackGlyph);
+                label.fontSize = 36;
+                label.fontStyle = FontStyle.Bold;
+                label.color = Color.white;
+                label.alignment = TextAnchor.MiddleCenter;
+                label.horizontalOverflow = HorizontalWrapMode.Overflow;
+                label.verticalOverflow = VerticalWrapMode.Overflow;
+            }
+
+            return button;
+        }
+
+        /// <summary>
+        /// 黑底按钮的按下 / 悬停反馈。正常态保持纯白倍率，让底图的黑不会被提亮成灰色。
+        /// </summary>
+        private static void ApplyRotationButtonColors(Button button)
+        {
+            ColorBlock colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(0.85f, 0.85f, 0.85f, 1f);
+            colors.pressedColor = new Color(0.62f, 0.62f, 0.62f, 1f);
+            colors.selectedColor = Color.white;
+            colors.disabledColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);
+            colors.colorMultiplier = 1f;
+            colors.fadeDuration = 0.08f;
+            button.colors = colors;
+        }
+
+        /// <summary>
+        /// 优先用旋转符号（↻ / ↺）；内置字体缺字时退回三角箭头，避免按钮上出现空白方块。
+        /// </summary>
+        private static string PickRotationGlyph(Font font, char preferred, char fallback)
+        {
+            if (font == null)
+            {
+                return fallback.ToString();
+            }
+
+            try
+            {
+                return font.HasCharacter(preferred) ? preferred.ToString() : fallback.ToString();
+            }
+            catch (System.Exception)
+            {
+                return fallback.ToString();
             }
         }
 

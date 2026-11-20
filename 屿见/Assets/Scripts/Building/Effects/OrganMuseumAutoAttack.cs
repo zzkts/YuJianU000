@@ -47,6 +47,11 @@ namespace Yujian.Building.Effects
         [Tooltip("击碎矿石时是否按玩家挖矿的规则发放奖励。用户已确认：和手动挖一样发，不要关")]
         [SerializeField] private bool grantRewardOnKill = true;
 
+        [Header("强化")]
+        [Tooltip("建筑管理器：用来汇总「全局攻击速度」强化（策划案强化选项表 Node_Normal_02）。" +
+                 "留空会在运行时自动查找")]
+        [SerializeField] private BuildingManager buildingManager;
+
         [Header("表现（MVP：只画一条线）")]
         [Tooltip("攻击时从出射点到目标画一条线。Scene 视图一定能看到；" +
                  "Game 视图需要在右上角 Gizmos 菜单里打开。正式版再来做真正的特效")]
@@ -64,6 +69,9 @@ namespace Yujian.Building.Effects
         /// <summary>每帧查一次所有矿石太浪费；攻击间隔最短也是帧级，这里每次攻击查一次即可。</summary>
         private float timer;
         private Ore currentTarget;
+
+        /// <summary>建筑管理器只找一次；场景里真的没有时不要每帧 Find。</summary>
+        private bool buildingManagerLookupDone;
 
         /// <summary>区域控制器只找一次；场景里真的没有时不再每帧 Find。</summary>
         private bool areaLookupDone;
@@ -84,7 +92,7 @@ namespace Yujian.Building.Effects
         private Transform Origin => attackOrigin != null ? attackOrigin : transform;
 
         /// <summary>
-        /// 当前实际攻击间隔 = 基础间隔 ÷（1 + 本建筑攻速强化）。
+        /// 当前实际攻击间隔 = 基础间隔 ÷（1 + 个体攻速强化 + 全场全局攻速强化）。
         /// 每帧现算，选完强化后下一帧立即生效。
         /// </summary>
         private float EffectiveAttackInterval
@@ -96,8 +104,38 @@ namespace Yujian.Building.Effects
                         BuildingEnhancementScope.Individual, BuildingEnhancementStat.AttackSpeed)
                     : 0f;
 
+                // 「所有建筑的攻击频率提升」这类全局强化不在本建筑身上，要扫全场汇总。
+                // 选了几层就叠几层，由 PlacedBuildingInfo 负责累加。
+                speedBonus += BuildingEnhancementTotals.SumGlobal(
+                    ResolveBuildingManager(), BuildingEnhancementStat.AttackSpeed);
+
                 return attackInterval / Mathf.Max(0.01f, 1f + speedBonus);
             }
+        }
+
+        /// <summary>取建筑管理器；建筑实例挂在 Building Root 下，所以不能只靠 GetComponentInParent。</summary>
+        private BuildingManager ResolveBuildingManager()
+        {
+            if (buildingManager != null || buildingManagerLookupDone)
+            {
+                return buildingManager;
+            }
+
+            buildingManagerLookupDone = true;
+            buildingManager = GetComponentInParent<BuildingManager>();
+
+            if (buildingManager == null)
+            {
+                buildingManager = FindFirstObjectByType<BuildingManager>();
+            }
+
+            if (buildingManager == null && logAttackFlow)
+            {
+                Debug.LogWarning("[OrganMuseumAutoAttack] 找不到 BuildingManager，" +
+                                 "「所有建筑攻速」这类全局强化不会生效（个体强化照常）。", this);
+            }
+
+            return buildingManager;
         }
 
         protected override void OnInitialized()

@@ -464,10 +464,12 @@ namespace Yujian.Building
         /// <param name="layerMaterials">自下而上的楼层材料。</param>
         /// <param name="level">存档里的建筑等级，旧存档传 0 或 1 都按 1 级处理。</param>
         /// <param name="enhancementOptionIds">存档里的强化选项 ID，旧存档传 null。</param>
+        /// <param name="quarterTurns">存档里的朝向（旋转了几个 90°），旧存档传 0。</param>
         /// <param name="error">失败原因，供存档参与者写日志。</param>
         public bool RestoreBuilding(
             BuildingData data, RectInt rect, IReadOnlyList<MaterialData> layerMaterials,
-            int level, out string error, IReadOnlyList<string> enhancementOptionIds = null)
+            int level, out string error, IReadOnlyList<string> enhancementOptionIds = null,
+            int quarterTurns = 0)
         {
             error = null;
 
@@ -495,7 +497,9 @@ namespace Yujian.Building
                 return false;
             }
 
-            Vector2Int expectedCells = data.FootprintCells;
+            // 旋转 90° / 270° 时占地宽高互换；存档里的 rect 也是按旋转后的宽高写的
+            quarterTurns = BuildingRotation.Normalize(quarterTurns);
+            Vector2Int expectedCells = BuildingRotation.RotateCells(data.FootprintCells, quarterTurns);
 
             if (rect.width != expectedCells.x || rect.height != expectedCells.y)
             {
@@ -515,7 +519,11 @@ namespace Yujian.Building
                 data.BuildingPrefab, position, Quaternion.identity, buildingRoot);
 
             instance.name = data.BuildingName;
-            ApplyFootprintScale(instance, grid.CellsToWorldFootprint(expectedCells));
+
+            // 先按未旋转的占地缩放外观，再转根节点：
+            // ApplyFootprintScale 量的是世界 AABB，转完再量会把 X/Z 弄反
+            ApplyFootprintScale(instance, grid.CellsToWorldFootprint(data.FootprintCells));
+            instance.transform.rotation = BuildingRotation.ToQuaternion(quarterTurns);
             ApplyBuildingLayer(instance);
 
             int ownerId = instance.GetInstanceID();
@@ -529,7 +537,7 @@ namespace Yujian.Building
 
             placedBuildings.Add(instance);
             ApplyLayerMaterials(instance, layerMaterials);
-            AttachPlacedBuildingInfo(instance, data, rect, layerMaterials, level, enhancementOptionIds);
+            AttachPlacedBuildingInfo(instance, data, rect, layerMaterials, level, enhancementOptionIds, quarterTurns);
 
             if (instance.GetComponentInChildren<Collider>() == null)
             {
@@ -540,7 +548,7 @@ namespace Yujian.Building
             if (logBuildingFlow)
             {
                 Debug.Log($"[BuildingManager] 已恢复建筑「{data.BuildingName}」于 {position}，" +
-                          $"占地 {rect}，共 {layerMaterials?.Count ?? 0} 层，" +
+                          $"占地 {rect}，朝向 {quarterTurns * 90}°，共 {layerMaterials?.Count ?? 0} 层，" +
                           $"当前场上共 {placedBuildings.Count} 座。");
             }
 
@@ -594,7 +602,7 @@ namespace Yujian.Building
         private static void AttachPlacedBuildingInfo(
             GameObject instance, BuildingData data, RectInt rect,
             IReadOnlyList<MaterialData> layerMaterials, int level,
-            IReadOnlyList<string> enhancementOptionIds = null)
+            IReadOnlyList<string> enhancementOptionIds = null, int quarterTurns = 0)
         {
             PlacedBuildingInfo info = instance.GetComponent<PlacedBuildingInfo>();
 
@@ -603,7 +611,7 @@ namespace Yujian.Building
                 info = instance.AddComponent<PlacedBuildingInfo>();
             }
 
-            info.Initialize(data, rect, layerMaterials, level, enhancementOptionIds);
+            info.Initialize(data, rect, layerMaterials, level, enhancementOptionIds, quarterTurns);
         }
 
         /// <summary>
@@ -616,10 +624,15 @@ namespace Yujian.Building
         /// <param name="building">已放置在列表里的建筑实例。</param>
         /// <param name="snappedCenter">吸附后的新中心世界坐标。</param>
         /// <param name="newRect">新的占地格子矩形。</param>
+        /// <param name="quarterTurns">
+        /// 迁移后的朝向（旋转了几个 90°）。传 -1 表示保持当前朝向。
+        /// 旋转 90° / 270° 时 newRect 的宽高应已互换。
+        /// </param>
         /// <param name="error">失败原因。</param>
         /// <returns>是否迁移成功。</returns>
         public bool TryMoveBuilding(
-            GameObject building, Vector3 snappedCenter, RectInt newRect, out string error)
+            GameObject building, Vector3 snappedCenter, RectInt newRect, out string error,
+            int quarterTurns = -1)
         {
             error = null;
 
@@ -649,12 +662,13 @@ namespace Yujian.Building
                 return false;
             }
 
-            Vector2Int expectedCells = info.Data.FootprintCells;
+            int rotation = quarterTurns < 0 ? info.QuarterTurns : BuildingRotation.Normalize(quarterTurns);
+            Vector2Int expectedCells = BuildingRotation.RotateCells(info.Data.FootprintCells, rotation);
 
             if (newRect.width != expectedCells.x || newRect.height != expectedCells.y)
             {
                 error = $"新占格 {newRect.width}×{newRect.height} 与「{info.Data.BuildingName}」" +
-                        $"配置的 {expectedCells.x}×{expectedCells.y} 不一致。";
+                        $"当前朝向 {rotation * 90}° 下的 {expectedCells.x}×{expectedCells.y} 不一致。";
                 return false;
             }
 
@@ -683,12 +697,14 @@ namespace Yujian.Building
             }
 
             info.SetFootprintRect(newRect);
+            info.SetQuarterTurns(rotation);
             building.transform.position = snappedCenter;
+            building.transform.rotation = BuildingRotation.ToQuaternion(rotation);
 
             if (logBuildingFlow)
             {
                 Debug.Log($"[BuildingManager] 已迁移「{building.name}」：{previousRect} → {newRect}，" +
-                          $"新位置 {snappedCenter}。");
+                          $"新位置 {snappedCenter}，朝向 {rotation * 90}°。");
             }
 
             EventBus.Publish(new BuildingMoved(info.Data, previousRect, newRect, snappedCenter));
@@ -706,8 +722,8 @@ namespace Yujian.Building
         /// 否则弹出结束后建筑会跳回未按占地缩放的尺寸。
         ///
         /// 高度（Y）保持原样：占地只约束平面尺寸，建筑该多高由美术决定。
-        /// 目前两条调用路径都用 Quaternion.identity 生成，所以世界 AABB 的 X/Z 就是占地轴；
-        /// 若将来允许旋转根节点，这里需要改成按局部包围盒计算。
+        /// 调用方必须在本方法之后再设置朝向（旋转根节点）：这里量的是世界 AABB，
+        /// 先转 90° 再量会让 X / Z 互换，缩放出错。
         /// </summary>
         private static void ApplyFootprintScale(GameObject target, Vector2 worldFootprint)
         {
