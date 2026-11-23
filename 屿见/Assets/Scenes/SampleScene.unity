@@ -862,7 +862,7 @@ RectTransform:
   m_AnchorMin: {x: 1, y: 0}
   m_AnchorMax: {x: 1, y: 0}
   m_AnchoredPosition: {x: -30, y: 160}
-  m_SizeDelta: {x: 340, y: 640}
+  m_SizeDelta: {x: 340, y: 230}
   m_Pivot: {x: 1, y: 0}
 --- !u!114 &95835768
 MonoBehaviour:
@@ -2802,7 +2802,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &286864329
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -22380,6 +22380,7 @@ RectTransform:
   - {fileID: 318213848}
   - {fileID: 423235293}
   - {fileID: 1604754719}
+  - {fileID: 2103433200}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -23022,3 +23023,73 @@ SceneRoots:
   - {fileID: 2001127913}
   - {fileID: 272618543}
   - {fileID: 755882554}
+--- !u!1 &2103433199
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2103433200}
+  - component: {fileID: 2103433201}
+  m_Layer: 5
+  m_Name: BuildingBar
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &2103433200
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2103433199}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2116815629}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 100, y: 100}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &2103433201
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2103433199}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f614787f8091389488a1d6fdb61e9e44, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.UI.BuildingBarUI
+  buildingUI: {fileID: 8800000000000000010}
+  buildingManager: {fileID: 8800000000000000003}
+  inventory: {fileID: 573473446}
+  playerLevel: {fileID: 573473447}
+  milestones: {fileID: 8800000000000000015}
+  areas: {fileID: 1851669748}
+  barSize: {x: 1100, y: 186}
+  bottomOffset: 146
+  itemSize: {x: 168, y: 132}
+  itemSpacing: 12
+  innerPadding: 14
+  scrollbarHeight: 12
+  nameFontSize: 22
+  statusFontSize: 15
+  groupFontSize: 16
+  emptyFontSize: 20
+  panelColor: {r: 0, g: 0, b: 0, a: 0.72}
+  scrollbarTrackColor: {r: 1, g: 1, b: 1, a: 0.12}
+  scrollbarHandleColor: {r: 1, g: 1, b: 1, a: 0.45}
+  dividerColor: {r: 1, g: 1, b: 1, a: 0.22}
+  mutedTextColor: {r: 0.62, g: 0.62, b: 0.62, a: 1}
+  logFlow: 1
