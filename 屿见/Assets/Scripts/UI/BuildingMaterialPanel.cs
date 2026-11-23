@@ -98,11 +98,19 @@ namespace Yujian.UI
         private float statusClearTime = -1f;
         private bool wired;
 
+        /// <summary>金币模式下上一次显示的金币余额，用来发现「钱变了」并刷新价格行。</summary>
+        private int lastDisplayedMoney = int.MinValue;
+
+        /// <summary>上一次是否处于金币建造模式，用来发现运行时切换模式并重建条目。</summary>
+        private bool lastGoldMode;
+
         /// <summary>拖拽残影的父物体。MaterialDragItem 会读它。</summary>
         public RectTransform GhostParent => ghostParent;
 
         private void Awake()
         {
+            lastGoldMode = construction != null && construction.UsesGoldPurchase;
+
             if (panelRoot == gameObject)
             {
                 // 隐藏 panelRoot 会连同本组件一起停掉，Update 不再执行，面板就再也回不来了
@@ -256,6 +264,32 @@ namespace Yujian.UI
                 RefreshCounts();
                 RefreshProgress();
                 RefreshConfirmButton();
+                lastDisplayedMoney = construction != null ? construction.CurrentMoney : int.MinValue;
+            }
+
+            // 运行时切换了建造模式（原料 ↔ 金币）就重建条目，避免面板残留旧模式的条目
+            bool goldMode = construction != null && construction.UsesGoldPurchase;
+
+            if (goldMode != lastGoldMode)
+            {
+                lastGoldMode = goldMode;
+                RebuildItems(construction != null ? construction.SelectedData : null);
+                RefreshCounts();
+                RefreshProgress();
+                RefreshConfirmButton();
+            }
+
+            // 金币模式：面板打开期间金币可能因回收站到账而变化，变了就刷新价格行与 √ 状态
+            if (construction != null && construction.UsesGoldPurchase)
+            {
+                int money = construction.CurrentMoney;
+
+                if (money != lastDisplayedMoney)
+                {
+                    lastDisplayedMoney = money;
+                    RefreshProgress();
+                    RefreshConfirmButton();
+                }
             }
 
             if (statusClearTime >= 0f && Time.unscaledTime >= statusClearTime)
@@ -272,6 +306,12 @@ namespace Yujian.UI
             if (construction == null)
             {
                 reason = "建造系统未配置";
+                return false;
+            }
+
+            if (construction.UsesGoldPurchase)
+            {
+                reason = "当前是金币建造模式：直接点蓝图旁的 √ 花金币建造，不需要材料";
                 return false;
             }
 
@@ -460,6 +500,17 @@ namespace Yujian.UI
                 return;
             }
 
+            // 金币商店模式不列材料条目：价格与「还差多少」由进度行显示
+            if (construction != null && construction.UsesGoldPurchase)
+            {
+                if (titleText != null)
+                {
+                    titleText.text = $"{data.BuildingName} · 金币建造";
+                }
+
+                return;
+            }
+
             IReadOnlyList<BuildingMaterialRequirement> requirements = data.RequiredMaterials;
 
             // 同一原料可能出现在多条需求里，只列一次
@@ -571,7 +622,9 @@ namespace Yujian.UI
                 return;
             }
 
-            progressText.text = $"材料：{construction.GetProgressText()}";
+            progressText.text = construction.UsesGoldPurchase
+                ? construction.GetPurchaseProgressText()
+                : $"材料：{construction.GetProgressText()}";
         }
 
         private void RefreshConfirmButton()
@@ -590,7 +643,7 @@ namespace Yujian.UI
             // 代价与补偿：BuildingConstruction.ConfirmBuild() 里那句
             // 「材料还不够：小砖 0/3」从此走不到（那句代码保留不删，将来别的调用方还会用到）。
             // 「还差几个」的信息由 ProgressText 一直显示着（形如「材料：小砖 2/3」），不会丢。
-            confirmButton.interactable = construction.IsSatisfied;
+            confirmButton.interactable = construction.CanConfirmBuild;
 
             Text label = confirmButton.GetComponentInChildren<Text>(true);
 

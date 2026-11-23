@@ -17,7 +17,7 @@ MonoBehaviour:
   baseAttack: 2.2
   attackGrowthPerLevel: 5.25
   attackPerLevel: 1
-  goldCostPerLevel: 320
+  goldCostPerLevel: 64
   goldCostGrowthPerLevel: 5.25
-  goldCostIncreasePerLevel: 15
+  goldCostIncreasePerLevel: 3
   maxLevel: 6

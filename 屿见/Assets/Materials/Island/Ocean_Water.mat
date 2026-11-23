@@ -94,15 +94,16 @@ Material:
     - _Cull: 2
     - _Cutoff: 0.5
     - _DeepAlpha: 0.98
-    - _DepthRange: 3
+    - _DepthRange: 4.64
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _EnvironmentReflections: 1
-    - _FoamNoiseScale: 1.2
-    - _FoamPulseSpeed: 1.1
-    - _FoamStrength: 0.85
+    - _FoamNoiseScale: 0.25
+    - _FoamPulseSpeed: 0.5
+    - _FoamStrength: 0.181
+    - _FresnelStrength: 0.3
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
@@ -114,15 +115,20 @@ Material:
     - _PatchStrength: 0.35
     - _QueueOffset: 0
     - _ReceiveShadows: 1
+    - _RippleScale: 0.28
+    - _RippleStrength: 0.14
     - _ShallowAlpha: 0.65
-    - _ShoreFoamDistance: 0.3
+    - _ShoreFoamCore: 0
+    - _ShoreFoamDistance: 2.5
     - _Smoothness: 0.6
     - _SmoothnessTextureChannel: 0
     - _SparkleScale: 1.4
     - _SparkleSpeed: 0.08
     - _SparkleStrength: 0.35
     - _SparkleThreshold: 0.58
+    - _SpecularGloss: 60
     - _SpecularHighlights: 1
+    - _SpecularStrength: 0.35
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
     - _StreakScale: 0.015
@@ -130,12 +136,16 @@ Material:
     - _StreakStrength: 0.15
     - _StreakWarp: 0.8
     - _StreakWidth: 0.06
-    - _SurfWaveRepeat: 3
-    - _SurfWaveSpeed: 0.35
-    - _SurfWaveStrength: 0.6
-    - _SurfWaveWidth: 0.08
-    - _SurfZoneDepth: 1.2
+    - _SurfWaveRepeat: 2
+    - _SurfWaveSpeed: 0.3
+    - _SurfWaveStrength: 0.8
+    - _SurfWaveWidth: 0.12
+    - _SurfZoneDepth: 2.5
     - _Surface: 0
+    - _SwellHeight: 0.4
+    - _SwellNormalStrength: 2.2
+    - _SwellScale: 0.009
+    - _SwellSpeed: 0.35
     - _TideAmplitude: 0.18
     - _TideSpatialScale: 0.02
     - _TideSpeed: 0.5
@@ -152,9 +162,12 @@ Material:
     - _DeepColor: {r: 0.12, g: 0.42, b: 0.55, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _FoamColor: {r: 0.94, g: 0.98, b: 1, a: 1}
+    - _FresnelColor: {r: 0.6, g: 0.88, b: 0.96, a: 1}
     - _PatchColor: {r: 0.28, g: 0.7, b: 0.72, a: 1}
     - _ShallowColor: {r: 0.45, g: 0.85, b: 0.85, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
+    - _SwellDirection: {r: 1, g: 0.55, b: 0, a: 0}
+    - _VolumeLightDirection: {r: 0.32, g: 0.77, b: -0.56, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
 --- !u!114 &5214430812685746086

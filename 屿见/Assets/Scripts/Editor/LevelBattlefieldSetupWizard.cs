@@ -7,7 +7,6 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using Yujian.Core;
 using Yujian.Levels;
-using Yujian.Lighting;
 using Yujian.Mining;
 
 namespace Yujian.EditorTools
@@ -40,7 +39,6 @@ namespace Yujian.EditorTools
         private const string EntrancesRootName = "关卡入口";
         private const string SpawnPointName = "怪物生成点";
         private const string CameraAnchorName = "相机机位";
-        private const string BackgroundObjectHint = "清洁区灯光";
 
         private const string LevelBattlefieldMenuPath = "屿见/关卡/整理关卡战场与入口（阶段 4）";
 
@@ -80,18 +78,10 @@ namespace Yujian.EditorTools
                 return;
             }
 
-            MiningLightingController lighting = UnityEngine.Object.FindFirstObjectByType<MiningLightingController>(
-                FindObjectsInactive.Include);
             LevelManager manager = UnityEngine.Object.FindFirstObjectByType<LevelManager>(
                 FindObjectsInactive.Include);
             AreaCameraDirector cameraDirector = UnityEngine.Object.FindFirstObjectByType<AreaCameraDirector>(
                 FindObjectsInactive.Include);
-
-            if (lighting == null)
-            {
-                Debug.LogWarning($"[关卡战场向导] 找不到「{BackgroundObjectHint}」（MiningLightingController），" +
-                                 "战场背景根会留空，背景切换不会生效。");
-            }
 
             if (manager == null)
             {
@@ -126,10 +116,12 @@ namespace Yujian.EditorTools
 
             MoveUnder(ore.transform, spawnPoint.transform, "把怪物挂到生成点");
 
-            // 3. 背景：清洁区灯光整体挂到战场下（世界坐标不变）
-            if (lighting != null)
+            // 3. 背景：保留战场已有的背景根（清洁区灯光已移除，通常为 null）
+            Transform backgroundRoot = battlefield.BackgroundRoot;
+
+            if (backgroundRoot != null && backgroundRoot.parent != battlefieldObject.transform)
             {
-                MoveUnder(lighting.transform, battlefieldObject.transform, "把背景挂到战场");
+                MoveUnder(backgroundRoot, battlefieldObject.transform, "把背景挂到战场");
             }
 
             // 4. 相机机位：新建时取相机组件里记录的挖矿机位；已有则保留手动摆放的位置
@@ -176,7 +168,7 @@ namespace Yujian.EditorTools
             // 6. 接好战场的三项引用
             Undo.RecordObject(battlefield, "配置关卡战场");
             battlefield.ConfigureForSetup(
-                lighting != null ? lighting.transform : null,
+                backgroundRoot,
                 spawnPoint.transform,
                 cameraAnchor.transform);
             EditorUtility.SetDirty(battlefield);
@@ -221,7 +213,7 @@ namespace Yujian.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             LogReport(levelRoot, battlefield, spawnPoint, cameraAnchor, entrances,
-                lighting != null ? lighting.name : "未找到", scene);
+                backgroundRoot != null ? backgroundRoot.name : "无背景", scene);
         }
 
         private static void LogReport(GameObject levelRoot, LevelBattlefield battlefield,

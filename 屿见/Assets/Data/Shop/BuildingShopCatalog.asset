@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f482c66da211077412abf1816c8655af, type: 3}
+  m_Name: BuildingShopCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Shop.BuildingShopCatalog
+  entries:
+  - building: {fileID: 11400000, guid: edf5bd059cb594140a3e9171684ddc03, type: 2}
+    price: 60
+  - building: {fileID: 11400000, guid: 22fc90caaae44117b4f61129e1901377, type: 2}
+    price: 80
+  - building: {fileID: 11400000, guid: 8f982c5722d94d829a89e6e9eea393eb, type: 2}
+    price: 100
+  - building: {fileID: 11400000, guid: fd3074d5927b429c98e75f48101130dd, type: 2}
+    price: 120
+  - building: {fileID: 11400000, guid: a51fee7edbbaaeb448d54f6ae5da737b, type: 2}
+    price: 150
+  - building: {fileID: 11400000, guid: 3be4f2eeaa358f647bb2a861096501e3, type: 2}
+    price: 0
+  - building: {fileID: 11400000, guid: a7c3e91f5b2d4c8e9f60a1d3b7e5c284, type: 2}
+    price: 5

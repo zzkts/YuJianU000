@@ -32,8 +32,13 @@ namespace Yujian.Levels
                  "填 N 表示固定用第 N 档。进关后档位锁死，不会跟玩家等级走，也不会自动跳档")]
         [SerializeField, Min(0)] private int difficultyTier;
 
-        [Tooltip("关卡在岛屿建筑网格上占用的格数（阶段 3 使用）")]
+        [Tooltip("关卡在岛屿建筑网格上占用的格数（阶段 3 使用）。" +
+                 "没有绑定污染面积掩码时，按这个矩形封锁；绑定了掩码后以掩码为准")]
         [SerializeField] private Vector2Int footprintCells = new Vector2Int(4, 4);
+
+        [Tooltip("手绘关卡污染面积掩码。绑定后完全取代 footprintCells 矩形；" +
+                 "用菜单「屿见 → 建筑 → 可建面积画笔…」的「关卡污染区」模式绘制。留空则使用矩形占地")]
+        [SerializeField] private Yujian.Building.LevelAreaMask areaMask;
 
         [Header("波次与 BOSS（阶段 2）")]
         [Tooltip("总波次。按策划案 2.3.6，一个垃圾聚合体就是一个波次，" +
@@ -41,8 +46,13 @@ namespace Yujian.Levels
         [SerializeField, Min(1)] private int waveCount = 3;
 
         [Tooltip("本关专属的垃圾聚合体组。留空则使用全局矿石等级表里的组；" +
-                 "填了以后只从这些组里抽，等级仍用于血量 / 奖励成长")]
+                 "填了以后只从这些组里抽，等级仍用于血量 / 奖励成长。" +
+                 "顺序组（sequential）会按列表顺序逐波生成")]
         [SerializeField] private OreGroup[] aggregateGroups = new OreGroup[0];
+
+        [Tooltip("自定义节奏：勾选后「关卡难度曲线」窗口会跳过本入口，" +
+                 "适合顺序波次、中Boss 等手调关卡")]
+        [SerializeField] private bool customPacing;
 
         [Tooltip("BOSS 最大生命值（占位数值，Inspector 可调）")]
         [SerializeField, Min(1f)] private float bossMaxHealth = 40f;
@@ -114,14 +124,20 @@ namespace Yujian.Levels
         /// </summary>
         public int DifficultyTier => difficultyTier > 0 ? difficultyTier : Mathf.Max(1, unlockLevel);
 
-        /// <summary>关卡占用格数（阶段 3）。</summary>
+        /// <summary>关卡占用格数（阶段 3）。没有掩码时使用。</summary>
         public Vector2Int FootprintCells => footprintCells;
+
+        /// <summary>手绘污染面积掩码；为空时回退到 footprintCells 矩形。</summary>
+        public Yujian.Building.LevelAreaMask AreaMask => areaMask;
 
         /// <summary>进入 BOSS 战前要清除的波数（一个聚合体 = 一波）。</summary>
         public int WaveCount => Mathf.Max(1, waveCount);
 
         /// <summary>本关专属聚合体组；为空表示使用全局矿石等级表。</summary>
         public OreGroup[] AggregateGroups => aggregateGroups;
+
+        /// <summary>是否使用自定义节奏；为 true 时难度曲线窗口跳过本入口。</summary>
+        public bool UsesCustomPacing => customPacing;
 
         /// <summary>清完全部小怪一共要打掉多少个聚合体（一个聚合体 = 一波）。</summary>
         public int TotalAggregates => WaveCount;

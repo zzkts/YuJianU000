@@ -12,14 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 211fb99ad2025da45a73611fded5dafd, type: 3}
   m_Name: LevelUP_01
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Building.BuildingUpgradeTable
-  tableId: LevelUP_01
+  tableId: NormalLevelUP_01
   maxLevel: 50
   valueGrowthPerLevel: 0.08
-  interval: 10
+  interval: 25
   intervalValueMultiplier: 1.15
   majorInterval: 50
   majorValueMultiplier: 1.5
-  baseCost: 15
+  baseCost: 3
   costGrowthPerLevel: 1.09
   intervalCostMultiplier: 2
   majorCostMultiplier: 3

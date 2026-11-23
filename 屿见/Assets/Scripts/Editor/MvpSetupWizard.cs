@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Yujian.Building;
 using Yujian.Core;
+using Yujian.Levels;
 using Yujian.Mining;
 using Yujian.Player;
 using Yujian.UI;
@@ -18,7 +19,7 @@ namespace Yujian.EditorTools
     ///   1. 建 / 复用场景物体 <c>GameAreaSystem</c>（GameAreaController + AreaCameraDirector）；
     ///   2. 接线：挖矿输入、相机、建筑相机调度、按区域显隐的面板数组；
     ///   3. 重建 <c>Canvas/BottomNav</c>：三个按钮 [挖矿] [建筑] [商店]；
-    ///   4. 建 <c>Canvas/CoinHud</c>：常驻垃圾文本（事件驱动）；
+    ///   4. 建 <c>Canvas/CoinHud</c>：常驻金币文本（事件驱动）；
     ///   5. 给建筑预制体挂上 BuildingSpawnPop（建造成功 0.8 → 1）；
     ///   6. 让位：把材料面板与建筑面板整体抬到导航条上方，并同步 SlidingPanel 的隐藏位移；
     ///   7. 打开两个面板里被摆成关闭的按钮：材料面板的 <c>[×]</c> / <c>[√]</c>、
@@ -252,8 +253,12 @@ namespace Yujian.EditorTools
             Button buildingButton = CreateNavButton(navObject.transform, templateButton, "Button_建筑", "建筑", 1,
                 button => UnityEventTools.AddPersistentListener(button.onClick, nav.ShowBuildingArea));
 
+            LevelManager levelManager =
+                Object.FindFirstObjectByType<LevelManager>(FindObjectsInactive.Include);
+
             SerializedObject navSo = new SerializedObject(nav);
             SetObject(navSo, "areas", areaController);
+            SetObject(navSo, "levelManager", levelManager);
             SetObject(navSo, "miningButton", miningButton);
             SetObject(navSo, "buildingButton", buildingButton);
             navSo.ApplyModifiedPropertiesWithoutUndo();
@@ -400,7 +405,7 @@ namespace Yujian.EditorTools
             text.alignment = TextAnchor.MiddleRight;
             text.color = CoinTextColor;
             text.raycastTarget = false;
-            text.text = "垃圾：0";
+            text.text = "金币：0";
 
             CoinHudUI hud = EnsureComponent<CoinHudUI>(hudObject);
 

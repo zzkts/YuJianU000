@@ -32,11 +32,21 @@ namespace Yujian.Mining
         [SerializeField] private bool logCalculatedDamage = false;
 
         /// <summary>
-        /// 当前暴击伤害倍数：优先读当前照明工具，未拥有照明工具时回退到本组件的默认值。
+        /// 当前暴击伤害倍数：优先读当前照明工具，未拥有照明工具时回退到本组件的默认值；
+        /// 再加上建筑强化提供的玩家暴击倍率加成（PlayerStats.CritMultiplierBonus）。
         /// </summary>
-        public float CriticalDamageMultiplier => miningLightTool != null && miningLightTool.IsUnlocked
-            ? Mathf.Max(1f, miningLightTool.CritPointDamageMultiplier)
-            : Mathf.Max(1f, criticalDamageMultiplier);
+        public float CriticalDamageMultiplier
+        {
+            get
+            {
+                float baseMultiplier = miningLightTool != null && miningLightTool.IsUnlocked
+                    ? Mathf.Max(1f, miningLightTool.CritPointDamageMultiplier)
+                    : Mathf.Max(1f, criticalDamageMultiplier);
+
+                float bonus = playerStats != null ? playerStats.CritMultiplierBonus : 0f;
+                return Mathf.Max(1f, baseMultiplier + bonus);
+            }
+        }
 
         /// <summary>
         /// 计算玩家当前的单次伤害（不判定暴击）。

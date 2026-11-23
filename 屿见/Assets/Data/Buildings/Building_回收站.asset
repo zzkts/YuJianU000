@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 62860099c0761ad4fb5dd52fd3e2a120, type: 3}
+  m_Name: "Building_\u56DE\u6536\u7AD9"
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Building.BuildingData
+  buildingName: "\u56DE\u6536\u7AD9"
+  buildingType: 1
+  buildingPrefab: {fileID: 4433886731025623581, guid: adebf82866b755241960cb6e372f0398, type: 3}
+  blueprintPrefab: {fileID: 3483834966641725362, guid: b0d729eb4d783e546854d3bc65bb2f45, type: 3}
+  footprintCells: {x: 1, y: 1}
+  upgradeTable: {fileID: 11400000, guid: a05b5e7e430a6614e847f7099c826a38, type: 2}
+  unlockLevel: 1
+  buildLimit: 3
+  specialGroup: 1
+  requiredMaterials: []
+  saveId: 3be4f2eeaa358f647bb2a861096501e3

@@ -21,7 +21,8 @@ namespace Yujian.EditorTools
     ///   4. 挂 <see cref="GarbageDropper"/>（掉血分档掉落）与 <see cref="GarbageCollector"/>（排队收集）；
     ///   5. 生成尾迹材质；
     ///   6. 把点击碰撞体放大到能覆盖外壳；
-    ///   7. 把场景里现存的「金币」文案迁移成「垃圾」。
+    ///   7. 2026-11-19 经济拆分后，不再把「金币」文案迁移成「垃圾」：
+    ///      采矿产出垃圾、回收站产出金币，两种资源同时存在。
     ///
     /// 幂等：重复运行不会重复挂组件，也不会生成重复模型。
     /// </summary>
@@ -113,9 +114,6 @@ namespace Yujian.EditorTools
 
             EnsureClickCollider(ore);
 
-            // 垃圾已经是货币：把场景里现存的「金币」字样一并换掉
-            int migratedLabels = MigrateCoinLabels();
-
             EditorSceneManager.MarkSceneDirty(ore.gameObject.scene);
             EditorSceneManager.SaveOpenScenes();
             AssetDatabase.SaveAssets();
@@ -125,7 +123,6 @@ namespace Yujian.EditorTools
                       $"  · 垃圾精灵预制体：{SpritePrefabPath}\n" +
                       $"  · 尾迹材质：{TrailMaterialPath}\n" +
                       "  · 已挂 GarbageDropper（每 20% 生命掉一档）与 GarbageCollector（每 0.5 秒收一块）\n" +
-                      $"  · 已把 {migratedLabels} 处「金币」文案改成「垃圾」\n" +
                       "进 Play 后外壳与垃圾精灵才会生成。");
         }
 
@@ -149,63 +146,6 @@ namespace Yujian.EditorTools
             EditorSceneManager.OpenScene(SampleScenePath, OpenSceneMode.Single);
         }
 
-        /// <summary>
-        /// 把场景里所有「金币」文案换成「垃圾」：
-        /// 一是场景里已经保存的 Text，二是 CoinHudUI 的 format 格式串。
-        /// 只改显示文字，不动 PlayerCurrency / money 这些内部命名。
-        /// </summary>
-        private static int MigrateCoinLabels()
-        {
-            int migrated = 0;
-
-            Text[] texts = Object.FindObjectsByType<Text>(
-                FindObjectsInactive.Include, FindObjectsSortMode.None);
-
-            for (int i = 0; i < texts.Length; i++)
-            {
-                Text text = texts[i];
-
-                if (text == null || string.IsNullOrEmpty(text.text) || !text.text.Contains("金币"))
-                {
-                    continue;
-                }
-
-                Undo.RecordObject(text, "Rename Coin To Garbage");
-                text.text = text.text.Replace("金币", "垃圾");
-                EditorUtility.SetDirty(text);
-                migrated++;
-            }
-
-            CoinHudUI[] coinHuds = Object.FindObjectsByType<CoinHudUI>(
-                FindObjectsInactive.Include, FindObjectsSortMode.None);
-
-            for (int i = 0; i < coinHuds.Length; i++)
-            {
-                CoinHudUI hud = coinHuds[i];
-
-                if (hud == null)
-                {
-                    continue;
-                }
-
-                SerializedObject serializedHud = new SerializedObject(hud);
-                SerializedProperty format = serializedHud.FindProperty("format");
-
-                if (format == null || string.IsNullOrEmpty(format.stringValue) ||
-                    !format.stringValue.Contains("金币"))
-                {
-                    continue;
-                }
-
-                serializedHud.Update();
-                format.stringValue = format.stringValue.Replace("金币", "垃圾");
-                serializedHud.ApplyModifiedPropertiesWithoutUndo();
-                EditorUtility.SetDirty(hud);
-                migrated++;
-            }
-
-            return migrated;
-        }
 
         /// <summary>
         /// 挂上掉落器与收集器，并把引用接好。返回 false 时调用方应中止（已弹过错误）。
@@ -213,7 +153,7 @@ namespace Yujian.EditorTools
         private static bool EnsureGarbageSystems(Ore ore, GarbageAggregateVisual view)
         {
             MiningHudUI hud = Object.FindFirstObjectByType<MiningHudUI>(FindObjectsInactive.Include);
-            PlayerCurrency currency = Object.FindFirstObjectByType<PlayerCurrency>(FindObjectsInactive.Include);
+            PlayerGarbage garbage = Object.FindFirstObjectByType<PlayerGarbage>(FindObjectsInactive.Include);
 
             if (hud == null)
             {
@@ -221,9 +161,22 @@ namespace Yujian.EditorTools
                 return false;
             }
 
-            if (currency == null)
+            if (garbage == null)
             {
-                Fail("场景里找不到 PlayerCurrency（玩家货币）。请先完成存档 / 货币系统配置。");
+                PlayerCurrency currency = Object.FindFirstObjectByType<PlayerCurrency>(
+                    FindObjectsInactive.Include);
+
+                if (currency != null)
+                {
+                    garbage = Undo.AddComponent<PlayerGarbage>(currency.gameObject);
+                    Debug.Log("[GarbageAggregateSetupWizard] 已给 Player 补上 PlayerGarbage。", currency);
+                }
+            }
+
+            if (garbage == null)
+            {
+                Fail("场景里找不到 PlayerGarbage（玩家垃圾）。" +
+                     "请先运行「屿见/建筑/配置垃圾回收站系统」添加该组件。");
                 return false;
             }
 
@@ -242,7 +195,11 @@ namespace Yujian.EditorTools
                 collector = Undo.AddComponent<GarbageCollector>(hud.gameObject);
             }
 
-            collector.ConfigureForSetup(hud, currency, Camera.main, trailMaterial);
+            // 「垃圾 · 金币」资源栏统一由 RecyclingHud 显示；垃圾块飞向它而不是清洁界面。
+            RecyclingHudUI resourceHud = Object.FindFirstObjectByType<RecyclingHudUI>(
+                FindObjectsInactive.Include);
+
+            collector.ConfigureForSetup(resourceHud, garbage, Camera.main, trailMaterial);
             EditorUtility.SetDirty(collector);
 
             GarbageDropper dropper = ore.GetComponent<GarbageDropper>();

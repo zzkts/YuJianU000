@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Island_Terrain
+  m_Shader: {fileID: 4800000, guid: 88b41846700f078468c18c7c98596abd, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _GrassBlend: 0.7
+    - _GrassStart: 0.6
+    - _NoiseScale: 0.3
+    - _NoiseStrength: 0.12
+    - _RockSlopeEnd: 0.7
+    - _RockSlopeStart: 0.35
+    - _WaterLevel: -1.4
+    - _WetBand: 0.3
+    - _WetStrength: 0.35
+    m_Colors:
+    - _GrassColor: {r: 0.553, g: 0.733, b: 0.388, a: 1}
+    - _RockColor: {r: 0.639, g: 0.612, b: 0.549, a: 1}
+    - _SandColor: {r: 0.902, g: 0.827, b: 0.639, a: 1}
+    - _SeabedColor: {r: 0.74, g: 0.68, b: 0.52, a: 1}
+    - _WetSandColor: {r: 0.58, g: 0.5, b: 0.38, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

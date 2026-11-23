@@ -13,27 +13,27 @@ MonoBehaviour:
   m_Name: IslandSettings
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Island.IslandSettingsAsset
   settings:
-    center: {x: 10.21735, y: 0, z: -9.49205}
-    halfSizeX: 52
-    halfSizeZ: 52
-    cornerRadius: 14
-    beachWidth: 10
-    coastWidth: 18
-    shoreVariation: 0.85
-    headlandCount: 3
+    center: {x: -15.249, y: 0, z: -9.3035}
+    halfSizeX: 44
+    halfSizeZ: 44
+    cornerRadius: 36
+    beachWidth: 7
+    coastWidth: 13
+    shoreVariation: 1
+    headlandCount: 4
     wetSandBand: 0.22
     waterLevel: -1.4
     seabedDepth: -4
     gridSize: 0.5
     seed: 20261017
-    coastNoiseLarge: 4
-    coastNoiseSmall: 1.5
+    coastNoiseLarge: 5
+    coastNoiseSmall: 2
     hillCenter: {x: 0, y: 61.5}
-    hillRadius: 10
-    hillHeight: 14
-    rockClusterCount: 40
+    hillRadius: 0
+    hillHeight: 0
+    rockClusterCount: 32
     rockDensity: 0.85
-    rockSizeMin: 0.8
-    rockSizeMax: 3.2
-    rockClusterSpread: 5
+    rockSizeMin: 0.6
+    rockSizeMax: 2.4
+    rockClusterSpread: 4
     rockMaxAboveWater: 0.9

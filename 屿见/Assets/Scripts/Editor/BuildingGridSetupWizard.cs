@@ -26,7 +26,8 @@ namespace Yujian.EditorTools
         private const string InvalidMaterialPath = "Assets/Materials/InValid.mat";
         private const string GridLineMaterialPath = "Assets/Materials/GridLine.mat";
 
-        private const float CellSize = 2f;
+        // 2026-11-20 用户定义「一单位面积长度 = 10 世界单位」，网格单格从 2 改为 10。
+        private const float CellSize = 10f;
         private const float BuildableInset = 0f;
 
         private static readonly Color GridLineColor = new Color(0.35f, 0.40f, 0.35f, 0.25f);
@@ -85,6 +86,8 @@ namespace Yujian.EditorTools
 
             // ---------- 1. 组件 ----------
 
+            // 新加的组件默认关闭自动适配（保留手填值），所以要先记录组件是不是本来就有。
+            bool gridExisted = systemObject.GetComponent<BuildingGrid>() != null;
             BuildingGrid grid = EnsureComponent<BuildingGrid>(systemObject);
             BuildingCameraController cameraController = EnsureComponent<BuildingCameraController>(systemObject);
             BuildingGridVisualizer visualizer = EnsureComponent<BuildingGridVisualizer>(systemObject);
@@ -92,18 +95,36 @@ namespace Yujian.EditorTools
             // ---------- 2. BuildingGrid ----------
 
             Vector2 halfExtents = island.BuildableHalfExtents;
+            // ceil：宁可多铺一格，也不要在岛边留缺口（88×88 / 10 → 9×9 = 90×90）。
             Vector2Int counts = new Vector2Int(
-                Mathf.Max(1, Mathf.FloorToInt(halfExtents.x * 2f / CellSize + 0.0001f)),
-                Mathf.Max(1, Mathf.FloorToInt(halfExtents.y * 2f / CellSize + 0.0001f)));
+                Mathf.Max(1, Mathf.CeilToInt(halfExtents.x * 2f / CellSize - 0.0001f)),
+                Mathf.Max(1, Mathf.CeilToInt(halfExtents.y * 2f / CellSize - 0.0001f)));
 
             SerializedObject gridSo = new SerializedObject(grid);
+            SerializedProperty autoFitProp = gridSo.FindProperty("autoFitToIsland");
+
+            // 用户手动定过网格长宽（关了自动适配）时，不覆盖他填的值。
+            // 新建的组件 autoFit 默认也是关的，不能算作“手动”。
+            bool keepManualGrid = gridExisted && autoFitProp != null && !autoFitProp.boolValue;
+
             SetObject(gridSo, "islandDefinition", island);
             SetObject(gridSo, "islandSettings", islandSettings);
-            SetVector3(gridSo, "gridCenter", island.BuildableCenter);
-            SetFloat(gridSo, "cellSize", CellSize);
-            SetVector2Int(gridSo, "cellCounts", counts);
-            SetBool(gridSo, "autoFitToIsland", true);
-            SetFloat(gridSo, "buildableInset", BuildableInset);
+
+            if (keepManualGrid)
+            {
+                Debug.Log("[BuildingGridSetupWizard] 检测到手动网格（自动适配已关闭），" +
+                          "保留现有网格中心 / 单格 / 格数 / 可建内缩。\n" +
+                          "如需恢复自动适配，请在 BuildingGrid Inspector 里勾选「自动适配海岛」。");
+            }
+            else
+            {
+                SetVector3(gridSo, "gridCenter", island.BuildableCenter);
+                SetFloat(gridSo, "cellSize", CellSize);
+                SetVector2Int(gridSo, "cellCounts", counts);
+                SetBool(gridSo, "autoFitToIsland", true);
+                SetFloat(gridSo, "buildableInset", BuildableInset);
+            }
+
             gridSo.ApplyModifiedPropertiesWithoutUndo();
 
             // ---------- 3. 蓝图放置 / 建筑管理器的网格引用 ----------
@@ -190,10 +211,15 @@ namespace Yujian.EditorTools
             Selection.activeGameObject = systemObject;
             EditorGUIUtility.PingObject(systemObject);
 
+            Vector2Int keptCounts = grid.CellCounts;
+            Vector2 keptWorld = grid.GridWorldSize;
+
             Debug.Log($"[BuildingGridSetupWizard] 配置完成：\n" +
-                      $"  · {systemObject.name}：BuildingGrid（{counts.x}×{counts.y} 格，单格 {CellSize}）/ " +
+                      $"  · {systemObject.name}：BuildingGrid（{keptCounts.x}×{keptCounts.y} 格，" +
+                      $"单格 {grid.CellSize:0.##}，世界 {keptWorld.x:0.##}×{keptWorld.y:0.##}" +
+                      $"{(keepManualGrid ? "，保留手动尺寸" : "，自动适配")}）/ " +
                       $"BuildingCameraController / BuildingGridVisualizer\n" +
-                      $"  · 网格中心 {island.BuildableCenter}，可建判定 " +
+                      $"  · 网格中心 {grid.GridCenter}，可建判定 " +
                       $"{(islandSettings != null ? "严格圆角台地" : "矩形回退")}\n" +
                       "  · 建造模式内：右键拖动平移，滚轮缩放\n" +
                       "请按 Ctrl+S 保存场景，然后再进入 Play Mode。");

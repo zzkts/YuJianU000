@@ -35,8 +35,8 @@ namespace Yujian.Mining
         [SerializeField] private bool blockClicksOverUI = true;
 
         [Header("依赖")]
-        [Tooltip("玩家垃圾，矿石击碎后在此发放奖励")]
-        [SerializeField] private PlayerCurrency playerCurrency;
+        [Tooltip("玩家垃圾，矿石击碎后在此发放奖励（2026-11-19 起采矿只产垃圾，金币由回收站产出）")]
+        [SerializeField] private PlayerGarbage playerGarbage;
 
         [Tooltip("伤害计算系统")]
         [SerializeField] private DamageSystem damageSystem;
@@ -90,9 +90,15 @@ namespace Yujian.Mining
                 }
             }
 
-            if (playerCurrency == null)
+            if (playerGarbage == null)
             {
-                Debug.LogError("[MiningInput] PlayerCurrency 未配置，击碎奖励无法发放。", this);
+                playerGarbage = FindFirstObjectByType<PlayerGarbage>(FindObjectsInactive.Include);
+            }
+
+            if (playerGarbage == null)
+            {
+                Debug.LogError("[MiningInput] PlayerGarbage 未配置，击碎奖励无法发放。" +
+                               "请运行菜单「屿见/建筑/配置垃圾回收站系统」自动接线。", this);
             }
 
             if (oreLayers.value == 0)
@@ -145,7 +151,7 @@ namespace Yujian.Mining
         /// </summary>
         private void ProcessMiningAt(Vector2 screenPosition)
         {
-            if (damageSystem == null || playerCurrency == null)
+            if (damageSystem == null || playerGarbage == null)
             {
                 // Awake 已经打印过明确错误，这里不再重复刷屏
                 return;
@@ -255,19 +261,20 @@ namespace Yujian.Mining
 
             if (!suppressReward)
             {
-                playerCurrency.AddMoney(reward);
+                playerGarbage.AddGarbage(reward);
             }
 
             if (logMiningFlow)
             {
                 Debug.Log($"[MiningInput] 击碎 {oreName}，" +
                           (suppressReward ? "奖励由掉落系统分档发放" : $"发放 {reward} 垃圾") +
-                          $"，当前垃圾 {playerCurrency.CurrentMoney}");
+                          $"，当前垃圾 {playerGarbage.CurrentGarbage}");
             }
         }
 
         /// <summary>
-        /// 点中暴击点：按暴击倍数结算一次伤害，然后让暴击点消失。
+        /// 点中暴击点：按暴击倍数结算一次伤害并播放暴击表现。
+        /// 暴击点不会因此消失，会原地保留到存在时间结束（头顶进度条显示剩余时间）。
         /// 伤害仍然走 Ore.TakeDamage(isCritical: true)，飘字会显示 CRIT。
         /// </summary>
         private void ProcessCritPoint(CritPoint point)
@@ -276,7 +283,7 @@ namespace Yujian.Mining
 
             if (owner == null || !owner.IsAlive)
             {
-                critPointSystem?.Consume(point);
+                // 矿石已经没了，暴击点会在自己的 Update 里自行清场。
                 return;
             }
 
@@ -291,7 +298,7 @@ namespace Yujian.Mining
             }
 
             bool destroyed = owner.TakeDamage(damage, DamageSource.Player, true);
-            critPointSystem?.Consume(point);
+            critPointSystem?.NotifyCritPointHit(point);
 
             if (!destroyed)
             {
@@ -305,14 +312,14 @@ namespace Yujian.Mining
 
             if (!suppressReward)
             {
-                playerCurrency.AddMoney(reward);
+                playerGarbage.AddGarbage(reward);
             }
 
             if (logMiningFlow)
             {
                 Debug.Log($"[MiningInput] 暴击点击碎 {oreName}，" +
                           (suppressReward ? "奖励由掉落系统分档发放" : $"发放 {reward} 垃圾") +
-                          $"，当前垃圾 {playerCurrency.CurrentMoney}");
+                          $"，当前垃圾 {playerGarbage.CurrentGarbage}");
             }
         }
 

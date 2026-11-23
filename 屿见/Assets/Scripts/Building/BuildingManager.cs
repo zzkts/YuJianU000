@@ -131,6 +131,73 @@ namespace Yujian.Building
         /// <summary>已放置的建筑，只读。</summary>
         public IReadOnlyList<GameObject> PlacedBuildings => placedBuildings;
 
+        /// <summary>
+        /// 场上某一类建筑已经建了几座。按 <see cref="PlacedBuildingInfo.Data"/> 比较，
+        /// 不依赖实例名字——玩家改过物体名也不会数错。
+        /// </summary>
+        public int CountPlaced(BuildingData data)
+        {
+            if (data == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+
+            for (int i = 0; i < placedBuildings.Count; i++)
+            {
+                GameObject instance = placedBuildings[i];
+
+                if (instance == null)
+                {
+                    continue;
+                }
+
+                PlacedBuildingInfo info = instance.GetComponent<PlacedBuildingInfo>();
+
+                if (info != null && info.Data == data)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// 是否还能再建一座该建筑。只检查 <see cref="BuildingData.BuildLimit"/> 这一条通用上限；
+        /// 特殊建筑「场上最多一座」仍由入口层的 MilestoneProgress 判定。
+        /// </summary>
+        /// <param name="data">建筑数据。</param>
+        /// <param name="reason">不能建造时给出玩家可读的原因。</param>
+        public bool CanPlaceAnother(BuildingData data, out string reason)
+        {
+            reason = string.Empty;
+
+            if (data == null)
+            {
+                reason = "建筑数据为空";
+                return false;
+            }
+
+            int max = data.BuildLimit;
+
+            if (max <= 0)
+            {
+                return true;
+            }
+
+            int current = CountPlaced(data);
+
+            if (current >= max)
+            {
+                reason = $"「{data.BuildingName}」已达上限 {current}/{max}";
+                return false;
+            }
+
+            return true;
+        }
+
         /// <summary>建筑图层，只读暴露给 BuildingPlacement 做重叠检测，避免两处各配一份。</summary>
         public LayerMask BuildingLayers => buildingLayers;
 
@@ -202,6 +269,12 @@ namespace Yujian.Building
             {
                 Debug.LogError($"[BuildingManager] 建筑「{data.BuildingName}」的占地格数 {data.FootprintCells} 含非正数，" +
                                "无法放置。请在 BuildingData 资产里把两个方向的格数都设成正整数。", this);
+                return;
+            }
+
+            if (!CanPlaceAnother(data, out string limitReason))
+            {
+                Debug.LogWarning($"[BuildingManager] 不能建造「{data.BuildingName}」：{limitReason}", this);
                 return;
             }
 
@@ -464,10 +537,12 @@ namespace Yujian.Building
         /// <param name="layerMaterials">自下而上的楼层材料。</param>
         /// <param name="level">存档里的建筑等级，旧存档传 0 或 1 都按 1 级处理。</param>
         /// <param name="enhancementOptionIds">存档里的强化选项 ID，旧存档传 null。</param>
+        /// <param name="quarterTurns">存档里的朝向（旋转了几个 90°），旧存档传 0。</param>
         /// <param name="error">失败原因，供存档参与者写日志。</param>
         public bool RestoreBuilding(
             BuildingData data, RectInt rect, IReadOnlyList<MaterialData> layerMaterials,
-            int level, out string error, IReadOnlyList<string> enhancementOptionIds = null)
+            int level, out string error, IReadOnlyList<string> enhancementOptionIds = null,
+            int quarterTurns = 0)
         {
             error = null;
 
@@ -495,7 +570,9 @@ namespace Yujian.Building
                 return false;
             }
 
-            Vector2Int expectedCells = data.FootprintCells;
+            // 旋转 90° / 270° 时占地宽高互换；存档里的 rect 也是按旋转后的宽高写的
+            quarterTurns = BuildingRotation.Normalize(quarterTurns);
+            Vector2Int expectedCells = BuildingRotation.RotateCells(data.FootprintCells, quarterTurns);
 
             if (rect.width != expectedCells.x || rect.height != expectedCells.y)
             {
@@ -515,7 +592,11 @@ namespace Yujian.Building
                 data.BuildingPrefab, position, Quaternion.identity, buildingRoot);
 
             instance.name = data.BuildingName;
-            ApplyFootprintScale(instance, grid.CellsToWorldFootprint(expectedCells));
+
+            // 先按未旋转的占地缩放外观，再转根节点：
+            // ApplyFootprintScale 量的是世界 AABB，转完再量会把 X/Z 弄反
+            ApplyFootprintScale(instance, grid.CellsToWorldFootprint(data.FootprintCells));
+            instance.transform.rotation = BuildingRotation.ToQuaternion(quarterTurns);
             ApplyBuildingLayer(instance);
 
             int ownerId = instance.GetInstanceID();
@@ -529,7 +610,7 @@ namespace Yujian.Building
 
             placedBuildings.Add(instance);
             ApplyLayerMaterials(instance, layerMaterials);
-            AttachPlacedBuildingInfo(instance, data, rect, layerMaterials, level, enhancementOptionIds);
+            AttachPlacedBuildingInfo(instance, data, rect, layerMaterials, level, enhancementOptionIds, quarterTurns);
 
             if (instance.GetComponentInChildren<Collider>() == null)
             {
@@ -540,7 +621,7 @@ namespace Yujian.Building
             if (logBuildingFlow)
             {
                 Debug.Log($"[BuildingManager] 已恢复建筑「{data.BuildingName}」于 {position}，" +
-                          $"占地 {rect}，共 {layerMaterials?.Count ?? 0} 层，" +
+                          $"占地 {rect}，朝向 {quarterTurns * 90}°，共 {layerMaterials?.Count ?? 0} 层，" +
                           $"当前场上共 {placedBuildings.Count} 座。");
             }
 
@@ -594,7 +675,7 @@ namespace Yujian.Building
         private static void AttachPlacedBuildingInfo(
             GameObject instance, BuildingData data, RectInt rect,
             IReadOnlyList<MaterialData> layerMaterials, int level,
-            IReadOnlyList<string> enhancementOptionIds = null)
+            IReadOnlyList<string> enhancementOptionIds = null, int quarterTurns = 0)
         {
             PlacedBuildingInfo info = instance.GetComponent<PlacedBuildingInfo>();
 
@@ -603,7 +684,7 @@ namespace Yujian.Building
                 info = instance.AddComponent<PlacedBuildingInfo>();
             }
 
-            info.Initialize(data, rect, layerMaterials, level, enhancementOptionIds);
+            info.Initialize(data, rect, layerMaterials, level, enhancementOptionIds, quarterTurns);
         }
 
         /// <summary>
@@ -616,10 +697,15 @@ namespace Yujian.Building
         /// <param name="building">已放置在列表里的建筑实例。</param>
         /// <param name="snappedCenter">吸附后的新中心世界坐标。</param>
         /// <param name="newRect">新的占地格子矩形。</param>
+        /// <param name="quarterTurns">
+        /// 迁移后的朝向（旋转了几个 90°）。传 -1 表示保持当前朝向。
+        /// 旋转 90° / 270° 时 newRect 的宽高应已互换。
+        /// </param>
         /// <param name="error">失败原因。</param>
         /// <returns>是否迁移成功。</returns>
         public bool TryMoveBuilding(
-            GameObject building, Vector3 snappedCenter, RectInt newRect, out string error)
+            GameObject building, Vector3 snappedCenter, RectInt newRect, out string error,
+            int quarterTurns = -1)
         {
             error = null;
 
@@ -649,12 +735,13 @@ namespace Yujian.Building
                 return false;
             }
 
-            Vector2Int expectedCells = info.Data.FootprintCells;
+            int rotation = quarterTurns < 0 ? info.QuarterTurns : BuildingRotation.Normalize(quarterTurns);
+            Vector2Int expectedCells = BuildingRotation.RotateCells(info.Data.FootprintCells, rotation);
 
             if (newRect.width != expectedCells.x || newRect.height != expectedCells.y)
             {
                 error = $"新占格 {newRect.width}×{newRect.height} 与「{info.Data.BuildingName}」" +
-                        $"配置的 {expectedCells.x}×{expectedCells.y} 不一致。";
+                        $"当前朝向 {rotation * 90}° 下的 {expectedCells.x}×{expectedCells.y} 不一致。";
                 return false;
             }
 
@@ -683,12 +770,14 @@ namespace Yujian.Building
             }
 
             info.SetFootprintRect(newRect);
+            info.SetQuarterTurns(rotation);
             building.transform.position = snappedCenter;
+            building.transform.rotation = BuildingRotation.ToQuaternion(rotation);
 
             if (logBuildingFlow)
             {
                 Debug.Log($"[BuildingManager] 已迁移「{building.name}」：{previousRect} → {newRect}，" +
-                          $"新位置 {snappedCenter}。");
+                          $"新位置 {snappedCenter}，朝向 {rotation * 90}°。");
             }
 
             EventBus.Publish(new BuildingMoved(info.Data, previousRect, newRect, snappedCenter));
@@ -706,8 +795,8 @@ namespace Yujian.Building
         /// 否则弹出结束后建筑会跳回未按占地缩放的尺寸。
         ///
         /// 高度（Y）保持原样：占地只约束平面尺寸，建筑该多高由美术决定。
-        /// 目前两条调用路径都用 Quaternion.identity 生成，所以世界 AABB 的 X/Z 就是占地轴；
-        /// 若将来允许旋转根节点，这里需要改成按局部包围盒计算。
+        /// 调用方必须在本方法之后再设置朝向（旋转根节点）：这里量的是世界 AABB，
+        /// 先转 90° 再量会让 X / Z 互换，缩放出错。
         /// </summary>
         private static void ApplyFootprintScale(GameObject target, Vector2 worldFootprint)
         {
@@ -799,6 +888,9 @@ namespace Yujian.Building
         /// 把材料外观色刷到建筑的楼层上。
         /// 预制体上没挂 BuildingLayerStack 时明确报错，不静默——否则建筑会以预制体原样出现，
         /// 玩家看不出"材料外观没生效"和"这块料本来就是这颜色"的区别。
+        ///
+        /// 例外：挂了 <see cref="BuildingModelVisual"/> 的预制体走真实模型外观，
+        /// 玩家放什么料都不影响长相（2026-11-20 用户拍板），这里直接跳过，不算错误。
         /// </summary>
         private void ApplyLayerMaterials(GameObject instance, IReadOnlyList<MaterialData> layerMaterials)
         {
@@ -806,6 +898,17 @@ namespace Yujian.Building
 
             if (stack == null)
             {
+                if (instance.GetComponentInChildren<BuildingModelVisual>(true) != null)
+                {
+                    if (logBuildingFlow)
+                    {
+                        Debug.Log($"[BuildingManager] 「{instance.name}」使用真实模型外观，" +
+                                  "材料外观色不参与渲染（BuildingModelVisual），跳过楼层刷色。");
+                    }
+
+                    return;
+                }
+
                 Debug.LogError($"[BuildingManager] 建筑预制体「{instance.name}」的根物体上没有 BuildingLayerStack 组件，" +
                                "楼层不会显示任何颜色。\n" +
                                "请运行菜单「屿见/建筑/配置建造系统（阶段 4）」重建建筑预制体。", instance);

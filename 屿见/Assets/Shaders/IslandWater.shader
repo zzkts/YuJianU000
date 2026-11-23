@@ -13,10 +13,13 @@ Shader "Yujian/Island Water"
         _DeepAlpha ("Deep Alpha", Range(0, 1)) = 0.98
 
         [Header(Shore Foam)]
-        _ShoreFoamDistance ("Shore Foam Distance (world units)", Float) = 0.30
-        _FoamStrength ("Foam Strength", Range(0, 1)) = 0.85
-        _FoamNoiseScale ("Foam Noise Scale", Float) = 1.2
-        _FoamPulseSpeed ("Foam Pulse Speed", Float) = 1.1
+        // 这圈泡沫按「垂直水深」计算，单位是世界单位（米）。
+        // 岛宽上百米时 0.3 米基本看不见，默认给到 2 米，可在材质里调宽窄。
+        _ShoreFoamDistance ("Shore Foam Distance (world units)", Float) = 2.5
+        _ShoreFoamCore ("Shore Foam Core Width (world units)", Float) = 0.6
+        _FoamStrength ("Foam Strength", Range(0, 1)) = 1.0
+        _FoamNoiseScale ("Foam Noise Scale", Float) = 0.25
+        _FoamPulseSpeed ("Foam Pulse Speed", Float) = 0.5
 
         [Header(Open Water Waves)]
         _WaveScale ("Wave Scale", Float) = 0.08
@@ -47,11 +50,25 @@ Shader "Yujian/Island Water"
         _TideAmplitude ("Tide Amplitude (world units)", Float) = 0.18
         _TideSpeed ("Tide Speed", Float) = 0.5
         _TideSpatialScale ("Tide Spatial Scale", Float) = 0.02
-        _SurfZoneDepth ("Surf Zone Depth (world units)", Float) = 1.2
-        _SurfWaveRepeat ("Surf Wave Repeat", Float) = 3.0
-        _SurfWaveSpeed ("Surf Wave Speed", Float) = 0.35
-        _SurfWaveWidth ("Surf Wave Width", Range(0.01, 0.5)) = 0.08
-        _SurfWaveStrength ("Surf Wave Strength", Range(0, 1)) = 0.6
+        _SurfZoneDepth ("Surf Zone Depth (world units)", Float) = 2.5
+        _SurfWaveRepeat ("Surf Wave Repeat", Float) = 2.0
+        _SurfWaveSpeed ("Surf Wave Speed", Float) = 0.30
+        _SurfWaveWidth ("Surf Wave Width", Range(0.01, 0.5)) = 0.12
+        _SurfWaveStrength ("Surf Wave Strength", Range(0, 1)) = 0.8
+
+        [Header(Surface Volume)]
+        _SwellHeight ("Swell Height (world units)", Float) = 0.40
+        _SwellScale ("Swell Scale", Float) = 0.009
+        _SwellSpeed ("Swell Speed", Float) = 0.35
+        _SwellDirection ("Swell Direction (XZ)", Vector) = (1, 0.55, 0, 0)
+        _SwellNormalStrength ("Swell Normal Strength", Range(0, 4)) = 2.2
+        _RippleScale ("Ripple Scale", Float) = 0.28
+        _RippleStrength ("Ripple Strength", Range(0, 1)) = 0.14
+        _VolumeLightDirection ("Volume Light Direction", Vector) = (0.32, 0.77, -0.56, 0)
+        _FresnelColor ("Fresnel Color", Color) = (0.60, 0.88, 0.96, 1)
+        _FresnelStrength ("Fresnel Strength", Range(0, 1)) = 0.30
+        _SpecularStrength ("Sun Glint Strength", Range(0, 2)) = 0.35
+        _SpecularGloss ("Sun Glint Gloss", Float) = 60
     }
 
     SubShader
@@ -93,6 +110,7 @@ Shader "Yujian/Island Water"
                 float  _ShallowAlpha;
                 float  _DeepAlpha;
                 float  _ShoreFoamDistance;
+                float  _ShoreFoamCore;
                 float  _FoamStrength;
                 float  _FoamNoiseScale;
                 float  _FoamPulseSpeed;
@@ -121,6 +139,18 @@ Shader "Yujian/Island Water"
                 float  _SurfWaveSpeed;
                 float  _SurfWaveWidth;
                 float  _SurfWaveStrength;
+                float  _SwellHeight;
+                float  _SwellScale;
+                float  _SwellSpeed;
+                float4 _SwellDirection;
+                float  _SwellNormalStrength;
+                float  _RippleScale;
+                float  _RippleStrength;
+                float4 _VolumeLightDirection;
+                float4 _FresnelColor;
+                float  _FresnelStrength;
+                float  _SpecularStrength;
+                float  _SpecularGloss;
             CBUFFER_END
 
             struct Attributes
@@ -134,6 +164,7 @@ Shader "Yujian/Island Water"
                 float2 worldXZ    : TEXCOORD0;
                 float  viewDepth  : TEXCOORD1;
                 float  fogFactor  : TEXCOORD2;
+                float3 positionWS : TEXCOORD3;
             };
 
             float Hash21(float2 p)
@@ -177,6 +208,55 @@ Shader "Yujian/Island Water"
                 return float2(Hash21(p), Hash21(p + 19.19));
             }
 
+            float2 SwellDir()
+            {
+                float2 d = _SwellDirection.xy;
+                return d / max(length(d), 1e-4);
+            }
+
+            // 低频涌浪：世界坐标驱动的 FBM，沿传播方向拉伸。用于顶点起伏
+            // 和整体明暗；用噪声而不是方向正弦，避免出现规则的行波。
+            float SwellHeight(float2 wp, float t)
+            {
+                float2 d = SwellDir();
+                float2 p = float2(-d.y, d.x);
+                float2 uv = float2(dot(wp, p) * 0.55, dot(wp, d)) * _SwellScale;
+                float2 flow = float2(t * _SwellSpeed * 0.085, t * _SwellSpeed * 0.063);
+                return (Fbm2(uv + flow) - 0.5) * 2.0;
+            }
+
+            // 细碎涟漪：只参与法线，不移动顶点，避免低模网格把它采样成台阶。
+            float RippleHeight(float2 wp, float t)
+            {
+                float2 flow = float2(t * 0.075, -t * 0.052);
+                return (Fbm2(wp * _RippleScale + flow + 31.7) - 0.5) * 2.0;
+            }
+
+            // 用屏幕导数反推世界空间斜率，一次高度采样就能得到法线，
+            // 比有限差分省很多噪声采样。涟漪随距离淡出，避免远处闪烁。
+            float3 SurfaceNormal(float2 wp, float3 posWS, float t, float rippleFade)
+            {
+                float3 dpdx = ddx(posWS);
+                float3 dpdy = ddy(posWS);
+                float det = dpdx.x * dpdy.z - dpdx.z * dpdy.x;
+                det = (abs(det) < 1e-5) ? 1e-5 : det;
+
+                float hSwell = SwellHeight(wp, t);
+                float2 dhS = float2(ddx(hSwell), ddy(hSwell));
+                float2 g = float2(
+                    (dpdy.z * dhS.x - dpdx.z * dhS.y) / det,
+                    (-dpdy.x * dhS.x + dpdx.x * dhS.y) / det);
+                g *= _SwellNormalStrength;
+
+                float hRipple = RippleHeight(wp, t) * rippleFade;
+                float2 dhR = float2(ddx(hRipple), ddy(hRipple));
+                g += float2(
+                    (dpdy.z * dhR.x - dpdx.z * dhR.y) / det,
+                    (-dpdy.x * dhR.x + dpdx.x * dhR.y) / det) * _RippleStrength;
+
+                return normalize(float3(-g.x, 1.0, -g.y));
+            }
+
             Varyings Vert(Attributes input)
             {
                 Varyings output = (Varyings)0;
@@ -191,9 +271,13 @@ Shader "Yujian/Island Water"
                 tide += sin(_Time.y * _TideSpeed * 0.37 + 1.7) * _TideAmplitude * 0.45;
                 positionWS.y += tide;
 
+                // 低频涌浪起伏：平面网格顶点较疏，只做长波，避免采样成锯齿。
+                positionWS.y += SwellHeight(wp, _Time.y) * _SwellHeight;
+
                 // 位移后必须重算裁剪空间位置与视深度，否则水线不会真的动。
                 output.positionCS = TransformWorldToHClip(positionWS);
                 output.worldXZ = positionWS.xz;
+                output.positionWS = positionWS;
                 output.viewDepth = -TransformWorldToView(positionWS).z;
                 output.fogFactor = ComputeFogFactor(output.positionCS.z);
                 return output;
@@ -202,8 +286,20 @@ Shader "Yujian/Island Water"
             float4 Frag(Varyings input) : SV_Target
             {
                 float2 screenUV = GetNormalizedScreenSpaceUV(input.positionCS);
-                float sceneEyeDepth = LinearEyeDepth(SampleSceneDepth(screenUV), _ZBufferParams);
+                float rawSceneDepth = SampleSceneDepth(screenUV);
+                float sceneEyeDepth = LinearEyeDepth(rawSceneDepth, _ZBufferParams);
                 float waterDepth = max(0.0, sceneEyeDepth - input.viewDepth);
+
+                // 岸线用的“垂直水深”：水线两侧的地形高度差。
+                // 视空间深度差会随相机俯角被拉长，泡沫圈会变宽变窄、还会漂，
+                // 所以贴岛的那一圈单独用世界 Y 计算，和机位无关。
+                // 采样到天空（没有不透明几何）时把水深设成极大，避免整片海被当成浅水。
+                float3 scenePosWS = ComputeWorldSpacePosition(
+                    screenUV, rawSceneDepth, UNITY_MATRIX_I_VP);
+                bool hasSceneGeometry = sceneEyeDepth < _ProjectionParams.z * 0.999;
+                float shoreDepth = hasSceneGeometry
+                    ? max(0.0, input.positionWS.y - scenePosWS.y)
+                    : 1e4;
 
                 float depthT = saturate(waterDepth / max(_DepthRange, 0.001));
                 float3 color = lerp(_ShallowColor.rgb, _DeepColor.rgb, depthT);
@@ -211,6 +307,18 @@ Shader "Yujian/Island Water"
 
                 float t = _Time.y;
                 float2 wp = input.worldXZ;
+
+                // 体积感：涌浪与涟漪的斜率合成法线，配一点方向光和菲涅尔，
+                // 让平坦的海面在坡面朝向变化时有明暗层次。
+                float rippleFade = saturate(1.0 - input.viewDepth / 90.0);
+                float3 waveNormal = SurfaceNormal(wp, input.positionWS, t, rippleFade);
+                float3 viewDir = normalize(_WorldSpaceCameraPos - input.positionWS);
+                float3 lightDir = normalize(_VolumeLightDirection.xyz);
+                float ndl = saturate(dot(waveNormal, lightDir));
+                color *= lerp(0.88, 1.10, ndl);
+                float fresnel = pow(1.0 - saturate(dot(waveNormal, viewDir)), 3.0)
+                    * _FresnelStrength;
+                color = lerp(color, _FresnelColor.rgb, fresnel);
 
                 // 大尺度色斑：两个噪声相位交叉淡化，斑块缓慢“生灭”，不会整片平移。
                 float patchTime = t * _PatchSpeed;
@@ -229,19 +337,47 @@ Shader "Yujian/Island Water"
                 patchMask *= smoothstep(0.05, 0.45, depthT); // 浅水区保持干净
                 color = lerp(color, _PatchColor.rgb, patchMask);
 
-                // 岸线泡沫：水深很浅的一圈，边缘用世界噪声打碎并缓慢脉动。
+                // 岸线泡沫：岛与海的交界整圈都铺白色浪花。
+                // 内圈（foamCore）是贴着水线的实心白沫；外圈（foamOuter）在
+                // 泡沫带的前 45% 保持满强度，只在最外侧淡出，噪声只负责把
+                // 外缘打得参差不齐——这样整圈是实的白沫，而不是一层淡水色。
                 float shoreNoise = Fbm3(wp * _FoamNoiseScale + float2(t * 0.10, -t * 0.07));
-                float band = _ShoreFoamDistance * (0.55 + 0.90 * shoreNoise);
-                float shoreFoam = 1.0 - smoothstep(0.0, max(band, 0.0001), waterDepth);
-                float pulse = 0.75 + 0.25 * sin(t * _FoamPulseSpeed + shoreNoise * 6.28318);
-                float foam = saturate(shoreFoam * pulse * _FoamStrength);
+                float band = max(_ShoreFoamDistance * (0.70 + 0.60 * shoreNoise), 0.0001);
+                float foamOuter = 1.0 - smoothstep(band * 0.45, band, shoreDepth);
+                float foamCore = 1.0 - smoothstep(
+                    0.0, max(_ShoreFoamCore, 0.0001), shoreDepth);
+                float pulse = 0.92 + 0.08 * sin(t * _FoamPulseSpeed + shoreNoise * 6.28318);
+                float foam = saturate(
+                    max(foamCore, foamOuter * pulse) * _FoamStrength);
 
-                // 深水浪线：低频正弦 + 噪声扰动，只在水深足够处出现。
+                // 深水浪线：完全不使用正弦。把采样坐标沿浪脊方向拉长、
+                // 沿传播方向压缩（各向异性），再对噪声做域扭曲（domain
+                // warping），取 FBM 的高值区作为浪脊。方向感来自拉伸而
+                // 不是周期项，因此浪线会自然弯曲、分叉、成片断开，
+                // 不会出现平行或同步平移的条纹。
                 float waveNoise = Fbm3(wp * _WaveScale * 1.7 + float2(t * 0.04, t * 0.02));
-                float wave = sin(dot(wp, float2(1.0, 0.65)) * _WaveScale * 6.28318
-                    + t * _WaveSpeed + waveNoise * 5.0);
-                float crest = smoothstep(0.90, 0.995, wave);
-                crest *= smoothstep(_WaveStartDepth, _WaveStartDepth + 0.8, waterDepth)
+                float2 waveDir = normalize(float2(1.0, 0.65));
+                float2 wavePerp = float2(-waveDir.y, waveDir.x);
+                float2 waveUV = float2(dot(wp, wavePerp) * 0.55,
+                    dot(wp, waveDir) * 1.45) * _WaveScale;
+                // 两组互不相关的噪声偏移，让浪脊弯曲、分叉。
+                float2 waveWarp = float2(
+                    Fbm2(waveUV * 0.6 + float2(t * 0.015, -t * 0.011)),
+                    Fbm2(waveUV * 0.6 + float2(-t * 0.012, t * 0.017) + 19.7)
+                ) - 0.5;
+                // 沿传播方向滚动，浪脊缓慢推进。
+                float fieldNoise = Fbm3(waveUV + waveWarp * 1.1
+                    + float2(0.0, t * _WaveSpeed));
+                // FBM 分布较窄，先拉开对比，浪线覆盖率才可控。
+                float field = saturate((fieldNoise - 0.5) * 2.2 + 0.5);
+                // fwidth 自适应阈值：远处浪线不会闪烁、忽粗忽细。
+                float waveAA = fwidth(field) * 1.5;
+                float crest = smoothstep(0.58 - waveAA, 0.74 + waveAA, field);
+                // 大尺度低频斑块决定浪线在哪里成片出现，避免满屏均匀。
+                float waveSet = Fbm2(wp * _WaveScale * 0.35
+                    + float2(t * 0.008, -t * 0.006));
+                crest *= smoothstep(0.45, 0.62, waveSet);
+                crest *= smoothstep(_WaveStartDepth, _WaveStartDepth + 1.2, waterDepth)
                     * _WaveStrength;
 
                 // 整片水面的噪声流线：用低频噪声扭曲 phase，形成不规则的白色水纹。
@@ -254,7 +390,8 @@ Shader "Yujian/Island Water"
                 streakLine *= _StreakStrength;
 
                 // 冲浪区浪线：在“离岸程度”坐标上滚动 frac，形成向岸推进的白色浪线。
-                float surfZone = 1.0 - saturate(waterDepth / max(_SurfZoneDepth, 0.001));
+                // 同样用垂直水深，让浪线跟泡沫圈一起贴住岛，而不是随相机漂移。
+                float surfZone = 1.0 - saturate(shoreDepth / max(_SurfZoneDepth, 0.001));
                 float lineNoise = Fbm3(wp * 0.35 + float2(t * 0.05, 0.0));
                 float phase = frac(surfZone * _SurfWaveRepeat
                     - t * _SurfWaveSpeed + lineNoise * 0.3);
@@ -278,6 +415,13 @@ Shader "Yujian/Island Water"
                 color = lerp(color, _FoamColor.rgb, totalFoam);
                 alpha = saturate(alpha + foam * 0.65 + crest * 0.25 + streakLine * 0.15
                     + surfLine * 0.5 + sparkle * 0.45);
+
+                // 浪脊高光：把法线起伏变成少量太阳反光，进一步强化体积感。
+                float3 halfDir = normalize(lightDir + viewDir);
+                float spec = pow(saturate(dot(waveNormal, halfDir)),
+                    max(_SpecularGloss, 1.0)) * _SpecularStrength;
+                spec *= smoothstep(0.05, 0.45, depthT);
+                color += _FoamColor.rgb * spec;
 
                 color = MixFog(color, input.fogFactor);
                 return float4(color, alpha);

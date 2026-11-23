@@ -612,14 +612,6 @@ namespace Yujian.Island
                 return GrassSubmesh;
             }
 
-            // 岬角：沙滩收窄，岩石从水线一直露到坡上；湾里不生成这圈岩石。
-            if (bayFactor < 0.35f
-                && averageHeight > settings.waterLevel - 0.8f
-                && averageHeight < 2.5f)
-            {
-                return RockSubmesh;
-            }
-
             // 湿沙带：水线上下各 wetSandBand 高，颜色比干沙深。
             if (averageHeight < settings.waterLevel + settings.wetSandBand
                 && averageHeight > settings.waterLevel - settings.wetSandBand)
@@ -633,7 +625,9 @@ namespace Yujian.Island
                 return SandSubmesh;
             }
 
-            if (averageHeight > 3f || 1f - normal.y > 0.45f)
+            // 只有真正陡的坡面和礁石才归入岩石，避免低模海岸的斜三角
+            // 在岸边切出一圈灰色岩带。
+            if (averageHeight > 3f || 1f - normal.y > 0.6f)
             {
                 return RockSubmesh;
             }

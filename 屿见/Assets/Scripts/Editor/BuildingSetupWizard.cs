@@ -5,7 +5,9 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.UI;
 using Yujian.Building;
+using Yujian.Core;
 using Yujian.Mining;
+using Yujian.UI;
 
 namespace Yujian.EditorTools
 {
@@ -29,14 +31,17 @@ namespace Yujian.EditorTools
         /// <summary>
         /// 建筑面板里的按钮顺序（也就是玩家看到的顺序）。
         /// **新增建筑时把文件名追加到这里**：面板、BuildingUI.availableBuildings 与按钮下标一次配齐。
-        /// 风琴博物馆固定第一，三座主要建筑按剧情顺序排在后面。
+        /// 回收站固定第一（启动入口），红砖厝第二；其余建筑保持原顺序。
         /// </summary>
         private static readonly string[] BuildingFileNames =
         {
+            "Building_回收站.asset",
+            "Building_红砖厝.asset",
             "Building_风琴博物馆.asset",
             "Building_八卦楼.asset",
             "Building_菽庄花园.asset",
             "Building_日光岩.asset",
+            "Building_海天堂构.asset",
         };
 
         /// <summary>建筑面板顶部的里程碑进度行。名字固定，里程碑 UI 会按它找文本。</summary>
@@ -50,6 +55,20 @@ namespace Yujian.EditorTools
 
         private const float ButtonHeight = 80f;
         private const float ButtonSpacing = 10f;
+
+        // ---------- 滚动面板尺寸 ----------
+        // 建筑数量会一直增加，面板不能无限长：中间一段做成 ScrollRect，
+        // 顶部进度行与底部两个操作按钮固定，建筑按钮在滚动区里上下浏览（鼠标滚轮）。
+        private const string ScrollViewName = "Scroll View";
+        private const float PanelWidth = 340f;
+        private const float PanelHeight = 640f;
+        private const float PanelBottomMargin = 10f;
+        private const float ScrollBarWidth = 8f;
+        private const float ScrollBarGap = 4f;
+        private const float ButtonHorizontalPadding = 16f;
+
+        /// <summary>底部固定区：退出建造 + 间隔 + 取消蓝图 + 底边距 + 与滚动区的间隔。</summary>
+        private const float ActionAreaHeight = PanelBottomMargin + ButtonHeight + ButtonSpacing + ButtonHeight + ButtonSpacing;
 
         [MenuItem("屿见/建筑/配置建筑系统（阶段 3）", false, 510)]
         public static void Configure()
@@ -84,7 +103,7 @@ namespace Yujian.EditorTools
                 return;
             }
 
-            Canvas canvas = Object.FindFirstObjectByType<Canvas>();
+            Canvas canvas = ResolveBuildingCanvas(out Transform existingPanel);
 
             if (canvas == null)
             {
@@ -184,7 +203,7 @@ namespace Yujian.EditorTools
 
             // ---------- 6. 按钮面板 ----------
 
-            BuildButtonPanel(canvas, templateButton, ui, buildings);
+            BuildButtonPanel(canvas, existingPanel, templateButton, ui, buildings);
 
             // ---------- 7. 收尾 ----------
 
@@ -192,55 +211,88 @@ namespace Yujian.EditorTools
             Selection.activeGameObject = systemObject;
             EditorGUIUtility.PingObject(systemObject);
 
-            Debug.Log($"[BuildingSetupWizard] 配置完成：\n" +
+            // 自动保存：脚本重编译/进入 Play 的域重载会丢弃未保存的场景改动，
+            // 之前出现过「向导跑完没保存 → 域重载后回到旧面板 → 以为滚动没做」的情况。
+            // 本向导是显式的场景配置命令，这里直接把场景落盘。
+            if (!EditorApplication.isPlaying)
+            {
+                EditorSceneManager.SaveScene(systemObject.scene);
+            }
+
+            Debug.Log($"[BuildingSetupWizard] 配置完成并已保存场景：\n" +
                       $"  · {SystemObjectName}：BuildingManager / BuildingPlacement / BuildingCameraDirector / BuildingUI\n" +
-                      $"  · Canvas/{PanelObjectName}：{buildings.Count} 个建筑按钮 + 取消蓝图 / 退出建造，" +
-                      $"顶部进度行「主要建筑 0/3」\n" +
-                      "请按 Ctrl+S 保存场景。");
+                      $"  · Canvas/{PanelObjectName}：{buildings.Count} 个建筑按钮（滚动区，鼠标滚轮）+ " +
+                      $"取消蓝图 / 退出建造，顶部进度行「主要建筑 0/3」");
         }
 
         /// <summary>
         /// 在 Canvas 右下角建按钮面板。
         /// 位置选右下是因为商店面板占的是左下（anchoredPosition 280,400，尺寸 520×760）。
-        /// 面板 = 顶部一行里程碑进度 + N 个建筑按钮 + 取消蓝图 / 退出建造。
+        ///
+        /// 2026-11-20 改成滚动菜单：建筑数量一直在加（现在 6 座），
+        /// 面板不能再「每多一座就长高一截」，否则最后几座会被屏幕边缘吃掉。
+        /// 结构：
+        ///   BuildingPanel（固定 340×640）
+        ///   ├─ 里程碑进度行（固定顶部）
+        ///   ├─ Scroll View / Viewport / Content（建筑按钮，可上下滚动，鼠标滚轮）
+        ///   ├─ Button_取消蓝图（固定底部）
+        ///   └─ Button_退出建造（固定底部）
         /// </summary>
         private static void BuildButtonPanel(
-            Canvas canvas, Transform templateButton, BuildingUI ui, IReadOnlyList<BuildingData> buildings)
+            Canvas canvas, Transform existingPanel, Transform templateButton, BuildingUI ui,
+            IReadOnlyList<BuildingData> buildings)
         {
-            Transform existing = canvas.transform.Find(PanelObjectName);
             GameObject panel;
 
-            if (existing != null)
+            if (existingPanel != null)
             {
-                panel = existing.gameObject;
+                panel = existingPanel.gameObject;
             }
             else
             {
-                panel = new GameObject(PanelObjectName, typeof(RectTransform));
-                Undo.RegisterCreatedObjectUndo(panel, "创建 " + PanelObjectName);
+                Transform existing = canvas.transform.Find(PanelObjectName);
 
-                RectTransform created = panel.GetComponent<RectTransform>();
-                created.SetParent(canvas.transform, false);
-                created.anchorMin = new Vector2(1f, 0f);
-                created.anchorMax = new Vector2(1f, 0f);
-                created.pivot = new Vector2(1f, 0f);
-                created.anchoredPosition = new Vector2(-30f, 30f);
+                if (existing != null)
+                {
+                    panel = existing.gameObject;
+                }
+                else
+                {
+                    panel = new GameObject(PanelObjectName, typeof(RectTransform));
+                    Undo.RegisterCreatedObjectUndo(panel, "创建 " + PanelObjectName);
+                }
             }
 
-            int buttonCount = buildings.Count + 2; // + 取消蓝图 / 退出建造
-
-            // 尺寸每次重跑都重写：建筑数量变了面板高度要跟着变
             RectTransform panelRect = panel.GetComponent<RectTransform>();
 
             if (panelRect != null)
             {
-                panelRect.sizeDelta = new Vector2(
-                    320f,
-                    ProgressTextHeight + ButtonSpacing +
-                    buttonCount * ButtonHeight + (buttonCount - 1) * ButtonSpacing);
+                // 之前 FindFirstObjectByType<Canvas>() 可能命中 MiningHUDRuntime 那个子 Canvas，
+                // 结果建筑面板被建到另一个 Canvas 下，和主 UI 里的旧面板同时显示（两层 UI）。
+                // 这里强制把它放回解析出的目标 Canvas 下。
+                if (panelRect.parent != canvas.transform)
+                {
+                    panelRect.SetParent(canvas.transform, false);
+                }
+
+                panelRect.anchorMin = new Vector2(1f, 0f);
+                panelRect.anchorMax = new Vector2(1f, 0f);
+                panelRect.pivot = new Vector2(1f, 0f);
+                panelRect.anchoredPosition = new Vector2(-30f, 160f);
+                panelRect.sizeDelta = new Vector2(PanelWidth, PanelHeight);
             }
 
-            // 重复运行时先清掉旧按钮，否则每跑一次就多一批。
+            // 全透明的射线接收面：没有它，滚轮落在面板空白处时既不会滚列表，
+            // 还会被建造相机当成「指针不在 UI 上」而缩放镜头
+            Image panelRaycastSurface = EnsureComponent<Image>(panel);
+
+            if (panelRaycastSurface != null)
+            {
+                panelRaycastSurface.color = new Color(0f, 0f, 0f, 0f);
+                panelRaycastSurface.raycastTarget = true;
+            }
+
+            // 重复运行时先清掉旧内容，否则每跑一次就多一批。
             // 进度行要留下：里程碑 UI 组件持有它的引用，重建会让引用变成 Missing。
             for (int i = panel.transform.childCount - 1; i >= 0; i--)
             {
@@ -278,36 +330,359 @@ namespace Yujian.EditorTools
                 progressText.text = "主要建筑 0/3";
             }
 
-            // ---------- 按钮 ----------
+            // ---------- 滚动区 ----------
 
-            float top = ProgressTextHeight + ButtonSpacing;
+            ScrollRect scrollRect = BuildScrollView(panel.transform, templateButton, ui, buildings);
+
+            // ---------- 底部固定操作按钮 ----------
+
+            CreateButton(panel.transform, templateButton, "Button_取消蓝图", "取消蓝图",
+                new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, PanelBottomMargin + ButtonHeight + ButtonSpacing),
+                new Vector2(-ButtonHorizontalPadding, ButtonHeight),
+                button => UnityEventTools.AddPersistentListener(button.onClick, ui.CancelSelection));
+
+            CreateButton(panel.transform, templateButton, "Button_退出建造", "退出建造",
+                new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(0f, PanelBottomMargin),
+                new Vector2(-ButtonHorizontalPadding, ButtonHeight),
+                button => UnityEventTools.AddPersistentListener(button.onClick, ui.ExitBuildMode));
+
+            // ---------- 滚轮 ----------
+
+            ScrollWheelRelay relay = EnsureComponent<ScrollWheelRelay>(panel);
+
+            if (relay != null)
+            {
+                relay.Configure(scrollRect, 0.12f);
+            }
+
+            // ---------- 清理重复面板 ----------
+
+            // 之前跑向导时 FindFirstObjectByType<Canvas>() 可能选中了 MiningHUDRuntime，
+            // 于是又建了一个 BuildingPanel；旧面板还在主 Canvas 上，两层同时显示。
+            // 这里保留当前这一块，删掉场景里其余的 BuildingPanel。
+            CleanupDuplicatePanels(panel.transform);
+            EnsureAreaPanelReference(panel);
+        }
+
+        /// <summary>
+        /// 解析建筑面板应该挂在哪个 Canvas。
+        /// 优先用 GameAreaController.buildingAreaPanels 里引用的那个面板所在的 Canvas：
+        /// 区域系统靠这份引用显隐面板，必须原地重建，引用才不会丢。
+        /// </summary>
+        private static Canvas ResolveBuildingCanvas(out Transform existingPanel)
+        {
+            existingPanel = null;
+
+            GameAreaController areas = Object.FindFirstObjectByType<GameAreaController>(FindObjectsInactive.Include);
+
+            if (areas != null)
+            {
+                SerializedObject serialized = new SerializedObject(areas);
+                SerializedProperty panels = serialized.FindProperty("buildingAreaPanels");
+
+                if (panels != null)
+                {
+                    for (int i = 0; i < panels.arraySize; i++)
+                    {
+                        GameObject referenced = panels.GetArrayElementAtIndex(i).objectReferenceValue as GameObject;
+
+                        if (referenced == null || referenced.name != PanelObjectName)
+                        {
+                            continue;
+                        }
+
+                        Canvas parentCanvas = referenced.GetComponentInParent<Canvas>();
+
+                        if (parentCanvas != null)
+                        {
+                            existingPanel = referenced.transform;
+                            return parentCanvas;
+                        }
+                    }
+                }
+            }
+
+            Canvas[] canvases = Object.FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            Canvas fallback = null;
+
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                Canvas candidate = canvases[i];
+
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                if (fallback == null && candidate.GetComponent<ShopWindowController>() != null)
+                {
+                    fallback = candidate;
+                }
+
+                Transform panel = candidate.transform.Find(PanelObjectName);
+
+                if (panel != null)
+                {
+                    existingPanel = panel;
+                    return candidate;
+                }
+            }
+
+            if (fallback != null)
+            {
+                return fallback;
+            }
+
+            return canvases.Length > 0 ? canvases[0] : null;
+        }
+
+        /// <summary>删掉除 keep 之外的 BuildingPanel，避免同一份建筑入口出现两层。</summary>
+        private static void CleanupDuplicatePanels(Transform keep)
+        {
+            Transform[] all = Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            for (int i = 0; i < all.Length; i++)
+            {
+                Transform candidate = all[i];
+
+                if (candidate == null || candidate == keep || candidate.name != PanelObjectName)
+                {
+                    continue;
+                }
+
+                // 只删真正的建筑面板根，避免误删同名装饰物。
+                // 注意：新建面板时不一定会挂 UIPanel / MilestonePanelUI（那些是旧面板已有的），
+                // 所以还要认 ScrollWheelRelay / Scroll View / 进度行这些本面板独有的结构。
+                bool looksLikeBuildingPanel =
+                    candidate.GetComponent<UIPanel>() != null ||
+                    candidate.GetComponent<MilestonePanelUI>() != null ||
+                    candidate.GetComponent<SpecialBuildingAvailabilityUI>() != null ||
+                    candidate.GetComponent<ScrollWheelRelay>() != null ||
+                    candidate.Find(ScrollViewName) != null ||
+                    candidate.Find(ProgressTextName) != null;
+
+                if (!looksLikeBuildingPanel)
+                {
+                    continue;
+                }
+
+                Debug.Log($"[BuildingSetupWizard] 删除重复的建筑面板：{candidate.name}（父物体 " +
+                          $"{(candidate.parent != null ? candidate.parent.name : "无")}）");
+                Undo.DestroyObjectImmediate(candidate.gameObject);
+            }
+        }
+
+        /// <summary>确保 GameAreaController 的 buildingAreaPanels 指向重建后的面板。</summary>
+        private static void EnsureAreaPanelReference(GameObject panel)
+        {
+            GameAreaController areas = Object.FindFirstObjectByType<GameAreaController>(FindObjectsInactive.Include);
+
+            if (areas == null)
+            {
+                return;
+            }
+
+            SerializedObject serialized = new SerializedObject(areas);
+            SerializedProperty panels = serialized.FindProperty("buildingAreaPanels");
+
+            if (panels == null)
+            {
+                return;
+            }
+
+            int emptySlot = -1;
+
+            for (int i = 0; i < panels.arraySize; i++)
+            {
+                SerializedProperty item = panels.GetArrayElementAtIndex(i);
+
+                if (item.objectReferenceValue == panel)
+                {
+                    return;
+                }
+
+                if (emptySlot < 0 && item.objectReferenceValue == null)
+                {
+                    emptySlot = i;
+                }
+            }
+
+            if (emptySlot < 0)
+            {
+                emptySlot = panels.arraySize;
+                panels.arraySize = emptySlot + 1;
+            }
+
+            panels.GetArrayElementAtIndex(emptySlot).objectReferenceValue = panel;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+
+            Debug.Log($"[BuildingSetupWizard] 已把「{panel.name}」重新接到 GameAreaController.buildingAreaPanels。");
+        }
+
+        /// <summary>建 Scroll View / Viewport / Content，并把建筑按钮按顺序摆进 Content。</summary>
+        private static ScrollRect BuildScrollView(
+            Transform panel, Transform templateButton, BuildingUI ui, IReadOnlyList<BuildingData> buildings)
+        {
+            GameObject scrollView = new GameObject(ScrollViewName, typeof(RectTransform), typeof(ScrollRect));
+            scrollView.transform.SetParent(panel, false);
+
+            RectTransform scrollViewRect = scrollView.GetComponent<RectTransform>();
+            scrollViewRect.anchorMin = Vector2.zero;
+            scrollViewRect.anchorMax = Vector2.one;
+            scrollViewRect.offsetMin = new Vector2(0f, ActionAreaHeight);
+            scrollViewRect.offsetMax = new Vector2(0f, -(ProgressTextHeight + ButtonSpacing));
+
+            // Viewport 必须有一张透明 Image：滚轮落在空白处时，事件需要有个 Graphic 可以命中，
+            // 再沿层级向上冒泡到 ScrollRect。RectMask2D 只负责裁剪，不接收射线
+            GameObject viewport = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D), typeof(Image));
+            viewport.transform.SetParent(scrollView.transform, false);
+
+            RectTransform viewportRect = viewport.GetComponent<RectTransform>();
+            viewportRect.anchorMin = Vector2.zero;
+            viewportRect.anchorMax = Vector2.one;
+            viewportRect.offsetMin = Vector2.zero;
+            viewportRect.offsetMax = new Vector2(-(ScrollBarWidth + ScrollBarGap), 0f);
+
+            Image viewportImage = viewport.GetComponent<Image>();
+            viewportImage.color = new Color(1f, 1f, 1f, 0f);
+            viewportImage.raycastTarget = true;
+
+            GameObject content = new GameObject("Content", typeof(RectTransform));
+            content.transform.SetParent(viewport.transform, false);
+
+            RectTransform contentRect = content.GetComponent<RectTransform>();
+            contentRect.anchorMin = new Vector2(0f, 1f);
+            contentRect.anchorMax = new Vector2(1f, 1f);
+            contentRect.pivot = new Vector2(0.5f, 1f);
+            contentRect.anchoredPosition = Vector2.zero;
+
+            float contentHeight = Mathf.Max(1, buildings.Count) * (ButtonHeight + ButtonSpacing);
+            contentRect.sizeDelta = new Vector2(0f, contentHeight);
+
+            // ---------- 建筑按钮 ----------
+
+            Button[] buildingButtons = new Button[buildings.Count];
 
             for (int i = 0; i < buildings.Count; i++)
             {
                 // 必须拷贝一份：for 循环变量在所有迭代里是同一个，闭包会全部抓到最后一个下标
                 int index = i;
+                float top = i * (ButtonHeight + ButtonSpacing);
 
-                CreateButton(panel.transform, templateButton, top, buildings[i].BuildingName,
+                buildingButtons[i] = CreateButton(
+                    content.transform, templateButton,
+                    "Button_" + buildings[i].BuildingName, buildings[i].BuildingName,
+                    new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f),
+                    new Vector2(0f, -top),
+                    new Vector2(-ButtonHorizontalPadding, ButtonHeight),
                     button => UnityEventTools.AddIntPersistentListener(button.onClick, ui.SelectBuilding, index));
-
-                top += ButtonHeight + ButtonSpacing;
             }
 
-            CreateButton(panel.transform, templateButton, top, "取消蓝图",
-                button => UnityEventTools.AddPersistentListener(button.onClick, ui.CancelSelection));
-            top += ButtonHeight + ButtonSpacing;
+            // ---------- 滚动条 ----------
 
-            CreateButton(panel.transform, templateButton, top, "退出建造",
-                button => UnityEventTools.AddPersistentListener(button.onClick, ui.ExitBuildMode));
+            Scrollbar scrollbar = BuildScrollbar(scrollView.transform);
+
+            // ---------- ScrollRect ----------
+
+            ScrollRect scrollRect = scrollView.GetComponent<ScrollRect>();
+            scrollRect.content = contentRect;
+            scrollRect.viewport = viewportRect;
+            scrollRect.horizontal = false;
+            scrollRect.vertical = true;
+            scrollRect.movementType = ScrollRect.MovementType.Clamped;
+            scrollRect.inertia = true;
+            scrollRect.decelerationRate = 0.135f;
+
+            // 滚轮统一由面板根上的 ScrollWheelRelay 读输入处理（指针在面板内就生效），
+            // ScrollRect 自己的滚轮灵敏度归零，避免一次滚轮被处理两次
+            scrollRect.scrollSensitivity = 0f;
+            scrollRect.verticalScrollbar = scrollbar;
+            scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+            scrollRect.verticalScrollbarSpacing = 0f;
+
+            // ---------- 特殊建筑按钮置灰 ----------
+
+            // 向导每次都重建按钮，旧的引用会变成 Missing，这里重新接一遍
+            SpecialBuildingAvailabilityUI special = panel.GetComponent<SpecialBuildingAvailabilityUI>();
+
+            if (special != null)
+            {
+                SerializedObject specialSo = new SerializedObject(special);
+                SerializedProperty buttons = specialSo.FindProperty("buildingButtons");
+
+                if (buttons != null)
+                {
+                    buttons.arraySize = buildingButtons.Length;
+
+                    for (int i = 0; i < buildingButtons.Length; i++)
+                    {
+                        buttons.GetArrayElementAtIndex(i).objectReferenceValue = buildingButtons[i];
+                    }
+
+                    specialSo.ApplyModifiedPropertiesWithoutUndo();
+                }
+            }
+
+            return scrollRect;
         }
 
-        private static void CreateButton(
-            Transform panel, Transform templateButton, float top, string label, System.Action<Button> wire)
+        private static Scrollbar BuildScrollbar(Transform scrollView)
+        {
+            GameObject barObject = new GameObject("Scrollbar", typeof(RectTransform), typeof(Image), typeof(Scrollbar));
+            barObject.transform.SetParent(scrollView, false);
+
+            RectTransform barRect = barObject.GetComponent<RectTransform>();
+            barRect.anchorMin = new Vector2(1f, 0f);
+            barRect.anchorMax = new Vector2(1f, 1f);
+            barRect.pivot = new Vector2(1f, 0.5f);
+            barRect.anchoredPosition = Vector2.zero;
+            barRect.sizeDelta = new Vector2(ScrollBarWidth, -8f);
+
+            Image trackImage = barObject.GetComponent<Image>();
+            trackImage.color = new Color(1f, 1f, 1f, 0.12f);
+
+            GameObject slidingArea = new GameObject("Sliding Area", typeof(RectTransform));
+            slidingArea.transform.SetParent(barObject.transform, false);
+
+            RectTransform slidingRect = slidingArea.GetComponent<RectTransform>();
+            slidingRect.anchorMin = Vector2.zero;
+            slidingRect.anchorMax = Vector2.one;
+            slidingRect.offsetMin = new Vector2(0f, 2f);
+            slidingRect.offsetMax = new Vector2(0f, -2f);
+
+            GameObject handle = new GameObject("Handle", typeof(RectTransform), typeof(Image));
+            handle.transform.SetParent(slidingArea.transform, false);
+
+            RectTransform handleRect = handle.GetComponent<RectTransform>();
+            handleRect.anchorMin = Vector2.zero;
+            handleRect.anchorMax = Vector2.one;
+            handleRect.offsetMin = Vector2.zero;
+            handleRect.offsetMax = Vector2.zero;
+
+            Image handleImage = handle.GetComponent<Image>();
+            handleImage.color = new Color(1f, 1f, 1f, 0.45f);
+
+            Scrollbar scrollbar = barObject.GetComponent<Scrollbar>();
+            scrollbar.handleRect = handleRect;
+            scrollbar.targetGraphic = handleImage;
+            scrollbar.direction = Scrollbar.Direction.BottomToTop;
+            scrollbar.value = 1f;
+            scrollbar.size = 0.5f;
+
+            return scrollbar;
+        }
+
+        private static Button CreateButton(
+            Transform parent, Transform templateButton, string name, string label,
+            Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot,
+            Vector2 anchoredPosition, Vector2 sizeDelta, System.Action<Button> wire)
         {
             // 拿商店里已有的按钮当模板：字体、图片、配色都跟着复制过来，
             // 不必在代码里加载字体（那才是容易出错的地方）
-            GameObject clone = Object.Instantiate(templateButton.gameObject, panel, false);
-            clone.name = "Button_" + label;
+            GameObject clone = Object.Instantiate(templateButton.gameObject, parent, false);
+            clone.name = name;
 
             // 模板是商店面板里那个**隐藏**的 ButtonTemplate（m_IsActive: 0），克隆体会带着关闭状态。
             // 漏掉这一行的话：面板本身照样显示（它没有背景图），但里面一块空白、一个字都没有，
@@ -320,12 +695,11 @@ namespace Yujian.EditorTools
 
             if (rect != null)
             {
-                // 顶部对齐、从上往下排
-                rect.anchorMin = new Vector2(0f, 1f);
-                rect.anchorMax = new Vector2(1f, 1f);
-                rect.pivot = new Vector2(0.5f, 1f);
-                rect.anchoredPosition = new Vector2(0f, -top);
-                rect.sizeDelta = new Vector2(0f, ButtonHeight);
+                rect.anchorMin = anchorMin;
+                rect.anchorMax = anchorMax;
+                rect.pivot = pivot;
+                rect.anchoredPosition = anchoredPosition;
+                rect.sizeDelta = sizeDelta;
             }
 
             Text text = clone.GetComponentInChildren<Text>(true);
@@ -340,7 +714,7 @@ namespace Yujian.EditorTools
             if (button == null)
             {
                 Debug.LogWarning($"[BuildingSetupWizard] 复制的按钮模板上没有 Button 组件，「{label}」按钮无法接线。");
-                return;
+                return null;
             }
 
             // 模板上可能带着别的持久监听，先清干净再接自己的
@@ -350,12 +724,15 @@ namespace Yujian.EditorTools
             }
 
             wire(button);
+            return button;
         }
 
         /// <summary>在 Canvas 里找一个可以当模板的按钮。跳过自建面板里的按钮，避免重复运行时复制自己。</summary>
         private static Transform FindTemplateButton(Canvas canvas)
         {
             Button[] buttons = canvas.GetComponentsInChildren<Button>(true);
+            Transform ownPanel = canvas.transform.Find(PanelObjectName);
+            Transform blueprintPanel = canvas.transform.Find(BlueprintActionPanelName);
 
             for (int i = 0; i < buttons.Length; i++)
             {
@@ -364,9 +741,11 @@ namespace Yujian.EditorTools
                     continue;
                 }
 
-                if (buttons[i].transform.parent != null &&
-                    (buttons[i].transform.parent.name == PanelObjectName ||
-                     buttons[i].transform.parent.name == BlueprintActionPanelName))
+                // 跳过自建面板里的按钮。用 IsChildOf 而不是看直接父物体：
+                // 建筑按钮现在住在 BuildingPanel/Scroll View/Viewport/Content 下面，
+                // 重跑时若把它当成模板，会在重建面板时连模板一起删掉，后续克隆直接空引用
+                if ((ownPanel != null && buttons[i].transform.IsChildOf(ownPanel)) ||
+                    (blueprintPanel != null && buttons[i].transform.IsChildOf(blueprintPanel)))
                 {
                     continue;
                 }

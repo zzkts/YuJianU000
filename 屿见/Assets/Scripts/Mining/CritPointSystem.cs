@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Yujian.Core;
 using Yujian.Core.Events;
+using Yujian.Player;
 
 namespace Yujian.Mining
 {
@@ -12,10 +13,11 @@ namespace Yujian.Mining
     ///   · 装备的照明工具「刷新冷却」结束时生成一个暴击点，普通攻击不再掷骰子；
     ///   · 暴击点贴在矿石朝向相机的可见表面上，离矿石中心不超过照明工具配置的半径；
     ///   · 同时存在数量不超过照明工具配置的上限；
-    ///   · 点中后对矿石结算暴击伤害，暴击点在同一平面上换到新位置继续存在，而不是永久减少一个；
+    ///   · 每个暴击点有存在时间（照明工具等级表），头顶进度条显示剩余时间；
+    ///   · 点中后只结算暴击伤害，暴击点原地保留到时间结束，期间可以再次点击；
     ///   · 离开矿区 / 矿石死亡时清场。
     ///
-    /// 本类只管生成、上限、换位与表现；伤害由 DamageSystem，发币由 MiningInput。
+    /// 本类只管生成、上限、存在时间、换位与表现；伤害由 DamageSystem，发币由 MiningInput。
     /// </summary>
     [DisallowMultipleComponent]
     public class CritPointSystem : MonoBehaviour
@@ -30,6 +32,9 @@ namespace Yujian.Mining
         [Tooltip("生成暴击点时用来判断矿石可见表面。留空会自动使用 Camera.main")]
         [SerializeField] private Camera viewCamera;
 
+        [Tooltip("玩家属性：读取建筑提供的暴击点持续时间加成。留空会自动查找")]
+        [SerializeField] private PlayerStats playerStats;
+
         [Header("生成")]
         [Tooltip("旧版「每次普通攻击 8% 概率」开关。飞书规则下应保持关闭")]
         [SerializeField] private bool legacyAttackChanceSpawn;
@@ -40,6 +45,10 @@ namespace Yujian.Mining
         [Tooltip("旧版外圈偏移，保留字段避免旧场景丢数据；新规则使用照明工具半径")]
         [SerializeField, Min(0f)] private float spawnMargin = 0.35f;
 
+        [Tooltip("暴击点必须落在屏幕可视范围内的边距比例。0.08 = 屏幕四周各留 8%，" +
+                 "避免点在屏幕外、贴边或被 HUD 挡住")]
+        [SerializeField, Range(0f, 0.45f)] private float spawnScreenMargin = 0.08f;
+
         [Header("表现")]
         [Tooltip("暴击点直径（世界单位）。0.16 约等于屏幕上的一个小光点")]
         [SerializeField, Min(0.05f)] private float pointDiameter = 0.16f;
@@ -49,6 +58,9 @@ namespace Yujian.Mining
 
         [Tooltip("暴击火花颜色")]
         [SerializeField] private Color sparkColor = new Color(1f, 0.85f, 0.35f, 1f);
+
+        [Tooltip("暴击点与剩余时间进度条是否透过垃圾 / 矿石显示（透视）")]
+        [SerializeField] private bool showThroughObstacles = true;
 
         [Tooltip("暴击火花预制体；留空时优先加载 Resources/particle_Critichit，仍没有就用程序化火花")]
         [SerializeField] private GameObject sparkPrefab;
@@ -64,6 +76,8 @@ namespace Yujian.Mining
         private readonly List<CritPoint> activePoints = new List<CritPoint>();
         private Material pointMaterial;
         private Material sparkMaterial;
+        private Material barBackgroundMaterial;
+        private Material barFillMaterial;
         private AudioClip resolvedCritSound;
         private bool searchedCritSound;
         private GameObject resolvedSparkPrefab;
@@ -72,8 +86,12 @@ namespace Yujian.Mining
         private bool isInMiningArea;
         private GarbageAggregateVisual garbageVisual;
         private Ore garbageVisualOwner;
+        private readonly List<GarbageAggregateVisual.CritSurface> surfaceCandidates =
+            new List<GarbageAggregateVisual.CritSurface>();
         private int lastShellPieceCount = -1;
         private float cooldownRemaining;
+        private Ore subscribedOre;
+        private float refillDelay;
         private int burstRemaining;
         private const float BurstSpawnInterval = 0.08f;
 
@@ -90,7 +108,11 @@ namespace Yujian.Mining
         /// <summary>当前生效的上限。未拥有照明工具时为 0。</summary>
         public int Capacity => lightTool != null ? lightTool.CritPointCapacity : 0;
 
-        /// <summary>当前生效的停留时长（秒）；0 表示永久保留到被点击。</summary>
+        /// <summary>
+        /// 当前生效的存在时长（秒）；0 表示永久保留、不显示进度条。
+        /// = 照明工具等级的基础时长 ×（1 + 建筑提供的比例加成 PlayerStats.CritPointDurationBonus）。
+        /// 已生成的暴击点不会因此变长，之后刷新的点才使用新值。
+        /// </summary>
         public float Lifetime
         {
             get
@@ -100,7 +122,10 @@ namespace Yujian.Mining
                     return 0f;
                 }
 
-                return Mathf.Max(0.1f, lightTool.CritPointLifetime);
+                float baseLifetime = Mathf.Max(0.1f, lightTool.CritPointLifetime);
+                float bonusRatio = playerStats != null ? playerStats.CritPointDurationBonus : 0f;
+
+                return Mathf.Max(0.1f, baseLifetime * (1f + bonusRatio));
             }
         }
 
@@ -154,14 +179,18 @@ namespace Yujian.Mining
             {
                 lightTool.OnToolChanged -= HandleLightToolChanged;
             }
+            UnbindOre();
             EventBus.Unsubscribe<OreHit>(HandleOreHit);
             EventBus.Unsubscribe<AreaChanged>(HandleAreaChanged);
         }
 
         private void OnDestroy()
         {
+            UnbindOre();
             DestroyRuntimeMaterial(pointMaterial);
             DestroyRuntimeMaterial(sparkMaterial);
+            DestroyRuntimeMaterial(barBackgroundMaterial);
+            DestroyRuntimeMaterial(barFillMaterial);
         }
 
         private static void DestroyRuntimeMaterial(Material material)
@@ -191,6 +220,14 @@ namespace Yujian.Mining
 
             if (!isInMiningArea)
             {
+                return;
+            }
+
+            // 新聚合体刚出现时，先等它的「放大→缩小」生成表现播完再刷暴击点。
+            // 否则点会在聚合体还在展开时就扣存在时间，玩家看到时进度条已经少了一截。
+            if (refillDelay > 0f)
+            {
+                refillDelay -= Time.deltaTime;
                 return;
             }
 
@@ -277,23 +314,23 @@ namespace Yujian.Mining
         }
 
         /// <summary>
-        /// 点中暴击点后调用：播放暴击表现，并在同一平面上换到新位置。
-        /// 矿石已死亡 / 照明工具不可用时才真正销毁。
+        /// 点中暴击点后调用：播放暴击表现。
+        /// 倒计时模式（默认）：暴击点原地保留到存在时间结束，期间可以继续点；
+        /// 永久模式（Inspector 勾选「暴击点永久保留」）：沿用旧规则，点中后换到新位置。
         /// </summary>
-        public void Consume(CritPoint point)
+        public void NotifyCritPointHit(CritPoint point)
         {
-            if (point == null)
+            if (point == null || point.IsConsumed)
             {
-                return;
-            }
-
-            if (point.IsConsumed)
-            {
-                activePoints.Remove(point);
                 return;
             }
 
             PlayCritFeedback(point.transform.position);
+
+            if (!point.IsPersistent)
+            {
+                return;
+            }
 
             Ore owner = point.Owner;
 
@@ -324,6 +361,7 @@ namespace Yujian.Mining
             burstRemaining = Capacity;
             cooldownRemaining = 0f;
             lastShellPieceCount = -1;
+            refillDelay = 0f;
         }
 
         /// <summary>生成一个暴击点。公开出来方便批处理验证不依赖冷却计时。</summary>
@@ -367,7 +405,9 @@ namespace Yujian.Mining
             }
 
             CritPoint point = pointObject.AddComponent<CritPoint>();
-            point.Initialize(target, Lifetime);
+            point.Initialize(target, Lifetime,
+                viewCamera != null ? viewCamera : Camera.main,
+                barBackgroundMaterial, barFillMaterial);
             point.Attach(anchor, localPoint);
             activePoints.Add(point);
 
@@ -380,6 +420,31 @@ namespace Yujian.Mining
             return point;
         }
         private static readonly RaycastHit[] SurfaceHits = new RaycastHit[16];
+
+        /// <summary>
+        /// 世界点是否落在玩家当前可视范围内（视口内，并按 spawnScreenMargin 留出四周边距）。
+        /// 相机为空时视为可见，交给调用方兜底。
+        /// </summary>
+        private bool IsInsideVisibleViewport(Camera camera, Vector3 worldPoint)
+        {
+            if (camera == null)
+            {
+                return true;
+            }
+
+            Vector3 viewport = camera.WorldToViewportPoint(worldPoint);
+
+            // z <= 0：点在相机背后
+            if (viewport.z <= 0.01f)
+            {
+                return false;
+            }
+
+            float margin = Mathf.Clamp(spawnScreenMargin, 0f, 0.45f);
+
+            return viewport.x >= margin && viewport.x <= 1f - margin
+                && viewport.y >= margin && viewport.y <= 1f - margin;
+        }
 
         /// <summary>
         /// 在矿石朝向相机的可见表面上取点，让暴击点看起来像砖块上的发光弱点。
@@ -417,18 +482,18 @@ namespace Yujian.Mining
 
                 if (visual != null)
                 {
-                    Vector3 lastSurface = default;
-                    Transform lastAnchor = null;
-                    Vector3 lastLocalPoint = default;
+                    // 候选已按「离摄像机由近到远」排序：第一个就是最靠近玩家的外层垃圾，
+                    // 优先落在这一层，避免点到被前面垃圾挡住的里层。
+                    visual.GetCritPointSurfaces(camera, surfaceCandidates);
+
+                    Vector3 firstSurface = default;
+                    Transform firstAnchor = null;
+                    Vector3 firstLocalPoint = default;
                     bool hasSurface = false;
 
-                    for (int attempt = 0; attempt < 24; attempt++)
+                    for (int i = 0; i < surfaceCandidates.Count; i++)
                     {
-                        if (!visual.TryGetCritPointSurface(camera,
-                                out GarbageAggregateVisual.CritSurface surface))
-                        {
-                            break;
-                        }
+                        GarbageAggregateVisual.CritSurface surface = surfaceCandidates[i];
 
                         Vector3 worldOffset = surface.WorldNormal * (pointDiameter * 0.35f);
                         Vector3 candidate = surface.WorldPosition + worldOffset;
@@ -440,10 +505,19 @@ namespace Yujian.Mining
                             continue;
                         }
 
-                        lastSurface = candidate;
-                        lastAnchor = surface.Anchor;
-                        lastLocalPoint = anchoredLocalPoint;
-                        hasSurface = true;
+                        if (!IsInsideVisibleViewport(camera, candidate))
+                        {
+                            continue;
+                        }
+
+                        // 记下最靠近玩家的那个可视落点，作为「都离别的点太近」时的兜底
+                        if (!hasSurface)
+                        {
+                            firstSurface = candidate;
+                            firstAnchor = surface.Anchor;
+                            firstLocalPoint = anchoredLocalPoint;
+                            hasSurface = true;
+                        }
 
                         if (IsClearOfOtherPoints(candidate, exclude))
                         {
@@ -453,18 +527,19 @@ namespace Yujian.Mining
                         }
                     }
 
-                    // 外壳上已经找到落点，只是离别的暴击点太近时也返回外壳点，
+                    // 外壳上已经找到最外层可视落点，只是离别的暴击点太近时也返回它，
                     // 不要退回包围盒表面（那正是点浮在空气里的原因）。
                     if (hasSurface)
                     {
-                        anchor = lastAnchor;
-                        localPoint = lastLocalPoint;
-                        return lastSurface;
+                        anchor = firstAnchor;
+                        localPoint = firstLocalPoint;
+                        return firstSurface;
                     }
                 }
             }
 
-            if (camera != null && TryGetScreenRect(bounds, camera, out Rect screenRect))
+            if (camera != null && TryGetScreenRect(
+                    bounds, camera, spawnScreenMargin, out Rect screenRect))
             {
                 for (int attempt = 0; attempt < 24; attempt++)
                 {
@@ -484,6 +559,12 @@ namespace Yujian.Mining
                         continue;
                     }
 
+                    // 表面点沿法线偏移后可能又贴到可视边缘，再确认一次
+                    if (!IsInsideVisibleViewport(camera, candidate))
+                    {
+                        continue;
+                    }
+
                     if (IsClearOfOtherPoints(candidate, exclude))
                     {
                         return candidate;
@@ -492,12 +573,19 @@ namespace Yujian.Mining
             }
 
             // 兜底：相机 / 碰撞体异常时仍按旧规则在中心平面取点，保证玩法不断。
+            // 有相机时只接受落在可视范围内的候选点；一个都没有就退回矿石中心。
             Vector3 best = bounds.center;
 
             for (int attempt = 0; attempt < 12; attempt++)
             {
                 Vector2 offset = Random.insideUnitCircle * radius;
                 Vector3 candidate = bounds.center + new Vector3(offset.x, 0f, offset.y);
+
+                if (!IsInsideVisibleViewport(camera, candidate))
+                {
+                    continue;
+                }
+
                 best = candidate;
 
                 if (IsClearOfOtherPoints(candidate, exclude))
@@ -632,8 +720,12 @@ namespace Yujian.Mining
             return hasBounds;
         }
 
-        /// <summary>把矿石的包围盒投影到屏幕上，并向内收 15%，避免总点在轮廓边缘。</summary>
-        private static bool TryGetScreenRect(Bounds bounds, Camera camera, out Rect rect)
+        /// <summary>
+        /// 把矿石的包围盒投影到屏幕上，向内收 15% 避开轮廓边缘，
+        /// 再按 viewportMargin 裁到玩家可视范围内，保证采样点不会落到屏幕外。
+        /// </summary>
+        private static bool TryGetScreenRect(
+            Bounds bounds, Camera camera, float viewportMargin, out Rect rect)
         {
             Vector3 center = bounds.center;
             Vector3 extents = bounds.extents;
@@ -670,7 +762,21 @@ namespace Yujian.Mining
                 return false;
             }
 
-            rect = new Rect(min.x + insetX, min.y + insetY, width, height);
+            float margin = Mathf.Clamp(viewportMargin, 0f, 0.45f);
+            float marginX = Screen.width * margin;
+            float marginY = Screen.height * margin;
+            float xMin = Mathf.Max(min.x + insetX, marginX);
+            float yMin = Mathf.Max(min.y + insetY, marginY);
+            float xMax = Mathf.Min(min.x + insetX + width, Screen.width - marginX);
+            float yMax = Mathf.Min(min.y + insetY + height, Screen.height - marginY);
+
+            if (xMax - xMin <= 1f || yMax - yMin <= 1f)
+            {
+                rect = default;
+                return false;
+            }
+
+            rect = new Rect(xMin, yMin, xMax - xMin, yMax - yMin);
             return true;
         }
 
@@ -681,6 +787,14 @@ namespace Yujian.Mining
             int count = Physics.RaycastNonAlloc(ray, SurfaceHits, 200f, ~0,
                 QueryTriggerInteraction.Ignore);
 
+            point = default;
+            normal = Vector3.up;
+
+            float nearestDistance = float.MaxValue;
+            bool found = false;
+
+            // RaycastNonAlloc 的顺序不保证由近到远，这里手动取最近的一层，
+            // 保证暴击点贴在玩家最先看到的表面上。
             for (int i = 0; i < count; i++)
             {
                 RaycastHit hit = SurfaceHits[i];
@@ -692,17 +806,18 @@ namespace Yujian.Mining
 
                 Ore hitOre = hit.collider.GetComponentInParent<Ore>();
 
-                if (hitOre == target)
+                if (hitOre != target || hit.distance >= nearestDistance)
                 {
-                    point = hit.point;
-                    normal = hit.normal;
-                    return true;
+                    continue;
                 }
+
+                nearestDistance = hit.distance;
+                point = hit.point;
+                normal = hit.normal;
+                found = true;
             }
 
-            point = default;
-            normal = Vector3.up;
-            return false;
+            return found;
         }
 
         private bool IsClearOfOtherPoints(Vector3 position, CritPoint exclude)
@@ -771,6 +886,56 @@ namespace Yujian.Mining
             }
         }
 
+        /// <summary>
+        /// 新聚合体 / BOSS 被配置出来时：清掉旧点，等生成表现播完再按满上限立即补点。
+        /// 不再等照明工具的刷新冷却，避免聚合体出现后还要空等几秒才有暴击点。
+        /// </summary>
+        private void HandleOreDefinitionApplied(Ore appliedOre)
+        {
+            if (appliedOre == null || appliedOre != ore)
+            {
+                return;
+            }
+
+            ClearAll();
+            refillDelay = Mathf.Max(0f, appliedOre.SpawnVisualDuration);
+
+            if (logSpawnFlow)
+            {
+                Debug.Log($"[CritPointSystem] 新聚合体已生成，暴击点将在 {refillDelay:0.##} 秒生成表现后立即刷新。", this);
+            }
+        }
+
+        private void BindOre(Ore target)
+        {
+            if (subscribedOre == target)
+            {
+                return;
+            }
+
+            if (subscribedOre != null)
+            {
+                subscribedOre.OnDefinitionApplied -= HandleOreDefinitionApplied;
+            }
+
+            subscribedOre = target;
+
+            if (subscribedOre != null)
+            {
+                subscribedOre.OnDefinitionApplied += HandleOreDefinitionApplied;
+            }
+        }
+
+        private void UnbindOre()
+        {
+            if (subscribedOre != null)
+            {
+                subscribedOre.OnDefinitionApplied -= HandleOreDefinitionApplied;
+            }
+
+            subscribedOre = null;
+        }
+
         private void HandleAreaChanged(AreaChanged evt)
         {
             if (evt.Area != GameArea.Mining)
@@ -802,6 +967,14 @@ namespace Yujian.Mining
                 viewCamera = Camera.main;
             }
 
+            if (playerStats == null)
+            {
+                playerStats = FindFirstObjectByType<PlayerStats>(FindObjectsInactive.Include);
+            }
+
+            // 订阅当前矿石的「重新配置」事件：新聚合体一出现就能立刻补暴击点
+            BindOre(ore);
+
             if (ore == null && !warnedMissingOre)
             {
                 warnedMissingOre = true;
@@ -810,9 +983,47 @@ namespace Yujian.Mining
             }
         }
 
+        private const string OverlayShaderName = "Yujian/Crit Point Overlay";
+
         private void BuildMaterial()
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+            Shader overlayShader = showThroughObstacles ? Shader.Find(OverlayShaderName) : null;
+
+            if (showThroughObstacles && overlayShader == null)
+            {
+                Debug.LogWarning($"[CritPointSystem] 找不到 {OverlayShaderName}，暴击点无法透视显示。" +
+                                 "请确认 Assets/Shaders/CritPointOverlay.shader 已导入。", this);
+            }
+
+            pointMaterial = CreateUnlitMaterial("CritPoint_Runtime", pointColor, overlayShader);
+            barBackgroundMaterial = CreateUnlitMaterial(
+                "CritPointBar_Runtime", new Color(0.06f, 0.06f, 0.06f, 1f), overlayShader);
+            barFillMaterial = CreateUnlitMaterial("CritPointBarFill_Runtime", pointColor, overlayShader);
+
+            if (logSpawnFlow)
+            {
+                string shaderName = pointMaterial != null && pointMaterial.shader != null
+                    ? pointMaterial.shader.name
+                    : "无";
+                int queue = pointMaterial != null ? pointMaterial.renderQueue : 0;
+
+                Debug.Log($"[CritPointSystem] 暴击点材质：{shaderName}，" +
+                          $"透视 {(overlayShader != null ? "开" : "关")}，渲染队列 {queue}。", this);
+            }
+        }
+
+        /// <summary>
+        /// 暴击点与剩余时间进度条共用同一套材质创建逻辑。
+        /// preferred 为透视着色器（ZTest Always）；为空时退回普通 URP Unlit。
+        /// </summary>
+        private Material CreateUnlitMaterial(string name, Color color, Shader preferred = null)
+        {
+            Shader shader = preferred;
+
+            if (shader == null)
+            {
+                shader = Shader.Find("Universal Render Pipeline/Unlit");
+            }
 
             if (shader == null)
             {
@@ -826,21 +1037,30 @@ namespace Yujian.Mining
 
             if (shader == null)
             {
-                Debug.LogWarning("[CritPointSystem] 找不到可用着色器，暴击点会使用默认材质。", this);
-                return;
+                Debug.LogWarning($"[CritPointSystem] 找不到可用着色器，{name} 会使用默认材质。", this);
+                return null;
             }
 
-            pointMaterial = new Material(shader) { name = "CritPoint_Runtime" };
+            Material material = new Material(shader) { name = name };
 
-            if (pointMaterial.HasProperty("_BaseColor"))
+            if (material.HasProperty("_BaseColor"))
             {
-                pointMaterial.SetColor("_BaseColor", pointColor);
+                material.SetColor("_BaseColor", color);
             }
 
-            if (pointMaterial.HasProperty("_Color"))
+            if (material.HasProperty("_Color"))
             {
-                pointMaterial.SetColor("_Color", pointColor);
+                material.SetColor("_Color", color);
             }
+
+            if (preferred != null)
+            {
+                // 关键：必须明确写到 Overlay 队列，保证在不透明垃圾之后绘制。
+                // 只靠 ZTest Always 还不够——如果队列落在不透明段，先画的点会被后画的垃圾盖掉。
+                material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Overlay;
+            }
+
+            return material;
         }
 
         /// <summary>暴击表现：焊铁式火花 + 可选音效，持续约 0.5 秒。</summary>

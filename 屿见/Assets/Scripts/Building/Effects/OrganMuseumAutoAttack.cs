@@ -1,6 +1,7 @@
 using UnityEngine;
 using Yujian.Core;
 using Yujian.Mining;
+using Yujian.Player;
 
 namespace Yujian.Building.Effects
 {
@@ -47,6 +48,14 @@ namespace Yujian.Building.Effects
         [Tooltip("击碎矿石时是否按玩家挖矿的规则发放奖励。用户已确认：和手动挖一样发，不要关")]
         [SerializeField] private bool grantRewardOnKill = true;
 
+        [Header("伤害数字")]
+        [Tooltip("不同建筑的伤害数字左右错开的间距（世界单位）。0 = 关闭错开，所有建筑叠在矿石上方")]
+        [SerializeField, Min(0f)] private float damageNumberLaneSpacing = BuildingDamageNumberSlots.DefaultSpacing;
+
+        [Tooltip("错开使用的车道总数（含中间车道：1 = 全部居中，2 = 中 + 左，3 = 中 + 左 + 右）。" +
+                 "超出的建筑按取模复用前面的车道")]
+        [SerializeField, Min(1)] private int damageNumberLaneCount = BuildingDamageNumberSlots.DefaultLaneCount;
+
         [Header("表现（MVP：只画一条线）")]
         [Tooltip("攻击时从出射点到目标画一条线。Scene 视图一定能看到；" +
                  "Game 视图需要在右上角 Gizmos 菜单里打开。正式版再来做真正的特效")]
@@ -77,6 +86,18 @@ namespace Yujian.Building.Effects
         /// <summary>本建筑实例的运行时信息，提供等级与升级表。挂在父物体上，缓存在这里。</summary>
         private PlacedBuildingInfo ownerInfo;
 
+        /// <summary>玩家属性。用来读取「全建筑攻速」全局强化。</summary>
+        private PlayerStats playerStats;
+
+        /// <summary>伤害数字车道：按建筑实例申请，同一座建筑的多个效果共用一条车道。</summary>
+        private int damageSlotOwnerId;
+        private int damageSlot;
+        private bool damageSlotAcquired;
+
+        /// <summary>玩家垃圾。采矿 / 建筑击碎都只产垃圾（2026-11-19 经济拆分）。</summary>
+        private PlayerGarbage playerGarbage;
+        private bool garbageLookupDone;
+
         /// <summary>本建筑当前等级（没有 PlacedBuildingInfo 时为 1）。</summary>
         public int CurrentLevel => ownerInfo != null ? ownerInfo.Level : 1;
 
@@ -84,7 +105,7 @@ namespace Yujian.Building.Effects
         private Transform Origin => attackOrigin != null ? attackOrigin : transform;
 
         /// <summary>
-        /// 当前实际攻击间隔 = 基础间隔 ÷（1 + 本建筑攻速强化）。
+        /// 当前实际攻击间隔 = 基础间隔 ÷（1 + 个体攻速强化 + 全建筑攻速强化）。
         /// 每帧现算，选完强化后下一帧立即生效。
         /// </summary>
         private float EffectiveAttackInterval
@@ -95,6 +116,11 @@ namespace Yujian.Building.Effects
                     ? ownerInfo.GetEnhancementBonus(
                         BuildingEnhancementScope.Individual, BuildingEnhancementStat.AttackSpeed)
                     : 0f;
+
+                if (playerStats != null)
+                {
+                    speedBonus += playerStats.GlobalAttackSpeedBonus;
+                }
 
                 return attackInterval / Mathf.Max(0.01f, 1f + speedBonus);
             }
@@ -125,6 +151,12 @@ namespace Yujian.Building.Effects
                 ownerInfo = GetComponentInParent<PlacedBuildingInfo>();
             }
 
+            GameManager manager = GameManager.Instance;
+            playerStats = manager != null ? manager.Stats : null;
+
+            ResolvePlayerGarbage();
+            RegisterDamageNumberSlot();
+
             // 建成立刻打第一发：策划案"每 1 秒攻击一次"，同时也让验收一眼就能看到效果
             timer = EffectiveAttackInterval;
 
@@ -139,6 +171,7 @@ namespace Yujian.Building.Effects
         {
             timer = 0f;
             currentTarget = null;
+            ReleaseDamageNumberSlot();
 
             if (logAttackFlow)
             {
@@ -243,7 +276,9 @@ namespace Yujian.Building.Effects
             bool suppressReward = target.SuppressDeathReward;
             Vector3 targetPosition = target.transform.position;
 
-            bool destroyed = target.TakeDamage(damage, DamageSource.Building);
+            // 传本建筑的固定车道偏移：多座建筑同时打同一只怪时数字分开显示（样式仍统一）
+            bool destroyed = target.TakeDamage(
+                damage, DamageSource.Building, false, GetDamageNumberOffset());
 
             if (drawAttackLine)
             {
@@ -274,14 +309,79 @@ namespace Yujian.Building.Effects
                 return;
             }
 
-            // 与 MiningInput 同一条规则：击碎才发奖励，奖励值取自矿石自己
-            Context.PlayerCurrency.AddMoney(reward);
+            // 与 MiningInput 同一条规则：击碎才发奖励，奖励值取自矿石自己。
+            // 2026-11-19 起只产垃圾，金币由回收站转换产出。
+            ResolvePlayerGarbage();
+
+            if (playerGarbage == null)
+            {
+                Debug.LogError("[OrganMuseumAutoAttack] 找不到 PlayerGarbage，击碎奖励无法发放。" +
+                               "请运行菜单「屿见/建筑/配置垃圾回收站系统」自动接线。", this);
+                return;
+            }
+
+            playerGarbage.AddGarbage(reward);
 
             if (logAttackFlow)
             {
                 Debug.Log($"[OrganMuseumAutoAttack] 击碎 {targetName}，发放 {reward} 垃圾，" +
-                          $"当前垃圾 {Context.PlayerCurrency.CurrentMoney}", this);
+                          $"当前垃圾 {playerGarbage.CurrentGarbage}", this);
             }
+        }
+
+        /// <summary>
+        /// 找到玩家垃圾。效果挂在建筑预制体上，拿不到场景引用，
+        /// 所以和 GameAreaController 一样在运行时查找一次并缓存。
+        /// </summary>
+        private void ResolvePlayerGarbage()
+        {
+            if (playerGarbage != null || garbageLookupDone)
+            {
+                return;
+            }
+
+            garbageLookupDone = true;
+            playerGarbage = FindFirstObjectByType<PlayerGarbage>(FindObjectsInactive.Include);
+        }
+
+        /// <summary>
+        /// 本建筑的伤害数字车道偏移。每发现算，Inspector 改数值或建筑等级变化都不需要重建。
+        /// </summary>
+        private Vector3 GetDamageNumberOffset()
+        {
+            return BuildingDamageNumberSlots.GetOffset(
+                damageSlot, damageNumberLaneCount, damageNumberLaneSpacing);
+        }
+
+        /// <summary>
+        /// 申请本建筑的伤害数字车道。按建筑实例（PlacedBuildingInfo）申请，
+        /// 所以同一座建筑上的多个效果会共用一条车道。
+        /// </summary>
+        private void RegisterDamageNumberSlot()
+        {
+            if (damageSlotAcquired)
+            {
+                return;
+            }
+
+            damageSlotOwnerId = ownerInfo != null
+                ? ownerInfo.GetInstanceID()
+                : transform.root.GetInstanceID();
+
+            damageSlot = BuildingDamageNumberSlots.Acquire(damageSlotOwnerId);
+            damageSlotAcquired = true;
+        }
+
+        /// <summary>释放车道。建筑销毁 / 效果停用时调用，槽位可被后面的建筑复用。</summary>
+        private void ReleaseDamageNumberSlot()
+        {
+            if (!damageSlotAcquired)
+            {
+                return;
+            }
+
+            BuildingDamageNumberSlots.Release(damageSlotOwnerId);
+            damageSlotAcquired = false;
         }
 
         /// <summary>

@@ -189,6 +189,18 @@ namespace Yujian.Tests
             return currency;
         }
 
+        public static PlayerGarbage MakeGarbage(GameObject host, int garbage = 0)
+        {
+            PlayerGarbage playerGarbage = host.AddComponent<PlayerGarbage>();
+
+            if (garbage > 0)
+            {
+                playerGarbage.AddGarbage(garbage);
+            }
+
+            return playerGarbage;
+        }
+
         public static MaterialInventory MakeInventory(
             GameObject host, params (MaterialData Material, int Count)[] stacks)
         {

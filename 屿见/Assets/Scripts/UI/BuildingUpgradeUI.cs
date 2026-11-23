@@ -153,7 +153,7 @@ namespace Yujian.UI
 
         private void LateUpdate()
         {
-            // 垃圾、等级、建筑位置每帧都可能变，用事件反而容易漏
+            // 金币、等级、建筑位置每帧都可能变，用事件反而容易漏
             Refresh();
         }
 
@@ -293,10 +293,10 @@ namespace Yujian.UI
             {
                 int target = upgrade.GetTargetLevel(mode);
                 int total = upgrade.SelectedTable.GetTotalCost(level, target);
-                return $"Lv.{level} / {max}｜升到 {target} 级共 {total} 垃圾";
+                return $"Lv.{level} / {max}｜升到 {target} 级共 {total} 金币";
             }
 
-            return $"Lv.{level} / {max}｜下一级 {upgrade.NextCost} 垃圾";
+            return $"Lv.{level} / {max}｜下一级 {upgrade.NextCost} 金币";
         }
 
         private void WireButton()
@@ -405,8 +405,29 @@ namespace Yujian.UI
 
             if (visible)
             {
-                transform.SetAsLastSibling();
+                BringBelowNodeUI();
             }
+        }
+
+        /// <summary>
+        /// 把升级按钮组压到强化节点界面下面（2026-11-23 用户要求：按钮在下、强化 UI 在上）。
+        ///
+        /// 两个界面是同一个 Canvas 下的兄弟节点，谁在后面谁盖住谁。
+        /// 强化窗口打开时要保证它是最上层，按钮最多排到它前面。
+        /// 找不到强化窗口时退回「置顶」，行为与旧版一致。
+        /// </summary>
+        private void BringBelowNodeUI()
+        {
+            if (nodeUI != null && nodeUI.transform.parent == transform.parent)
+            {
+                nodeUI.transform.SetAsLastSibling();
+                transform.SetSiblingIndex(nodeUI.transform.GetSiblingIndex());
+                // 插到强化窗口原来的位置后，再把它顶回最后，双保险
+                nodeUI.transform.SetAsLastSibling();
+                return;
+            }
+
+            transform.SetAsLastSibling();
         }
 
         /// <summary>

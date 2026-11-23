@@ -14,10 +14,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Building.BuildingData
   buildingName: "\u83FD\u5E84\u82B1\u56ED"
   buildingType: 0
-  buildingPrefab: {fileID: 5479955157972750790, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
-  blueprintPrefab: {fileID: 7451330899216750001, guid: a7f3c19e4b2d47c8b06e9d531af82047, type: 3}
-  footprintCells: {x: 2, y: 2}
+  buildingPrefab: {fileID: 8627363185264978642, guid: 7db1b7de10113394e8ca523c5b75a1aa, type: 3}
+  blueprintPrefab: {fileID: 4697167470988432799, guid: ae8645797a8ec2d479a63982219984e6, type: 3}
+  footprintCells: {x: 1, y: 1}
   upgradeTable: {fileID: 11400000, guid: e9d44926108337944aca6f094bdcf54e, type: 2}
+  unlockLevel: 1
+  buildLimit: 0
+  specialGroup: 0
   requiredMaterials:
   - material: {fileID: 11400000, guid: 9f1a5c65d730e014daa9213d786dea96, type: 2}
     amount: 3

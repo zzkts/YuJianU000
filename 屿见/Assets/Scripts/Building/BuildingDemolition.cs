@@ -37,6 +37,9 @@ namespace Yujian.Building
         [Tooltip("原料库存，返还建造原料时使用")]
         [SerializeField] private MaterialInventory inventory;
 
+        [Tooltip("建筑金币商店。金币建造模式下，拆除返还的是建造费而不是原料")]
+        [SerializeField] private BuildingGoldShop goldShop;
+
         [Header("返还")]
         [Tooltip("是否返还升到当前等级花掉的全部金币")]
         [SerializeField] private bool refundUpgradeMoney = true;
@@ -54,7 +57,8 @@ namespace Yujian.Building
             BuildingUpgrade upgradeSource,
             MilestoneProgress milestones,
             PlayerCurrency playerCurrency,
-            MaterialInventory materialInventory)
+            MaterialInventory materialInventory,
+            BuildingGoldShop goldShopSource = null)
         {
             buildingManager = manager;
             migration = migrationSource;
@@ -62,7 +66,11 @@ namespace Yujian.Building
             milestoneProgress = milestones;
             currency = playerCurrency;
             inventory = materialInventory;
+            goldShop = goldShopSource;
         }
+
+        /// <summary>当前是否处于金币建造模式。拆除弹窗据此把「返还原料」显示成「返还建造金币」。</summary>
+        public bool UsesGoldPurchase => goldShop != null && goldShop.IsEnabled;
 
         /// <summary>弹窗默认勾选状态：是否返还升级金币。</summary>
         public bool DefaultRefundUpgradeMoney => refundUpgradeMoney;
@@ -229,7 +237,15 @@ namespace Yujian.Building
                 currency.AddMoney(money);
             }
 
-            if (refundMaterials && inventory != null && data != null)
+            if (refundMaterials && UsesGoldPurchase)
+            {
+                // 金币建造模式：原料从未被消耗，改成退还建造费
+                if (data != null && goldShop.TryGetPrice(data, out int buildPrice) && buildPrice > 0 && currency != null)
+                {
+                    currency.AddMoney(buildPrice);
+                }
+            }
+            else if (refundMaterials && inventory != null && data != null)
             {
                 var requirements = data.RequiredMaterials;
 
@@ -259,7 +275,7 @@ namespace Yujian.Building
 
             if (money > 0)
             {
-                builder.Append(money).Append(" 垃圾");
+                builder.Append(money).Append(" 金币");
             }
 
             if (!string.IsNullOrEmpty(materials))
@@ -290,6 +306,13 @@ namespace Yujian.Building
             if (!refundMaterials || data == null)
             {
                 return string.Empty;
+            }
+
+            if (UsesGoldPurchase)
+            {
+                return goldShop.TryGetPrice(data, out int buildPrice) && buildPrice > 0
+                    ? $"建造费 {buildPrice} 金币"
+                    : string.Empty;
             }
 
             var requirements = data.RequiredMaterials;

@@ -51,6 +51,18 @@ namespace Yujian.Mining
         private OreGroup[] groupOverride;
         private readonly HashSet<OreEntry> overrideDrawn = new HashSet<OreEntry>();
 
+        /// <summary>本关的顺序波次组（aggregateGroups 里勾了 sequential 的那一个）。</summary>
+        private OreGroup sequentialGroup;
+
+        /// <summary>顺序波次的下一条索引。LevelManager 用已清除波次同步它。</summary>
+        private int sequentialWaveIndex;
+
+        /// <summary>
+        /// 顺序波次里的某一条生成后广播（普通波和中Boss都会广播）。
+        /// LevelManager 用它在生成中Boss时放大体型 / 播报，在下一只普通波时恢复体型。
+        /// </summary>
+        public event System.Action<OreEntry> WaveSpawned;
+
         /// <summary>
         /// 关卡锁定的怪物档位。0 = 不锁，跟随玩家等级。
         /// 锁定期间不看玩家等级、也不自动跳档，本档抽完就清记录循环。
@@ -197,13 +209,66 @@ namespace Yujian.Mining
 
             groupOverride = normalized;
             overrideDrawn.Clear();
+            sequentialGroup = FindSequentialGroup(normalized);
+            sequentialWaveIndex = 0;
 
             if (logSpawnFlow)
             {
                 Debug.Log(normalized != null
-                    ? $"[OreSpawner] 本关使用专属聚合体组，共 {normalized.Length} 组。"
+                    ? $"[OreSpawner] 本关使用专属聚合体组，共 {normalized.Length} 组。" +
+                      (sequentialGroup != null
+                          ? $"顺序组「{sequentialGroup.name}」共 {sequentialGroup.EntryCount} 波。"
+                          : string.Empty)
                     : "[OreSpawner] 本关没有专属聚合体组，改回按矿石等级表抽取。");
             }
+        }
+
+        /// <summary>
+        /// 把顺序波次定位到「已清除多少波」。退出重进、跨关卡后都要先调用它，
+        /// 否则顺序组会从第 1 条重新开始，和 LevelManager 的进度对不上。
+        /// </summary>
+        public void SetWaveProgress(int clearedCount)
+        {
+            sequentialWaveIndex = Mathf.Max(0, clearedCount);
+
+            if (logSpawnFlow && sequentialGroup != null)
+            {
+                Debug.Log($"[OreSpawner] 顺序波次定位到第 {sequentialWaveIndex + 1} 波" +
+                          $"（已清除 {sequentialWaveIndex} 波，共 {sequentialGroup.EntryCount} 波）。");
+            }
+        }
+
+        /// <summary>取 aggregateGroups 里第一个顺序组；没有则返回 null。</summary>
+        private static OreGroup FindSequentialGroup(OreGroup[] groups)
+        {
+            if (groups == null)
+            {
+                return null;
+            }
+
+            OreGroup first = null;
+
+            for (int i = 0; i < groups.Length; i++)
+            {
+                OreGroup group = groups[i];
+
+                if (group == null || !group.IsSequential)
+                {
+                    continue;
+                }
+
+                if (first == null)
+                {
+                    first = group;
+                }
+                else
+                {
+                    Debug.LogWarning($"[OreSpawner] 一关里配置了多个顺序组（「{first.name}」「{group.name}」），" +
+                                     "只会使用第一个。请把波次合并到一个顺序组里。", group);
+                }
+            }
+
+            return first;
         }
 
         /// <summary>
@@ -428,6 +493,9 @@ namespace Yujian.Mining
 
             ore.ApplyDefinition(entry.Type, health, reward);
 
+            // 顺序波次 / 普通波次都会广播；LevelManager 用它处理中Boss放大、提示与恢复
+            WaveSpawned?.Invoke(entry);
+
             if (logSpawnFlow)
             {
                 Debug.Log($"[OreSpawner] 等级 {currentTier} / 组「{group.name}」生成" +
@@ -546,6 +614,11 @@ namespace Yujian.Mining
         {
             selectedGroup = null;
 
+            if (sequentialGroup != null)
+            {
+                return SelectSequentialEntry(out selectedGroup);
+            }
+
             for (int guard = 0; guard < 64; guard++)
             {
                 List<OreGroup> candidates = new List<OreGroup>();
@@ -603,6 +676,39 @@ namespace Yujian.Mining
 
             Debug.LogError("[OreSpawner] 抽取关卡专属聚合体时超过最大循环次数，请检查配置。", this);
             return null;
+        }
+
+        /// <summary>
+        /// 顺序组：按 entries 列表顺序取下一条，不随机、不按权重。
+        /// 索引由 <see cref="SetWaveProgress"/> 与生成次数维护；越界时报错并返回 null，
+        /// 正常情况下 LevelManager 会在最后一条死亡时接上最终 BOSS，不会越界。
+        /// </summary>
+        private OreEntry SelectSequentialEntry(out OreGroup selectedGroup)
+        {
+            selectedGroup = sequentialGroup;
+
+            int count = sequentialGroup.EntryCount;
+            int index = Mathf.Max(0, sequentialWaveIndex);
+
+            if (index >= count)
+            {
+                Debug.LogError($"[OreSpawner] 顺序组「{sequentialGroup.name}」没有第 {index + 1} 波" +
+                               $"（共 {count} 波）。请检查关卡 waveCount 与顺序组条目数是否一致，" +
+                               "或最终 BOSS 是否已经接上。", this);
+                return null;
+            }
+
+            OreEntry entry = sequentialGroup.GetEntry(index);
+
+            if (entry == null || !entry.IsSelectable)
+            {
+                Debug.LogError($"[OreSpawner] 顺序组「{sequentialGroup.name}」第 {index + 1} 条为空或权重 <= 0。" +
+                               "顺序波次每条权重都必须大于 0。", this);
+                return null;
+            }
+
+            sequentialWaveIndex = index + 1;
+            return entry;
         }
 
         /// <summary>收集当前等级下所有"还有未抽条目"的组。</summary>

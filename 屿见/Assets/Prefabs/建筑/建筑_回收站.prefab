@@ -1,0 +1,101 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1001 &8179911672963578843
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1050095293582776153, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_Layer
+      value: 7
+      objectReference: {fileID: 0}
+    - target: {fileID: 5479955157972750790, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_Name
+      value: "\u5EFA\u7B51_\u56DE\u6536\u7AD9"
+      objectReference: {fileID: 0}
+    - target: {fileID: 5479955157972750790, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_Layer
+      value: 7
+      objectReference: {fileID: 0}
+    - target: {fileID: 5879303489309696738, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_Layer
+      value: 7
+      objectReference: {fileID: 0}
+    - target: {fileID: 6448667319257365700, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -10.71504
+      objectReference: {fileID: 0}
+    - target: {fileID: 6448667319257365700, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6448667319257365700, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -7.98445
+      objectReference: {fileID: 0}
+    - target: {fileID: 6448667319257365700, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6448667319257365700, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6448667319257365700, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6448667319257365700, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6448667319257365700, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6448667319257365700, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6448667319257365700, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6885794643542943088, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_Layer
+      value: 7
+      objectReference: {fileID: 0}
+    - target: {fileID: 8504623961820486313, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      propertyPath: m_Layer
+      value: 7
+      objectReference: {fileID: 0}
+    m_RemovedComponents:
+    - {fileID: 770729541424473324, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 5479955157972750790, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2985582623118258065}
+  m_SourcePrefab: {fileID: 100100000, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+--- !u!1 &4433886731025623581 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 5479955157972750790, guid: e7aa8556c67be954e91566aee8bcf64f, type: 3}
+  m_PrefabInstance: {fileID: 8179911672963578843}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &2985582623118258065
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4433886731025623581}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 61ff2caefb8a696485ea6161ba8f43e3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Building.Effects.RecyclingStationEffect
+  progressAnchorHeight: 3

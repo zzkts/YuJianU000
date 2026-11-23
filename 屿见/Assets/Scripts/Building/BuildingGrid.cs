@@ -77,16 +77,24 @@ namespace Yujian.Building
         [Tooltip("单格边长（世界单位）。风琴博物馆占地 4×4，边长为 2 时占 2×2 格")]
         [SerializeField] private float cellSize = 2f;
 
-        [Tooltip("网格宽高格数。自动适配海岛时由台地半尺寸 / 边长算出")]
+        [Tooltip("网格宽高格数（X = 宽，Y = 深），可直接手填。勾了自动适配海岛时会被台地范围覆盖")]
         [SerializeField] private Vector2Int cellCounts = new Vector2Int(52, 52);
 
-        [Tooltip("勾选后按 IslandDefinition 的台地中心与半尺寸自动重算中心与格数。" +
-                 "手动调整格数时请关掉")]
-        [SerializeField] private bool autoFitToIsland = true;
+        [Tooltip("勾选后按 IslandDefinition 的台地中心与半尺寸自动重算中心与格数，" +
+                 "会覆盖上面手填的网格长宽。默认关闭：网格长宽以你填的值为准")]
+        [SerializeField] private bool autoFitToIsland;
 
         [Tooltip("可建区域向内收缩的距离。0 = 格子完全落在台地边界内即可建；" +
-                 "调大可以把靠边的格子也排除掉")]
+                 "调大可以把靠边的格子也排除掉。只在走海岛台地判定时生效")]
         [SerializeField] private float buildableInset = 0f;
+
+        [Header("可建面积（手绘）")]
+        [Tooltip("手绘可建面积掩码。启用后完全以它为准，不再按海岛台地自动判定。" +
+                 "用菜单「屿见 → 建筑 → 可建面积画笔…」创建和绘制")]
+        [SerializeField] private BuildableAreaMask areaMask;
+
+        [Tooltip("是否启用手绘掩码。关掉后回到海岛台地判定；掩码资产本身保留")]
+        [SerializeField] private bool useAreaMask;
 
         [Header("调试")]
         [Tooltip("是否在 Console 打印网格初始化与占用登记日志")]
@@ -115,6 +123,12 @@ namespace Yujian.Building
 
             /// <summary>是否已净化。true 时只封锁核心格，其余格子归还给玩家。</summary>
             public bool Unlocked;
+
+            /// <summary>
+            /// 手绘污染格（长度 = 网格总格数，true = 污染）。
+            /// 为空时回退到 Rect 矩形；有值时以它为准。
+            /// </summary>
+            public bool[] Cells;
         }
 
         private Vector3 origin;
@@ -142,8 +156,66 @@ namespace Yujian.Building
         /// <summary>网格宽高格数。</summary>
         public Vector2Int CellCounts => cellCounts;
 
+        /// <summary>网格中心（Inspector 里的 gridCenter）。</summary>
+        public Vector3 GridCenter => gridCenter;
+
+        /// <summary>手绘可建面积掩码，可能为空。</summary>
+        public BuildableAreaMask AreaMask => areaMask;
+
+        /// <summary>是否在 Inspector 里启用了手绘掩码（不等于掩码有效）。</summary>
+        public bool UseAreaMask => useAreaMask;
+
+        /// <summary>掩码非空、已启用且数组长度正确。</summary>
+        public bool IsAreaMaskActive => useAreaMask && areaMask != null && areaMask.IsValid;
+
+        /// <summary>掩码已启用，且网格签名与当前网格一致。</summary>
+        public bool HasCompatibleAreaMask =>
+            IsAreaMaskActive && areaMask.IsCompatible(gridCenter, cellSize, cellCounts);
+
         /// <summary>网格所在水平面的 Y 坐标。</summary>
         public float GridPlaneY => origin.y;
+
+        /// <summary>网格世界尺寸（X = 宽，Y = 深）。</summary>
+        public Vector2 GridWorldSize => new Vector2(
+            cellCounts.x * cellSize, cellCounts.y * cellSize);
+
+        /// <summary>
+        /// 手填网格长宽（格数），并关闭「自动适配海岛」。
+        /// 运行时改变格数会清空占用表，只建议在编辑模式 / 初始化时调用。
+        /// </summary>
+        public void SetCellCounts(Vector2Int counts)
+        {
+            autoFitToIsland = false;
+            cellCounts = new Vector2Int(
+                Mathf.Max(1, counts.x), Mathf.Max(1, counts.y));
+            Rebuild();
+        }
+
+        /// <summary>按海岛可建范围重新适配网格中心与格数。</summary>
+        public void FitToIsland()
+        {
+            autoFitToIsland = true;
+            Rebuild();
+        }
+
+        /// <summary>
+        /// 按当前海岛可建范围与单格边长，计算自动适配会用到的格数。
+        /// 取 ceil：宁可网格比海岛大一点，也不要在岛边缺一格（88 / 10 → 9）。
+        /// 没有海岛引用时返回当前格数。
+        /// </summary>
+        public Vector2Int ComputeIslandFitCounts()
+        {
+            if (islandDefinition == null)
+            {
+                return cellCounts;
+            }
+
+            Vector2 half = islandDefinition.BuildableHalfExtents;
+
+            return new Vector2Int(
+                Mathf.Max(1, Mathf.CeilToInt(half.x * 2f / cellSize - 0.0001f)),
+                Mathf.Max(1, Mathf.CeilToInt(half.y * 2f / cellSize - 0.0001f)));
+        }
 
         /// <summary>网格世界范围的最小角（含）。</summary>
         public Vector3 WorldMin => origin;
@@ -200,6 +272,35 @@ namespace Yujian.Building
         }
 
         /// <summary>
+        /// 编辑器「可建面积画笔」切换数据源：mask 为空或 use=false 时回到海岛台地判定。
+        /// 会立即重算可建掩码。
+        /// </summary>
+        public void SetAreaMask(BuildableAreaMask mask, bool use)
+        {
+            areaMask = mask;
+            useAreaMask = use;
+            Rebuild();
+        }
+
+        /// <summary>
+        /// 把当前海岛台地的判定结果烘焙进掩码（忽略当前 useAreaMask）。
+        /// 画笔的「从台地烘焙」用；运行时不需要。
+        /// </summary>
+        public void BakeProceduralMaskInto(BuildableAreaMask mask)
+        {
+            if (mask == null)
+            {
+                return;
+            }
+
+            mask.Initialize(gridCenter, cellSize, cellCounts, false);
+
+            bool[] snapshot = new bool[cellCounts.x * cellCounts.y];
+            ComputeProceduralMask(snapshot);
+            mask.CopyFrom(snapshot);
+        }
+
+        /// <summary>
         /// 按当前 Inspector 参数重算原点、可建掩码与占用表。
         /// 关闭游戏时由向导调用也不会有副作用（数组只在运行时使用）。
         /// </summary>
@@ -214,12 +315,10 @@ namespace Yujian.Building
 
             if (autoFitToIsland && islandDefinition != null)
             {
+                // 自动适配取 ceil：宁可网格比海岛大一点，也不要边缘缺一格。
+                // 例：海岛 88×88、单格 10 → 9×9 = 90×90（floor 会只给 8×8 = 80×80）。
                 gridCenter = islandDefinition.BuildableCenter;
-                cellCounts = new Vector2Int(
-                    Mathf.Max(1, Mathf.FloorToInt(
-                        islandDefinition.BuildableHalfExtents.x * 2f / cellSize + 0.0001f)),
-                    Mathf.Max(1, Mathf.FloorToInt(
-                        islandDefinition.BuildableHalfExtents.y * 2f / cellSize + 0.0001f)));
+                cellCounts = ComputeIslandFitCounts();
             }
 
             cellCounts.x = Mathf.Max(1, cellCounts.x);
@@ -260,18 +359,48 @@ namespace Yujian.Building
                     }
                 }
 
+                string source = HasCompatibleAreaMask
+                    ? "手绘掩码"
+                    : (islandSettings != null ? "圆角台地" :
+                        islandDefinition != null ? "矩形回退" : "无");
+
                 Debug.Log($"[BuildingGrid] 网格就绪：原点 {origin}，格数 {cellCounts.x}×{cellCounts.y}，" +
-                          $"单格 {cellSize}，可建 {buildableCount} 格，" +
-                          $"判定依据 {(islandSettings != null ? "圆角台地" : islandDefinition != null ? "矩形回退" : "无")}。");
+                          $"单格 {cellSize}，可建 {buildableCount} 格，判定依据 {source}。");
             }
+        }
+
+        /// <summary>
+        /// 决定可建掩码的来源：启用且签名匹配的手绘掩码优先，否则按海岛台地算。
+        /// </summary>
+        private void BuildBuildableMask()
+        {
+            if (useAreaMask && areaMask != null)
+            {
+                if (areaMask.IsValid &&
+                    areaMask.IsCompatible(gridCenter, cellSize, cellCounts) &&
+                    areaMask.CopyTo(buildableMask))
+                {
+                    return;
+                }
+
+                Debug.LogError("[BuildingGrid] 可建面积掩码与当前网格不匹配（中心 / 单格 / 格数），" +
+                               "已回退到海岛台地判定。请用「屿见 → 建筑 → 可建面积画笔…」重建掩码。", this);
+            }
+
+            ComputeProceduralMask(buildableMask);
         }
 
         /// <summary>
         /// 计算每个格子是否完全落在可建台地上。
         /// 判定采样 4 个角点 + 中心，全部通过才算可建；只查中心会让半个格子悬在水上的情况被放过。
         /// </summary>
-        private void BuildBuildableMask()
+        private void ComputeProceduralMask(bool[] target)
         {
+            if (target == null || target.Length != cellCounts.x * cellCounts.y)
+            {
+                return;
+            }
+
             if (islandSettings == null)
             {
                 if (islandDefinition == null)
@@ -311,7 +440,7 @@ namespace Yujian.Building
                         IsPointBuildable(max) &&
                         IsPointBuildable(center);
 
-                    buildableMask[x + y * cellCounts.x] = buildable;
+                    target[x + y * cellCounts.x] = buildable;
                 }
             }
         }
@@ -355,17 +484,97 @@ namespace Yujian.Building
                 Rect = rect,
                 CoreCell = coreCell,
                 Unlocked = unlocked,
+                Cells = null,
             };
 
             RebuildLevelBlockMask();
 
             if (logGridFlow)
             {
-                Debug.Log($"[BuildingGrid] 登记关卡污染区：ownerId={ownerId}，格子 {rect}，" +
+                Debug.Log($"[BuildingGrid] 登记关卡污染区：ownerId={ownerId}，矩形 {rect}，" +
                           $"核心格 {coreCell}，{(unlocked ? "已净化（仅核心格封锁）" : "未净化（整块封锁）")}。");
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// 用一张手绘污染掩码登记关卡污染区。cells 长度必须等于网格总格数，true = 污染。
+        /// 未净化时封锁所有污染格；已净化时只封锁核心格。
+        /// </summary>
+        public bool RegisterLevelFootprint(
+            int ownerId, bool[] cells, Vector2Int coreCell, bool unlocked)
+        {
+            int expected = cellCounts.x * cellCounts.y;
+
+            if (cells == null || cells.Length != expected)
+            {
+                Debug.LogWarning($"[BuildingGrid] 关卡污染掩码长度非法" +
+                                 $"（ownerId={ownerId}，{cells?.Length ?? 0} / {expected}），已忽略。", this);
+                return false;
+            }
+
+            RectInt bounds = ComputeCellBounds(cells, coreCell);
+
+            levelFootprints[ownerId] = new LevelFootprint
+            {
+                Rect = bounds,
+                CoreCell = coreCell,
+                Unlocked = unlocked,
+                Cells = (bool[])cells.Clone(),
+            };
+
+            RebuildLevelBlockMask();
+
+            if (logGridFlow)
+            {
+                int count = 0;
+
+                for (int i = 0; i < cells.Length; i++)
+                {
+                    if (cells[i])
+                    {
+                        count++;
+                    }
+                }
+
+                Debug.Log($"[BuildingGrid] 登记关卡污染区（手绘）：ownerId={ownerId}，污染 {count} 格，" +
+                          $"包围盒 {bounds}，核心格 {coreCell}，" +
+                          $"{(unlocked ? "已净化（仅核心格封锁）" : "未净化（污染格封锁）")}。");
+            }
+
+            return true;
+        }
+
+        private RectInt ComputeCellBounds(bool[] cells, Vector2Int fallbackCell)
+        {
+            int minX = int.MaxValue;
+            int minY = int.MaxValue;
+            int maxX = int.MinValue;
+            int maxY = int.MinValue;
+
+            for (int y = 0; y < cellCounts.y; y++)
+            {
+                for (int x = 0; x < cellCounts.x; x++)
+                {
+                    if (!cells[x + y * cellCounts.x])
+                    {
+                        continue;
+                    }
+
+                    minX = Mathf.Min(minX, x);
+                    minY = Mathf.Min(minY, y);
+                    maxX = Mathf.Max(maxX, x);
+                    maxY = Mathf.Max(maxY, y);
+                }
+            }
+
+            if (minX == int.MaxValue)
+            {
+                return new RectInt(fallbackCell.x, fallbackCell.y, 1, 1);
+            }
+
+            return new RectInt(minX, minY, maxX - minX + 1, maxY - minY + 1);
         }
 
         /// <summary>切换某个关卡的净化状态。找不到登记时返回 false。</summary>
@@ -443,7 +652,8 @@ namespace Yujian.Building
 
         /// <summary>
         /// 根据所有已登记的污染区重算封锁掩码。
-        /// 未净化 → 整块矩形封锁；已净化 → 只封锁污染核心格。
+        /// 未净化 → 手绘污染格 / 整块矩形封锁；已净化 → 只封锁污染核心格。
+        /// 核心格无论是否净化都保持封锁。
         /// </summary>
         private void RebuildLevelBlockMask()
         {
@@ -466,15 +676,31 @@ namespace Yujian.Building
                     continue;
                 }
 
-                RectInt rect = footprint.Rect;
-
-                for (int y = rect.yMin; y < rect.yMax; y++)
+                if (footprint.Cells != null && footprint.Cells.Length == expected)
                 {
-                    for (int x = rect.xMin; x < rect.xMax; x++)
+                    for (int i = 0; i < expected; i++)
                     {
-                        MarkLevelBlocked(new Vector2Int(x, y));
+                        if (footprint.Cells[i])
+                        {
+                            levelBlockMask[i] = true;
+                        }
                     }
                 }
+                else
+                {
+                    RectInt rect = footprint.Rect;
+
+                    for (int y = rect.yMin; y < rect.yMax; y++)
+                    {
+                        for (int x = rect.xMin; x < rect.xMax; x++)
+                        {
+                            MarkLevelBlocked(new Vector2Int(x, y));
+                        }
+                    }
+                }
+
+                // 核心格永远不可建，即使画掩码时漏掉了它。
+                MarkLevelBlocked(footprint.CoreCell);
             }
         }
 

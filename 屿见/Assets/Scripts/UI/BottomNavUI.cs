@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using Yujian.Core;
+using Yujian.Levels;
 
 namespace Yujian.UI
 {
@@ -16,6 +17,11 @@ namespace Yujian.UI
     /// 唯一的附加规则：**再次点击当前系统的按钮**不是「无操作」，而是退出该系统、
     /// 进入观察模式（<see cref="GameAreaController.EnterObservationMode"/>）。
     ///
+    /// 「清洁」按钮会记住玩家上一次进入的关卡：
+    ///   · 在关卡内：再点一次退出到观察模式（原行为）；
+    ///   · 在岛上 / 建筑系统：回到上一次进入的关卡（走正常的关卡入口流程）；
+    ///   · 从未进过关卡：只在屏幕中央提示「未进入关卡」，不切区域。
+    ///
     /// 按钮的 OnClick 由编辑器向导「屿见/整合/配置 MVP 整合（阶段 6）」接成持久监听
     /// （决策 15 的老做法：接线在场景里看得见、改得动）。
     /// 两个 Show* 方法就是给 UnityEvent 用的，所以必须是 public 且无参数。
@@ -25,6 +31,9 @@ namespace Yujian.UI
         [Header("依赖")]
         [Tooltip("区域状态。三个按钮都是转发给它的")]
         [SerializeField] private GameAreaController areas;
+
+        [Tooltip("关卡管理器。用来记住并回到玩家上一次进入的关卡；留空会自动查找")]
+        [SerializeField] private LevelManager levelManager;
 
         [Header("按钮")]
         [SerializeField] private Button miningButton;
@@ -53,6 +62,8 @@ namespace Yujian.UI
                                "请重新运行菜单「屿见/整合/配置 MVP 整合（阶段 6）」。", this);
             }
 
+            ResolveLevelManager();
+
             WarnIfMissingButton(miningButton, "挖矿");
             WarnIfMissingButton(buildingButton, "建筑");
 
@@ -70,10 +81,49 @@ namespace Yujian.UI
 
         // ---------------- 给 UnityEvent（按钮 OnClick）用的入口 ----------------
 
-        /// <summary>「挖矿」按钮。</summary>
+        /// <summary>
+        /// 「清洁」按钮。
+        /// 已经在关卡内：沿用原行为（再点一次退出到观察模式）；
+        /// 不在关卡内：回到玩家上一次进入的关卡；从未进过关卡才提示「未进入关卡」。
+        /// </summary>
         public void ShowMiningArea()
         {
-            RequestArea(GameArea.Mining);
+            if (areas != null && areas.CurrentArea == GameArea.Mining)
+            {
+                RequestArea(GameArea.Mining);
+                return;
+            }
+
+            LevelManager manager = ResolveLevelManager();
+
+            if (manager != null && manager.LastEnteredLevel != null)
+            {
+                if (logNavFlow)
+                {
+                    Debug.Log($"[BottomNavUI] 回到上一次进入的关卡「{manager.LastEnteredLevel.name}」");
+                }
+
+                // 走正常的关卡入口流程：解锁检查 + 黑场转场 + 区域切换。
+                manager.TryEnter(manager.LastEnteredLevel);
+                return;
+            }
+
+            ToastUI.Show("未进入关卡");
+
+            if (logNavFlow)
+            {
+                Debug.Log("[BottomNavUI] 尚未进入关卡，点击「清洁」已忽略，提示「未进入关卡」。");
+            }
+        }
+
+        private LevelManager ResolveLevelManager()
+        {
+            if (levelManager == null)
+            {
+                levelManager = FindFirstObjectByType<LevelManager>(FindObjectsInactive.Include);
+            }
+
+            return levelManager;
         }
 
         /// <summary>「建筑」按钮。</summary>

@@ -79,8 +79,9 @@ namespace Yujian.EditorTools
             EditorUtility.DisplayDialog("清洁界面",
                 "已生成并保存。\n\n" +
                 "在 Hierarchy 展开「清洁界面 → MiningHUDRuntime → Hud」，\n" +
-                "里面的返回按钮、垃圾栏、装备栏、升级面板、血条、\n" +
+                "里面的退出按钮、装备栏、升级面板、血条、\n" +
                 "剩余波次 / BOSS 倒计时都可以直接拖拽调整。\n\n" +
+                "（「垃圾 · 金币」资源栏不在这份 UI 里，由全局唯一的 RecyclingHud 显示。）\n\n" +
                 "改完保存即可；进入 Play 后会自动使用这份 UI。",
                 "知道了");
         }

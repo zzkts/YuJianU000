@@ -71,7 +71,7 @@ namespace Yujian.Tests
 
             Assert.That(currency.CurrentMoney, Is.EqualTo(100));
             Assert.That(inventory.GetTotalCount(), Is.EqualTo(0));
-            Assert.That(reason, Is.EqualTo("垃圾不足"));
+            Assert.That(reason, Is.EqualTo("金币不足"));
         }
 
         [Test]

@@ -169,7 +169,7 @@ namespace Yujian.UI
 
             if (currency == null)
             {
-                ShowFeedback("没有读到玩家垃圾，无法升级。", false);
+                ShowFeedback("没有读到玩家金币，无法升级。", false);
                 return;
             }
 
@@ -186,7 +186,7 @@ namespace Yujian.UI
             if (!tool.TryUpgrade())
             {
                 int missing = Mathf.Max(0, cost - moneyBefore);
-                ShowFeedback(missing > 0 ? $"垃圾不足，还差 {missing}。" : "升级失败，请检查 Console。", false);
+                ShowFeedback(missing > 0 ? $"金币不足，还差 {missing}。" : "升级失败，请检查 Console。", false);
                 RefreshBase();
                 return;
             }
@@ -238,7 +238,7 @@ namespace Yujian.UI
 
             if (currency == null)
             {
-                SetText(costText, "没有读到玩家垃圾");
+                SetText(costText, "没有读到玩家金币");
                 SetText(upgradeButtonText, "无法升级");
                 SetCostColor(false);
                 SetButtonInteractable(false);
@@ -250,9 +250,9 @@ namespace Yujian.UI
             bool canAfford = cost <= 0 || money >= cost;
 
             SetText(costText, canAfford
-                ? $"升级花费 {cost} 垃圾 · 当前 {money}"
-                : $"需要 {cost} 垃圾 · 当前 {money}，还差 {cost - money}");
-            SetText(upgradeButtonText, canAfford ? "升级" : "垃圾不足");
+                ? $"升级花费 {cost} 金币 · 当前 {money}"
+                : $"需要 {cost} 金币 · 当前 {money}，还差 {cost - money}");
+            SetText(upgradeButtonText, canAfford ? "升级" : "金币不足");
             SetCostColor(canAfford);
             SetButtonInteractable(canAfford);
         }

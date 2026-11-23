@@ -32,6 +32,8 @@ namespace Yujian.EditorTools
                 Object.FindFirstObjectByType<GameAreaController>(FindObjectsInactive.Include);
             PlayerCurrency currency =
                 Object.FindFirstObjectByType<PlayerCurrency>(FindObjectsInactive.Include);
+            PlayerGarbage garbage =
+                Object.FindFirstObjectByType<PlayerGarbage>(FindObjectsInactive.Include);
             MiningLightTool lightTool =
                 Object.FindFirstObjectByType<MiningLightTool>(FindObjectsInactive.Include);
             MiningToolProgress miningTool =
@@ -88,6 +90,11 @@ namespace Yujian.EditorTools
                 missing += "\n· PlayerCurrency（金币）";
             }
 
+            if (garbage == null)
+            {
+                missing += "\n· PlayerGarbage（垃圾，运行「屿见/建筑/配置垃圾回收站系统」添加）";
+            }
+
             if (lightTool == null)
             {
                 missing += "\n· MiningLightTool（照明工具）";
@@ -106,7 +113,8 @@ namespace Yujian.EditorTools
             EditorUtility.DisplayDialog("清洁界面",
                 "清洁界面已经挂好并保存。\n\n" +
                 "进入 Play 后，从岛上矿山进入矿洞即可看到：\n" +
-                "左侧装备、右侧两个升级列表、金币栏、返回主岛、x1/Max。\n\n" +
+                "左侧装备、右侧两个升级列表、退出关卡、x1/Max。\n" +
+                "右上角「垃圾 · 金币」资源栏由全局唯一的 RecyclingHud 显示，不在这里重复生成。\n\n" +
                 "照明工具与暴击点系统也已一起检查并补好。",
                 "知道了");
 

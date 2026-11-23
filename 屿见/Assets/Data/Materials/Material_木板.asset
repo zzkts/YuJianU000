@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Shop.MaterialData
   materialName: "\u6728\u677F"
   materialType: 1
-  price: 2
+  price: 1
   damageMultiplierBonus: 0
   buildingDamageMultiplierBonus: 0.1
   displayColor: {r: 0.62, g: 0.42, b: 0.24, a: 1}

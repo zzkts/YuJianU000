@@ -5,8 +5,9 @@ using UnityEngine;
 namespace Yujian.EditorTools
 {
     /// <summary>
-    /// 海面参数总控窗口：把 Ocean_Water 材质上的所有 shader 参数集中到一个窗口里，
+    /// 海面参数总控窗口：把海面材质上的常用 shader 参数集中到一个窗口里，
     /// 拖动滑块即可在 Scene/Game 视图实时看到变化，不用来回切到材质 Inspector。
+    /// 同时支持项目自制的 Yujian/Island Water（及低模版）和 Stylized Water 2 插件材质。
     /// </summary>
     public class IslandWaterSettingsWindow : EditorWindow
     {
@@ -14,6 +15,7 @@ namespace Yujian.EditorTools
         private const string DefaultMaterialPath = "Assets/Materials/Island/Ocean_Water.mat";
         private const string WaterShaderName = "Yujian/Island Water";
         private const string LowPolyWaterShaderName = "Yujian/Island Water Low Poly";
+        private const string StylizedWater2ShaderPrefix = "Stylized Water 2/";
 
         private Material _material;
         private Vector2 _scroll;
@@ -34,10 +36,11 @@ namespace Yujian.EditorTools
                 { "_ShallowAlpha", 0.65f },
                 { "_DeepAlpha", 0.98f },
 
-                { "_ShoreFoamDistance", 0.30f },
-                { "_FoamStrength", 0.85f },
-                { "_FoamNoiseScale", 1.2f },
-                { "_FoamPulseSpeed", 1.1f },
+                { "_ShoreFoamDistance", 2.5f },
+                { "_ShoreFoamCore", 0.60f },
+                { "_FoamStrength", 1f },
+                { "_FoamNoiseScale", 0.25f },
+                { "_FoamPulseSpeed", 0.5f },
 
                 { "_WaveScale", 0.08f },
                 { "_WaveSpeed", 0.15f },
@@ -62,11 +65,11 @@ namespace Yujian.EditorTools
                 { "_TideAmplitude", 0.18f },
                 { "_TideSpeed", 0.5f },
                 { "_TideSpatialScale", 0.02f },
-                { "_SurfZoneDepth", 1.2f },
-                { "_SurfWaveRepeat", 3f },
-                { "_SurfWaveSpeed", 0.35f },
-                { "_SurfWaveWidth", 0.08f },
-                { "_SurfWaveStrength", 0.6f },
+                { "_SurfZoneDepth", 2.5f },
+                { "_SurfWaveRepeat", 2f },
+                { "_SurfWaveSpeed", 0.30f },
+                { "_SurfWaveWidth", 0.12f },
+                { "_SurfWaveStrength", 0.8f },
             };
 
         private static readonly Dictionary<string, Color> RecommendedColors =
@@ -76,6 +79,25 @@ namespace Yujian.EditorTools
                 { "_DeepColor", new Color(0.12f, 0.42f, 0.55f, 1f) },
                 { "_FoamColor", new Color(0.94f, 0.98f, 1f, 1f) },
                 { "_PatchColor", new Color(0.28f, 0.70f, 0.72f, 1f) },
+            };
+
+        // Stylized Water 2 的岸线泡沫推荐值（与 Ocean 材质当前调好的参数一致）。
+        private static readonly Dictionary<string, float> StylizedWater2RecommendedFloats =
+            new Dictionary<string, float>
+            {
+                { "_IntersectionLength", 3f },
+                { "_IntersectionFalloff", 0.8f },
+                { "_IntersectionClipping", 0.5f },
+                { "_IntersectionTiling", 0.2f },
+                { "_IntersectionSpeed", 0.15f },
+                { "_IntersectionRippleStrength", 0.35f },
+            };
+
+        private static readonly Dictionary<string, Color> StylizedWater2RecommendedColors =
+            new Dictionary<string, Color>
+            {
+                { "_FoamColor", Color.white },
+                { "_IntersectionColor", Color.white },
             };
 
         [MenuItem(MenuPath, false, 220)]
@@ -93,12 +115,51 @@ namespace Yujian.EditorTools
             {
                 _material = selected;
             }
-            else if (_material == null)
+            else if (_material == null || !IsWaterMaterial(_material))
             {
-                _material = AssetDatabase.LoadAssetAtPath<Material>(DefaultMaterialPath);
+                // 没有选中材质时，直接找场景里正在使用的水面材质（现在默认是插件海面），
+                // 避免窗口停留在旧的 Ocean_Water.mat 上、改了参数却看不到变化。
+                _material = FindSceneWaterMaterial();
+                if (_material == null)
+                {
+                    _material = AssetDatabase.LoadAssetAtPath<Material>(DefaultMaterialPath);
+                }
             }
 
             Selection.selectionChanged += OnSelectionChanged;
+        }
+
+        private static Material FindSceneWaterMaterial()
+        {
+            Renderer[] renderers = UnityEngine.Object.FindObjectsByType<Renderer>(
+                FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            Material fallback = null;
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Material[] materials = renderers[i].sharedMaterials;
+                for (int m = 0; m < materials.Length; m++)
+                {
+                    Material candidate = materials[m];
+                    if (!IsWaterMaterial(candidate))
+                    {
+                        continue;
+                    }
+
+                    // 场景里新旧海面同时存在时，优先用 Stylized Water 2 的。
+                    if (IsStylizedWater2Material(candidate))
+                    {
+                        return candidate;
+                    }
+
+                    if (fallback == null)
+                    {
+                        fallback = candidate;
+                    }
+                }
+            }
+
+            return fallback;
         }
 
         private void OnDisable()
@@ -123,7 +184,22 @@ namespace Yujian.EditorTools
             }
 
             string shaderName = material.shader.name;
-            return shaderName == WaterShaderName || shaderName == LowPolyWaterShaderName;
+            return shaderName == WaterShaderName
+                || shaderName == LowPolyWaterShaderName
+                || IsStylizedWater2Shader(shaderName);
+        }
+
+        private static bool IsStylizedWater2Shader(string shaderName)
+        {
+            return !string.IsNullOrEmpty(shaderName)
+                && shaderName.StartsWith(StylizedWater2ShaderPrefix);
+        }
+
+        private static bool IsStylizedWater2Material(Material material)
+        {
+            return material != null
+                && material.shader != null
+                && IsStylizedWater2Shader(material.shader.name);
         }
 
         private void OnGUI()
@@ -139,7 +215,8 @@ namespace Yujian.EditorTools
             if (_material == null)
             {
                 EditorGUILayout.HelpBox(
-                    "未找到海面材质。请先运行“屿见/场景/生成低模海岛底图”，或手动拖入使用 Yujian/Island Water 的材质。",
+                    "未找到海面材质。请先运行“屿见/场景/生成低模海岛底图”，或手动拖入使用 " +
+                    "Yujian/Island Water 或 Stylized Water 2 的材质。",
                     MessageType.Warning);
                 EditorGUILayout.EndScrollView();
                 return;
@@ -148,16 +225,53 @@ namespace Yujian.EditorTools
             if (!IsWaterMaterial(_material))
             {
                 EditorGUILayout.HelpBox(
-                    "这个材质没有使用 Yujian/Island Water，参数不会生效。",
+                    "这个材质没有使用 Yujian/Island Water 或 Stylized Water 2，参数不会生效。",
                     MessageType.Error);
                 EditorGUILayout.EndScrollView();
                 return;
             }
 
-            EditorGUILayout.HelpBox(
-                "拖动参数即可实时预览。Scene 视图右上角建议保持 Animated Materials（动画材质）开启，才能看到随时间流动的效果。",
-                MessageType.Info);
+            if (IsStylizedWater2Material(_material))
+            {
+                EditorGUILayout.HelpBox(
+                    "正在编辑 Stylized Water 2 材质。这里收拢了常用的颜色 / 水深 / 岸线泡沫 / " +
+                    "表面泡沫 / 波浪参数；贴图、开关和法线等完整参数仍可选中材质在 Inspector 中编辑。",
+                    MessageType.Info);
+                DrawStylizedWater2Sections();
+            }
+            else
+            {
+                EditorGUILayout.HelpBox(
+                    "拖动参数即可实时预览。Scene 视图右上角建议保持 Animated Materials（动画材质）开启，才能看到随时间流动的效果。",
+                    MessageType.Info);
+                DrawYujianWaterSections();
+            }
 
+            EditorGUILayout.Space(8f);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("恢复推荐值"))
+                {
+                    ApplyRecommended();
+                }
+
+                if (GUILayout.Button("保存材质"))
+                {
+                    AssetDatabase.SaveAssets();
+                }
+
+                if (GUILayout.Button("选中材质"))
+                {
+                    Selection.activeObject = _material;
+                    EditorGUIUtility.PingObject(_material);
+                }
+            }
+
+            EditorGUILayout.EndScrollView();
+        }
+
+        private void DrawYujianWaterSections()
+        {
             DrawSection(ref _showColors, "水体颜色", () =>
             {
                 DrawColor("_ShallowColor", "浅水颜色");
@@ -174,7 +288,8 @@ namespace Yujian.EditorTools
 
             DrawSection(ref _showShore, "岸线泡沫", () =>
             {
-                DrawFloat("_ShoreFoamDistance", "泡沫宽度（世界单位）", 0f, 3f);
+                DrawFloat("_ShoreFoamDistance", "泡沫宽度（世界单位）", 0f, 6f);
+                DrawFloat("_ShoreFoamCore", "贴岸实心白沫宽度", 0f, 2f);
                 DrawFloat("_FoamStrength", "泡沫强度", 0f, 1f);
                 DrawFloat("_FoamNoiseScale", "噪声密度", 0.05f, 10f);
                 DrawFloat("_FoamPulseSpeed", "脉动速度", 0f, 5f);
@@ -224,28 +339,67 @@ namespace Yujian.EditorTools
                 DrawFloat("_SurfWaveWidth", "向岸浪线粗细", 0.01f, 0.5f);
                 DrawFloat("_SurfWaveStrength", "向岸浪线强度", 0f, 1f);
             });
+        }
 
-            EditorGUILayout.Space(8f);
-            using (new EditorGUILayout.HorizontalScope())
+        private void DrawStylizedWater2Sections()
+        {
+            DrawSection(ref _showColors, "水体颜色", () =>
             {
-                if (GUILayout.Button("恢复推荐值"))
-                {
-                    ApplyRecommended();
-                }
+                DrawColorHDR("_BaseColor", "深水颜色");
+                DrawColorHDR("_ShallowColor", "浅水颜色");
+                DrawColorHDR("_HorizonColor", "地平线颜色");
+                DrawColor("_FoamColor", "表面泡沫颜色");
+                DrawColor("_IntersectionColor", "岸线泡沫颜色");
+            });
 
-                if (GUILayout.Button("保存材质"))
-                {
-                    AssetDatabase.SaveAssets();
-                }
+            DrawSection(ref _showDepth, "深度与透明", () =>
+            {
+                DrawFloat("_DepthVertical", "纵向水深", 0.01f, 16f);
+                DrawFloat("_DepthHorizontal", "水平水深", 0.01f, 8f);
+                DrawFloat("_EdgeFade", "边缘淡出", 0f, 10f);
+                DrawFloat("_ColorAbsorption", "颜色吸收", 0f, 1f);
+            });
 
-                if (GUILayout.Button("选中材质"))
-                {
-                    Selection.activeObject = _material;
-                    EditorGUIUtility.PingObject(_material);
-                }
-            }
+            DrawSection(ref _showShore, "岸线泡沫（岛岸交界）", () =>
+            {
+                DrawIntersectionStyle();
+                DrawFloat("_IntersectionLength", "泡沫宽度（水深，米）", 0.01f, 5f);
+                DrawFloat("_IntersectionClipping", "破洞阈值（越小越实）", 0.01f, 1f);
+                DrawFloat("_IntersectionFalloff", "外缘衰减（越小越宽）", 0.01f, 1f);
+                DrawFloat("_IntersectionTiling", "泡沫花纹密度", 0.01f, 2f);
+                DrawFloat("_IntersectionSpeed", "流动速度", 0f, 1f);
+                DrawFloat("_IntersectionRippleStrength", "向岸浪强度", 0f, 1f);
+                DrawFloat("_IntersectionDistortion", "泡沫扭曲", 0f, 1f);
+            });
 
-            EditorGUILayout.EndScrollView();
+            DrawSection(ref _showPatches, "表面泡沫", () =>
+            {
+                DrawFloat("_FoamBaseAmount", "基础泡沫量", 0f, 1f);
+                DrawFloat("_FoamWaveAmount", "浪尖泡沫量", 0f, 2f);
+                DrawFloat("_FoamClipping", "破洞阈值", 0f, 0.999f);
+                DrawFloat("_FoamSubTiling", "子层密度", 0.01f, 4f);
+                DrawFloat("_FoamSpeed", "流动速度", 0f, 1f);
+                DrawFloat("_FoamDistortion", "泡沫扭曲", 0f, 3f);
+            });
+
+            DrawSection(ref _showWaves, "波浪", () =>
+            {
+                DrawFloat("_WaveHeight", "浪高", 0f, 10f);
+                DrawFloat("_WaveSpeed", "浪速", 0f, 10f);
+                DrawFloat("_WaveNormalStr", "法线强度", 0f, 32f);
+                DrawFloat("_WaveSteepness", "浪陡度", 0f, 5f);
+                DrawInt("_WaveCount", "波浪层数", 1, 5);
+                DrawFloat("_WaveDistance", "波浪距离衰减", 0f, 1f);
+            });
+
+            DrawSection(ref _showStreaks, "法线与反射", () =>
+            {
+                DrawFloat("_NormalStrength", "法线贴图强度", 0f, 1f);
+                DrawFloat("_NormalSpeed", "法线流动速度", 0f, 5f);
+                DrawFloat("_ReflectionStrength", "环境反射强度", 0f, 1f);
+                DrawFloat("_SunReflectionStrength", "太阳反光强度", 0f, 50f);
+                DrawFloat("_SunReflectionSize", "太阳反光大小", 0f, 1f);
+            });
         }
 
         private void DrawSection(ref bool open, string title, System.Action body)
@@ -297,6 +451,79 @@ namespace Yujian.EditorTools
             }
         }
 
+        private void DrawInt(string propertyName, string label, int min, int max)
+        {
+            if (!_material.HasProperty(propertyName))
+            {
+                return;
+            }
+
+            int current = Mathf.RoundToInt(_material.GetFloat(propertyName));
+            EditorGUI.BeginChangeCheck();
+            int value = EditorGUILayout.IntSlider(label, current, min, max);
+            if (EditorGUI.EndChangeCheck())
+            {
+                SetFloat(propertyName, value);
+            }
+        }
+
+        // Stylized Water 2 的岸线泡沫样式同时靠 float 参数和两个 local keyword 切换。
+        private void DrawIntersectionStyle()
+        {
+            if (!_material.HasProperty("_IntersectionStyle"))
+            {
+                return;
+            }
+
+            int current = Mathf.Clamp(
+                Mathf.RoundToInt(_material.GetFloat("_IntersectionStyle")), 0, 2);
+            string[] options = { "关闭", "Sharp（块状白沫）", "Smooth（柔和）" };
+            EditorGUI.BeginChangeCheck();
+            int value = EditorGUILayout.Popup("样式", current, options);
+            if (!EditorGUI.EndChangeCheck())
+            {
+                return;
+            }
+
+            Undo.RecordObject(_material, "调整海面参数");
+            _material.SetFloat("_IntersectionStyle", value);
+            _material.DisableKeyword("_SHARP_INERSECTION");
+            _material.DisableKeyword("_SMOOTH_INTERSECTION");
+            if (value == 1)
+            {
+                _material.EnableKeyword("_SHARP_INERSECTION");
+            }
+            else if (value == 2)
+            {
+                _material.EnableKeyword("_SMOOTH_INTERSECTION");
+            }
+
+            EditorUtility.SetDirty(_material);
+            SceneView.RepaintAll();
+        }
+
+        // Stylized Water 2 的 _BaseColor / _ShallowColor / _HorizonColor 是 HDR 颜色，
+        // 用普通 ColorField 会把超过 1 的强度裁掉，这里单独开 HDR。
+        private void DrawColorHDR(string propertyName, string label)
+        {
+            if (!_material.HasProperty(propertyName))
+            {
+                return;
+            }
+
+            Color current = _material.GetColor(propertyName);
+            EditorGUI.BeginChangeCheck();
+            Color value = EditorGUILayout.ColorField(
+                new GUIContent(label), current, true, true, true);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(_material, "调整海面参数");
+                _material.SetColor(propertyName, value);
+                EditorUtility.SetDirty(_material);
+                SceneView.RepaintAll();
+            }
+        }
+
         private void SetFloat(string propertyName, float value)
         {
             Undo.RecordObject(_material, "调整海面参数");
@@ -309,7 +536,13 @@ namespace Yujian.EditorTools
         {
             Undo.RecordObject(_material, "恢复海面推荐参数");
 
-            foreach (KeyValuePair<string, float> pair in RecommendedFloats)
+            bool stylized = IsStylizedWater2Material(_material);
+            Dictionary<string, float> floatTable =
+                stylized ? StylizedWater2RecommendedFloats : RecommendedFloats;
+            Dictionary<string, Color> colorTable =
+                stylized ? StylizedWater2RecommendedColors : RecommendedColors;
+
+            foreach (KeyValuePair<string, float> pair in floatTable)
             {
                 if (_material.HasProperty(pair.Key))
                 {
@@ -317,7 +550,7 @@ namespace Yujian.EditorTools
                 }
             }
 
-            foreach (KeyValuePair<string, Color> pair in RecommendedColors)
+            foreach (KeyValuePair<string, Color> pair in colorTable)
             {
                 if (_material.HasProperty(pair.Key))
                 {
@@ -326,7 +559,7 @@ namespace Yujian.EditorTools
             }
 
             // 低模水面需要更实的水体、并默认关掉原海面噪点，否则分面会被盖住。
-            if (_material.shader != null
+            if (!stylized && _material.shader != null
                 && _material.shader.name == LowPolyWaterShaderName)
             {
                 _material.SetFloat("_ShallowAlpha", 0.58f);

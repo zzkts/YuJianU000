@@ -34,6 +34,7 @@ namespace Yujian.UI
         [SerializeField] private MilestoneProgress milestoneProgress;
         [SerializeField] private PlayerCurrency currency;
         [SerializeField] private MaterialInventory inventory;
+        [SerializeField] private BuildingGoldShop goldShop;
         [SerializeField] private GameAreaController areas;
         [SerializeField] private RectTransform actionRoot;
         [SerializeField] private Button templateButton;
@@ -130,6 +131,11 @@ namespace Yujian.UI
                 inventory = FindFirstObjectByType<MaterialInventory>(FindObjectsInactive.Include);
             }
 
+            if (goldShop == null)
+            {
+                goldShop = FindFirstObjectByType<BuildingGoldShop>(FindObjectsInactive.Include);
+            }
+
             if (areas == null)
             {
                 areas = FindFirstObjectByType<GameAreaController>(FindObjectsInactive.Include);
@@ -145,7 +151,7 @@ namespace Yujian.UI
                 demolition = gameObject.AddComponent<BuildingDemolition>();
             }
 
-            demolition.Configure(buildingManager, migration, upgrade, milestoneProgress, currency, inventory);
+            demolition.Configure(buildingManager, migration, upgrade, milestoneProgress, currency, inventory, goldShop);
         }
 
         private void EnsureButton()
@@ -395,9 +401,9 @@ namespace Yujian.UI
 
             if (refundMaterialsLabel != null)
             {
-                refundMaterialsLabel.text = refundMaterialsThisDemolition
-                    ? "[√] 返还建造消耗的原料"
-                    : "[  ] 返还建造消耗的原料";
+                string costName = demolition != null && demolition.UsesGoldPurchase ? "金币" : "原料";
+                string prefix = refundMaterialsThisDemolition ? "[√] " : "[  ] ";
+                refundMaterialsLabel.text = $"{prefix}返还建造消耗的{costName}";
             }
         }
 

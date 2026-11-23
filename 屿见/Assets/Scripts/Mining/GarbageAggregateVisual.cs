@@ -227,17 +227,19 @@ namespace Yujian.Mining
             public Vector3 WorldNormal;
         }
 
+        private readonly List<CritSurface> surfaceBuffer = new List<CritSurface>();
+
         /// <summary>
-        /// 暴击点系统用：在外壳上找一块朝向相机的垃圾，返回其表面落点。
-        /// 外壳掉光 / 没有相机时返回 false。
+        /// 暴击点系统用：返回外壳上所有朝向相机、可以贴点的表面，按离摄像机由近到远排序。
+        /// 第一个就是玩家看到的最外层垃圾表面，暴击点必须优先落在这一层。
         /// </summary>
-        public bool TryGetCritPointSurface(Camera camera, out CritSurface surface)
+        public void GetCritPointSurfaces(Camera camera, List<CritSurface> results)
         {
-            surface = default;
+            results.Clear();
 
             if (camera == null || shellPieces.Count == 0)
             {
-                return false;
+                return;
             }
 
             Vector3 cameraPosition = camera.transform.position;
@@ -252,12 +254,11 @@ namespace Yujian.Mining
             toCamera.Normalize();
 
             int count = shellPieces.Count;
-            int start = Random.Range(0, count);
 
-            // 先找朝向相机一侧的块，避免把点放到背面被挡住的垃圾上。
+            // 先收集朝向相机一侧的块，避免把点放到背面被挡住的垃圾上。
             for (int i = 0; i < count; i++)
             {
-                GameObject piece = shellPieces[(start + i) % count];
+                GameObject piece = shellPieces[i];
 
                 if (piece == null)
                 {
@@ -276,23 +277,46 @@ namespace Yujian.Mining
                     continue;
                 }
 
-                if (TryGetPieceSurface(piece, cameraPosition, out surface))
+                if (TryGetPieceSurface(piece, cameraPosition, out CritSurface surface))
                 {
-                    return true;
+                    results.Add(surface);
                 }
             }
 
             // 相机几乎正对侧面时，仍然从所有块里兜底，保证不会落到空气里。
-            for (int i = 0; i < count; i++)
+            if (results.Count == 0)
             {
-                GameObject piece = shellPieces[i];
-
-                if (piece != null && TryGetPieceSurface(piece, cameraPosition, out surface))
+                for (int i = 0; i < count; i++)
                 {
-                    return true;
+                    GameObject piece = shellPieces[i];
+
+                    if (piece != null && TryGetPieceSurface(piece, cameraPosition, out CritSurface surface))
+                    {
+                        results.Add(surface);
+                    }
                 }
             }
 
+            // 由近到远：第一个就是最靠近摄像机的那一层
+            results.Sort((a, b) =>
+                (a.WorldPosition - cameraPosition).sqrMagnitude
+                    .CompareTo((b.WorldPosition - cameraPosition).sqrMagnitude));
+        }
+
+        /// <summary>
+        /// 兼容旧调用：只取最靠近摄像机的那一个表面点。
+        /// </summary>
+        public bool TryGetCritPointSurface(Camera camera, out CritSurface surface)
+        {
+            GetCritPointSurfaces(camera, surfaceBuffer);
+
+            if (surfaceBuffer.Count > 0)
+            {
+                surface = surfaceBuffer[0];
+                return true;
+            }
+
+            surface = default;
             return false;
         }
 

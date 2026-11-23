@@ -91,6 +91,9 @@ namespace Yujian.Levels
 
         private float bossRegenAccumulator;
         private bool warnedMissingSpawner;
+        private bool spawnerSubscribed;
+        private Vector3 spawnerOreDefaultScale;
+        private bool spawnerOreScaleCaptured;
 
         /// <summary>BOSS 战剩余倒计时（秒）。0 表示没有在倒计时。</summary>
         private float bossCountdownRemaining;
@@ -112,6 +115,12 @@ namespace Yujian.Levels
 
         /// <summary>当前正在玩 / 最近玩过的关卡。</summary>
         public LevelEntrance ActiveLevel { get; private set; }
+
+        /// <summary>
+        /// 玩家最近一次真正进入过的关卡。底部「清洁」按钮用它回到上一次进入的关卡；
+        /// 从未进过关卡时为 null（按钮只提示「未进入关卡」）。
+        /// </summary>
+        public LevelEntrance LastEnteredLevel { get; private set; }
 
         /// <summary>是否正在播黑场转场。</summary>
         public bool IsTransitioning => transitioning;
@@ -158,11 +167,19 @@ namespace Yujian.Levels
         private void Awake()
         {
             ResolveDependencies();
+
+            // 在第一次生成之前抓住矿石原始体型，并订阅顺序波次事件。
+            // 中Boss 会改变矿石的 transform 缩放，默认值必须在任何波次生成前记录。
+            // 注意：这里不订阅 OnDied，保持 OreSpawner 先收到死亡事件，
+            // 避免最后一只死亡时生成器在 BOSS 暂停之后才补出下一只。
+            CaptureSpawnerOreScale();
+            SubscribeSpawner();
         }
 
         private void Start()
         {
             ResolveDependencies();
+            SubscribeSpawner();
 
             // 以 Inspector 里的顺序为准，把场景里漏登记的入口自动补进注册表。
             // 不补的话，新加 / 复制出来的入口不会生成环境表现、不会灰化、占地也不封锁。
@@ -295,6 +312,7 @@ namespace Yujian.Levels
             }
 
             CancelAutoExit();
+            UnsubscribeSpawner();
             UnsubscribeTrackedOre();
             UnregisterLevelFootprints();
         }
@@ -380,6 +398,10 @@ namespace Yujian.Levels
         {
             transitioning = true;
 
+            // 记住玩家真正进过的关卡：离开关卡、回到建筑系统后，
+            // 底部「清洁」按钮用这个引用回到上一次的关卡。
+            LastEnteredLevel = entrance;
+
             if (logLevelFlow)
             {
                 Debug.Log($"[LevelManager] 进入关卡 {entrance.LevelNumber}（{entrance.name}），黑场转场。");
@@ -435,6 +457,12 @@ namespace Yujian.Levels
                 if (ActiveLevel == null)
                 {
                     ActiveLevel = ResolveDefaultEntrance();
+                }
+
+                // 旧的 MiningEntrance 直接切区域时不会经过 TryEnter，这里兜底记一次。
+                if (LastEnteredLevel == null)
+                {
+                    LastEnteredLevel = ActiveLevel;
                 }
 
                 SetLevelRunning(true);
@@ -753,6 +781,7 @@ namespace Yujian.Levels
             }
 
             oreSpawner.SetGroupOverride(entrance.AggregateGroups);
+            ValidateSequentialWaveCount(entrance);
 
             // 每道门固定自己的怪物档位：玩家等级再高，进这一关也是这个档
             oreSpawner.SetTierOverride(entrance.DifficultyTier);
@@ -797,6 +826,10 @@ namespace Yujian.Levels
             {
                 oreSpawner.SetPaused(false);
             }
+
+            // 顺序波次：先按已清除数定位，再重刷场上这块，
+            // 保证退出重进 / 跨关卡回来后从正确的中Boss或后续波次继续
+            oreSpawner.SetWaveProgress(progress.ClearedAggregates);
 
             // 场上那块可能是进门前按玩家等级刷的，立刻按本关档位重刷，保证第一只就对得上
             oreSpawner.RefreshCurrentOre();
@@ -1042,12 +1075,43 @@ namespace Yujian.Levels
                     size.y);
 
                 bool unlocked = IsLevelCleared(entrance);
-                buildingGrid.RegisterLevelFootprint(GetLevelOwnerId(entrance), rect, coreCell, unlocked);
+                int ownerId = GetLevelOwnerId(entrance);
+                bool usedMask = false;
+
+                LevelAreaMask areaMask = entrance.AreaMask;
+
+                if (areaMask != null)
+                {
+                    if (!areaMask.IsValid)
+                    {
+                        Debug.LogWarning($"[LevelManager] 关卡 {entrance.LevelNumber}（{entrance.name}）" +
+                                         "的污染面积掩码数据异常，回退到矩形占地。", this);
+                    }
+                    else if (!areaMask.IsCompatible(
+                                 buildingGrid.GridCenter, buildingGrid.CellSize, buildingGrid.CellCounts))
+                    {
+                        Debug.LogWarning($"[LevelManager] 关卡 {entrance.LevelNumber}（{entrance.name}）" +
+                                         "的污染面积掩码与当前网格签名不一致，回退到矩形占地。" +
+                                         "请在可建面积画笔的「关卡污染区」模式里按当前网格重建。", this);
+                    }
+                    else
+                    {
+                        bool[] cells = new bool[buildingGrid.CellCounts.x * buildingGrid.CellCounts.y];
+                        usedMask = areaMask.CopyTo(cells)
+                                   && buildingGrid.RegisterLevelFootprint(ownerId, cells, coreCell, unlocked);
+                    }
+                }
+
+                if (!usedMask)
+                {
+                    buildingGrid.RegisterLevelFootprint(ownerId, rect, coreCell, unlocked);
+                }
 
                 if (logLevelFlow)
                 {
-                    Debug.Log($"[LevelManager] 关卡 {entrance.LevelNumber} 占地 {size.x}×{size.y}，" +
-                              $"格子 {rect}，核心格 {coreCell}，{(unlocked ? "已净化" : "未净化")}。");
+                    Debug.Log($"[LevelManager] 关卡 {entrance.LevelNumber} 占地 " +
+                              $"{(usedMask ? "手绘掩码" : $"{size.x}×{size.y} 矩形")}，" +
+                              $"核心格 {coreCell}，{(unlocked ? "已净化" : "未净化")}。");
                 }
             }
         }
@@ -1130,6 +1194,107 @@ namespace Yujian.Levels
             visual.Refresh();
         }
 
+        /// <summary>
+        /// 在 Awake 阶段记录共享矿石的原始体型。中Boss 会改 transform.localScale，
+        /// 必须赶在任何顺序波次生成之前抓一次，否则恢复时会拿到被放大后的值。
+        /// </summary>
+        private void CaptureSpawnerOreScale()
+        {
+            Ore ore = oreSpawner != null ? oreSpawner.CurrentOre : null;
+
+            if (ore == null)
+            {
+                return;
+            }
+
+            spawnerOreDefaultScale = ore.transform.localScale;
+            spawnerOreScaleCaptured = true;
+        }
+
+        private void SubscribeSpawner()
+        {
+            if (spawnerSubscribed || oreSpawner == null)
+            {
+                return;
+            }
+
+            oreSpawner.WaveSpawned += HandleWaveSpawned;
+            spawnerSubscribed = true;
+        }
+
+        private void UnsubscribeSpawner()
+        {
+            if (spawnerSubscribed && oreSpawner != null)
+            {
+                oreSpawner.WaveSpawned -= HandleWaveSpawned;
+            }
+
+            spawnerSubscribed = false;
+        }
+
+        /// <summary>
+        /// 顺序波次生成回调：
+        ///   · 中Boss：放大矿石体型并播报，但不进入最终 BOSS 状态、不开倒计时；
+        ///   · 普通波：把上一只中Boss放大的体型恢复，避免后续小怪一直保持大体型。
+        /// </summary>
+        private void HandleWaveSpawned(OreEntry entry)
+        {
+            if (entry == null)
+            {
+                return;
+            }
+
+            if (entry.IsMidBoss)
+            {
+                ApplyOreScale(entry.VisualScale);
+                ToastUI.Show("中Boss 出现！");
+
+                if (logLevelFlow)
+                {
+                    Debug.Log($"[LevelManager] 中Boss 出现：{OreTypeInfo.DisplayName(entry.Type)}，" +
+                              $"生命值 {(trackedOre != null ? trackedOre.MaxHealth : entry.MaxHealth):0.##}，" +
+                              $"体型 ×{entry.VisualScale:0.##}（无倒计时）。");
+                }
+
+                return;
+            }
+
+            // 最终 BOSS 阶段不要被普通波次回调误恢复体型
+            if (ActiveLevel != null && !GetProgress(ActiveLevel).BossAppeared)
+            {
+                RestoreOreScale();
+            }
+        }
+
+        /// <summary>顺序组的条目数必须和关卡波次一致，否则 BOSS 会提前 / 延后出现。</summary>
+        private void ValidateSequentialWaveCount(LevelEntrance entrance)
+        {
+            if (entrance == null || entrance.AggregateGroups == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < entrance.AggregateGroups.Length; i++)
+            {
+                OreGroup group = entrance.AggregateGroups[i];
+
+                if (group == null || !group.IsSequential)
+                {
+                    continue;
+                }
+
+                if (group.EntryCount != entrance.WaveCount)
+                {
+                    Debug.LogWarning($"[LevelManager] 关卡 {entrance.LevelNumber} 的 waveCount=" +
+                                     $"{entrance.WaveCount} 与顺序组「{group.name}」的 " +
+                                     $"{group.EntryCount} 条不一致；最终 BOSS 会在第 " +
+                                     $"{entrance.WaveCount} 波后出现。", this);
+                }
+
+                return;
+            }
+        }
+
         /// <summary>找到共享矿石并订阅它的死亡事件。BOSS 战也复用这一块矿石。</summary>
         private void EnsureTrackedOre()
         {
@@ -1153,7 +1318,9 @@ namespace Yujian.Levels
                 return;
             }
 
-            trackedOreDefaultScale = ore.transform.localScale;
+            trackedOreDefaultScale = spawnerOreScaleCaptured
+                ? spawnerOreDefaultScale
+                : ore.transform.localScale;
             trackedScaleCaptured = true;
             ore.OnDied += HandleOreDied;
         }

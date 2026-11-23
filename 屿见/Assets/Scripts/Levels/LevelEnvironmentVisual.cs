@@ -27,6 +27,14 @@ namespace Yujian.Levels
         private Transform clearedRoot;
         private bool built;
 
+        // 手绘污染面积（LevelAreaMask）的格子缓存；为空时回退 footprintCells 矩形。
+        private readonly List<Vector2Int> areaCells = new List<Vector2Int>();
+        private bool hasUsableMask;
+        private bool hasPaintedArea;
+        private Vector2 areaHalfExtents;
+        private float areaCellSize = DefaultCellSize;
+        private float visualScale = 1f;
+
         private readonly List<Material> runtimeMaterials = new List<Material>();
 
         /// <summary>由 LevelManager 注入依赖。可重复调用。</summary>
@@ -108,8 +116,10 @@ namespace Yujian.Levels
         }
 
         /// <summary>
-        /// 以污染核心所在格为中心，算出关卡占地的世界中心、半尺寸与核心相对偏移。
-        /// 网格不可用时退化为入口位置 + 默认格边长。
+        /// 算出关卡占地的世界中心、半尺寸与核心相对偏移。
+        ///
+        /// 优先使用手绘污染掩码（LevelAreaMask）：垃圾 / 草花只铺在画过的格子里；
+        /// 没有掩码或签名不匹配时，回退到 footprintCells 矩形。
         /// </summary>
         private void ResolvePlacement(
             out Vector3 center, out Vector2 halfExtents, out Vector3 coreOffset)
@@ -117,17 +127,94 @@ namespace Yujian.Levels
             Vector2Int footprint = entrance != null ? entrance.FootprintCells : new Vector2Int(4, 4);
             float cellSize = buildingGrid != null ? buildingGrid.CellSize : DefaultCellSize;
 
+            areaCells.Clear();
+            hasUsableMask = false;
+            hasPaintedArea = false;
+            areaCellSize = Mathf.Max(0.01f, cellSize);
+            visualScale = Mathf.Max(1f, areaCellSize / DefaultCellSize);
+
             Vector3 coreCenter = entrance != null ? entrance.PollutionCore.position : transform.position;
             Vector2Int coreCell = default;
             bool hasGrid = buildingGrid != null &&
                            buildingGrid.WorldToCell(coreCenter, out coreCell);
 
-            if (hasGrid)
+            if (!hasGrid)
             {
-                coreCenter = buildingGrid.CellCenter(coreCell);
+                // 没有网格：沿用旧逻辑，以入口位置为中心。
+                float fallbackOffsetX = (footprint.x % 2 == 0) ? -cellSize * 0.5f : 0f;
+                float fallbackOffsetZ = (footprint.y % 2 == 0) ? -cellSize * 0.5f : 0f;
+
+                center = coreCenter + new Vector3(fallbackOffsetX, 0f, fallbackOffsetZ);
+                halfExtents = new Vector2(
+                    footprint.x * cellSize * 0.5f,
+                    footprint.y * cellSize * 0.5f);
+                areaHalfExtents = halfExtents;
+                coreOffset = coreCenter - center;
+                return;
             }
 
-            // 偶数格宽的矩形中心比核心格中心偏半格：例如 4×4 时核心格位于矩形内的右上角那一格
+            coreCenter = buildingGrid.CellCenter(coreCell);
+
+            LevelAreaMask mask = entrance != null ? entrance.AreaMask : null;
+            bool maskUsable = mask != null && mask.IsValid && mask.IsCompatible(
+                buildingGrid.GridCenter, buildingGrid.CellSize, buildingGrid.CellCounts);
+
+            if (maskUsable)
+            {
+                hasUsableMask = true;
+                Vector2Int counts = buildingGrid.CellCounts;
+                int minX = int.MaxValue;
+                int minY = int.MaxValue;
+                int maxX = int.MinValue;
+                int maxY = int.MinValue;
+
+                for (int y = 0; y < counts.y; y++)
+                {
+                    for (int x = 0; x < counts.x; x++)
+                    {
+                        if (!mask.GetCell(x, y))
+                        {
+                            continue;
+                        }
+
+                        areaCells.Add(new Vector2Int(x, y));
+                        minX = Mathf.Min(minX, x);
+                        minY = Mathf.Min(minY, y);
+                        maxX = Mathf.Max(maxX, x);
+                        maxY = Mathf.Max(maxY, y);
+                    }
+                }
+
+                if (areaCells.Count > 0)
+                {
+                    hasPaintedArea = true;
+
+                    Vector3 minWorld = buildingGrid.CellMinCorner(new Vector2Int(minX, minY));
+                    Vector3 maxWorld = buildingGrid.CellMinCorner(new Vector2Int(maxX, maxY))
+                                       + new Vector3(cellSize, 0f, cellSize);
+
+                    center = new Vector3(
+                        (minWorld.x + maxWorld.x) * 0.5f,
+                        0f,
+                        (minWorld.z + maxWorld.z) * 0.5f);
+                    halfExtents = new Vector2(
+                        (maxWorld.x - minWorld.x) * 0.5f,
+                        (maxWorld.z - minWorld.z) * 0.5f);
+                    areaHalfExtents = halfExtents;
+                    coreOffset = coreCenter - center;
+                    return;
+                }
+
+                // 掩码可用但一格都没画：视为「只有核心、没有周边垃圾」。
+                center = coreCenter;
+                halfExtents = Vector2.zero;
+                areaHalfExtents = Vector2.zero;
+                coreOffset = Vector3.zero;
+                return;
+            }
+
+            // 没有可用掩码（或掩码全空）：回退 footprintCells 矩形。
+            // 偶数格宽的矩形中心比核心格中心偏半格：例如 4×4 时核心格位于矩形内的右上角那一格。
             float offsetX = (footprint.x % 2 == 0) ? -cellSize * 0.5f : 0f;
             float offsetZ = (footprint.y % 2 == 0) ? -cellSize * 0.5f : 0f;
 
@@ -135,6 +222,7 @@ namespace Yujian.Levels
             halfExtents = new Vector2(
                 footprint.x * cellSize * 0.5f,
                 footprint.y * cellSize * 0.5f);
+            areaHalfExtents = halfExtents;
             coreOffset = coreCenter - center;
         }
 
@@ -147,65 +235,73 @@ namespace Yujian.Levels
             Material purple = CreateUnlitMaterial("LevelPollutionGlow", new Color(0.82f, 0.35f, 1f));
             Material gas = CreateGasMaterial(new Color(0.35f, 0.9f, 0.4f, 0.16f));
 
-            // 地面垃圾：压扁的方块，随机大小与朝向，铺满整块占地
-            int garbageCount = 16;
+            float scale = visualScale;
+            float margin = Mathf.Max(0.3f, areaCellSize * 0.15f);
+
+            // 地面垃圾：压扁的方块，随机大小与朝向。
+            // 有手绘掩码时只铺画过的格子；没有时退回整块矩形。
+            int garbageCount = hasUsableMask
+                ? Mathf.Min(areaCells.Count * 2, 80)
+                : 16;
 
             for (int i = 0; i < garbageCount; i++)
             {
-                float x = RandomRange(random, -halfExtents.x + 0.55f, halfExtents.x - 0.55f);
-                float z = RandomRange(random, -halfExtents.y + 0.55f, halfExtents.y - 0.55f);
-                float width = RandomRange(random, 0.45f, 1.15f);
-                float height = RandomRange(random, 0.16f, 0.45f);
+                Vector3 point = SampleAreaPoint(random, margin);
+                float width = RandomRange(random, 0.45f, 1.15f) * scale;
+                float height = RandomRange(random, 0.16f, 0.45f) * scale;
 
                 CreatePrimitive(PrimitiveType.Cube, $"Garbage_{i}", root,
-                    new Vector3(x, height * 0.5f, z),
+                    new Vector3(point.x, height * 0.5f, point.z),
                     new Vector3(width, height, width * RandomRange(random, 0.7f, 1.3f)),
                     i % 4 == 0 ? garbageDark : garbage,
                     Quaternion.Euler(0f, RandomRange(random, 0f, 360f), 0f));
             }
 
             // 绿色气体：半透明球，悬浮在不同高度
-            int gasCount = 6;
+            int gasCount = hasUsableMask
+                ? Mathf.Min(areaCells.Count / 2, 30)
+                : 6;
 
             for (int i = 0; i < gasCount; i++)
             {
-                float x = RandomRange(random, -halfExtents.x * 0.75f, halfExtents.x * 0.75f);
-                float z = RandomRange(random, -halfExtents.y * 0.75f, halfExtents.y * 0.75f);
-                float y = RandomRange(random, 1.1f, 3.2f);
-                float size = RandomRange(random, 1.6f, 2.8f);
+                Vector3 point = SampleAreaPoint(random, margin * 2f);
+                float y = RandomRange(random, 1.1f, 3.2f) * scale;
+                float size = RandomRange(random, 1.6f, 2.8f) * scale;
 
                 CreatePrimitive(PrimitiveType.Sphere, $"Gas_{i}", root,
-                    new Vector3(x, y, z), Vector3.one * size, gas);
+                    new Vector3(point.x, y, point.z), Vector3.one * size, gas);
             }
 
-            // 污染核心：一小团垃圾聚合体 + 紫色发光球 + 点光源
+            // 污染核心：一小团垃圾聚合体 + 紫色发光球 + 点光源（始终只在核心那一格）
             for (int i = 0; i < 4; i++)
             {
                 float angle = i * 90f + RandomRange(random, -20f, 20f);
-                float radius = RandomRange(random, 0.15f, 0.45f);
+                float radius = RandomRange(random, 0.15f, 0.45f) * scale;
                 Vector3 offset = new Vector3(
                     Mathf.Cos(angle * Mathf.Deg2Rad) * radius,
-                    RandomRange(random, 0.5f, 1.1f),
+                    RandomRange(random, 0.5f, 1.1f) * scale,
                     Mathf.Sin(angle * Mathf.Deg2Rad) * radius);
 
                 CreatePrimitive(PrimitiveType.Cube, $"CoreGarbage_{i}", root,
                     coreOffset + offset,
-                    Vector3.one * RandomRange(random, 0.35f, 0.65f),
+                    Vector3.one * RandomRange(random, 0.35f, 0.65f) * scale,
                     coreGarbage,
                     Quaternion.Euler(RandomRange(random, 0f, 45f), angle, RandomRange(random, 0f, 45f)));
             }
 
             CreatePrimitive(PrimitiveType.Sphere, "PollutionGlow", root,
-                coreOffset + new Vector3(0f, 1.15f, 0f), Vector3.one * 0.75f, purple);
+                coreOffset + new Vector3(0f, 1.15f * scale, 0f),
+                Vector3.one * 0.75f * scale, purple);
 
             GameObject lightObject = new GameObject("PollutionLight");
             lightObject.transform.SetParent(root, false);
-            lightObject.transform.localPosition = coreOffset + new Vector3(0f, 1.6f, 0f);
+            lightObject.transform.localPosition =
+                coreOffset + new Vector3(0f, 1.6f * scale, 0f);
 
             Light purpleLight = lightObject.AddComponent<Light>();
             purpleLight.type = LightType.Point;
             purpleLight.color = new Color(0.66f, 0.3f, 1f);
-            purpleLight.range = 9f;
+            purpleLight.range = 9f * Mathf.Sqrt(scale);
             purpleLight.intensity = 3f;
         }
 
@@ -219,49 +315,90 @@ namespace Yujian.Levels
             Material flowerRed = CreateLitMaterial("LevelFlowerRed", new Color(0.86f, 0.16f, 0.14f));
             Material flowerYellow = CreateLitMaterial("LevelFlowerYellow", new Color(0.96f, 0.79f, 0.15f));
 
-            // 大树：圆柱树干 + 三团球形树冠，长在污染核心格上
+            float scale = visualScale;
+            float margin = Mathf.Max(0.3f, areaCellSize * 0.15f);
+
+            // 大树：圆柱树干 + 三团球形树冠，长在污染核心格上（仍然只占核心 1 格）
             CreatePrimitive(PrimitiveType.Cylinder, "Trunk", root,
-                coreOffset + new Vector3(0f, 2.2f, 0f),
-                new Vector3(0.9f, 2.2f, 0.9f), trunk);
+                coreOffset + new Vector3(0f, 2.2f * scale, 0f),
+                new Vector3(0.9f, 2.2f, 0.9f) * scale, trunk);
 
             CreatePrimitive(PrimitiveType.Sphere, "Canopy_Main", root,
-                coreOffset + new Vector3(0f, 4.7f, 0f),
-                Vector3.one * 3.4f, leaf);
+                coreOffset + new Vector3(0f, 4.7f * scale, 0f),
+                Vector3.one * 3.4f * scale, leaf);
 
             CreatePrimitive(PrimitiveType.Sphere, "Canopy_Left", root,
-                coreOffset + new Vector3(-0.9f, 4.1f, 0.35f),
-                Vector3.one * 2.3f, leafLight);
+                coreOffset + new Vector3(-0.9f * scale, 4.1f * scale, 0.35f * scale),
+                Vector3.one * 2.3f * scale, leafLight);
 
             CreatePrimitive(PrimitiveType.Sphere, "Canopy_Back", root,
-                coreOffset + new Vector3(0.8f, 4.0f, -0.5f),
-                Vector3.one * 2.5f, leaf);
+                coreOffset + new Vector3(0.8f * scale, 4.0f * scale, -0.5f * scale),
+                Vector3.one * 2.5f * scale, leaf);
 
-            // 草地：细长方块，随机铺开
-            for (int i = 0; i < 22; i++)
+            // 草地：细长方块，随机铺开。有掩码时只长在画过的格子上。
+            int grassCount = hasUsableMask
+                ? Mathf.Min(areaCells.Count * 2, 120)
+                : 22;
+
+            for (int i = 0; i < grassCount; i++)
             {
-                float x = RandomRange(random, -halfExtents.x + 0.4f, halfExtents.x - 0.4f);
-                float z = RandomRange(random, -halfExtents.y + 0.4f, halfExtents.y - 0.4f);
+                Vector3 point = SampleAreaPoint(random, margin);
 
                 CreatePrimitive(PrimitiveType.Cube, $"Grass_{i}", root,
-                    new Vector3(x, 0.16f, z),
-                    new Vector3(0.1f, RandomRange(random, 0.25f, 0.45f), 0.1f),
+                    new Vector3(point.x, 0.16f * scale, point.z),
+                    new Vector3(0.1f, RandomRange(random, 0.25f, 0.45f), 0.1f) * scale,
                     grass,
                     Quaternion.Euler(0f, RandomRange(random, 0f, 360f), RandomRange(random, -12f, 12f)));
             }
 
             // 红黄花朵：小方块 + 细花茎，散在草地上
-            for (int i = 0; i < 14; i++)
+            int flowerCount = hasUsableMask
+                ? Mathf.Min(areaCells.Count, 80)
+                : 14;
+
+            for (int i = 0; i < flowerCount; i++)
             {
-                float x = RandomRange(random, -halfExtents.x + 0.5f, halfExtents.x - 0.5f);
-                float z = RandomRange(random, -halfExtents.y + 0.5f, halfExtents.y - 0.5f);
+                Vector3 point = SampleAreaPoint(random, margin);
                 Material petal = i % 2 == 0 ? flowerRed : flowerYellow;
 
                 CreatePrimitive(PrimitiveType.Cube, $"FlowerStem_{i}", root,
-                    new Vector3(x, 0.18f, z), new Vector3(0.05f, 0.36f, 0.05f), grass);
+                    new Vector3(point.x, 0.18f * scale, point.z),
+                    new Vector3(0.05f, 0.36f, 0.05f) * scale, grass);
 
                 CreatePrimitive(PrimitiveType.Sphere, $"Flower_{i}", root,
-                    new Vector3(x, 0.4f, z), Vector3.one * RandomRange(random, 0.18f, 0.3f), petal);
+                    new Vector3(point.x, 0.4f * scale, point.z),
+                    Vector3.one * RandomRange(random, 0.18f, 0.3f) * scale, petal);
             }
+        }
+
+        /// <summary>
+        /// 在关卡面积内取一个随机点（本地坐标）。
+        /// 有手绘掩码时先随机选一格，再在格子内部取点；否则退回矩形范围。
+        /// </summary>
+        private Vector3 SampleAreaPoint(System.Random random, float margin)
+        {
+            if (hasUsableMask && areaCells.Count == 0)
+            {
+                // 掩码可用但全空：只有核心，没有周边垃圾。
+                return Vector3.zero;
+            }
+
+            if (hasPaintedArea && buildingGrid != null && areaCells.Count > 0)
+            {
+                Vector2Int cell = areaCells[random.Next(areaCells.Count)];
+                Vector3 cellCenter = buildingGrid.CellCenter(cell);
+                float limit = Mathf.Max(0.1f, areaCellSize * 0.5f - margin);
+
+                return cellCenter + new Vector3(
+                    RandomRange(random, -limit, limit),
+                    0f,
+                    RandomRange(random, -limit, limit)) - transform.position;
+            }
+
+            return new Vector3(
+                RandomRange(random, -areaHalfExtents.x + margin, areaHalfExtents.x - margin),
+                0f,
+                RandomRange(random, -areaHalfExtents.y + margin, areaHalfExtents.y - margin));
         }
 
         private Transform CreateRoot(string rootName)

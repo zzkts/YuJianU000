@@ -27,6 +27,19 @@ namespace Yujian.Core.Events
         }
     }
 
+    /// <summary>玩家持有的垃圾变化。Delta 为本次增量（投入回收站时为负）。</summary>
+    public readonly struct GarbageChanged
+    {
+        public readonly int Amount;
+        public readonly int Delta;
+
+        public GarbageChanged(int amount, int delta)
+        {
+            Amount = amount;
+            Delta = delta;
+        }
+    }
+
     /// <summary>库存变化。Delta 为本次增减数量。</summary>
     public readonly struct InventoryChanged
     {

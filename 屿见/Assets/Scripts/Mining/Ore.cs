@@ -47,6 +47,10 @@ namespace Yujian.Mining
         [Tooltip("伤害数字位置的随机范围（各轴上下浮动该值），该区域在 Scene 视图中用 Gizmos 显示")]
         [SerializeField] private Vector3 damagePopupRandomRange = new Vector3(0.4f, 0.2f, 0.4f);
 
+        [Tooltip("建筑来源伤害数字的随机抖动缩放。1 = 与玩家相同；0 = 完全落在建筑自己的车道上。" +
+                 "建筑伤害数字按建筑实例错开位置（见 BuildingDamageNumberSlots），抖动太大会把车道糊掉")]
+        [SerializeField, Range(0f, 1f)] private float buildingPopupJitterScale = 0.3f;
+
         [Header("区域显隐")]
         [Tooltip("勾选后，矿石只在挖矿区显示；在观察 / 建筑 / 商店区自动隐藏，" +
                  "避免玩家在岛上提前看到矿石")]
@@ -106,6 +110,10 @@ namespace Yujian.Mining
 
         /// <summary>是否已交给外部生成器接管生成与刷新。</summary>
         public bool UsesExternalSpawnControl => externalSpawnControl;
+
+        /// <summary>生成表现总时长（从零放大再缩回）。外部系统可据此把表现延后到矿石展开之后。</summary>
+        public float SpawnVisualDuration =>
+            Mathf.Max(0f, spawnGrowDuration) + Mathf.Max(0f, spawnShrinkDuration);
 
         /// <summary>矿石被击碎时广播（参数为自身）。外部生成器用它接续生成下一块。</summary>
         public event System.Action<Ore> OnDied;
@@ -226,6 +234,23 @@ namespace Yujian.Mining
         /// <returns>本次伤害是否导致矿石被击碎。</returns>
         public bool TakeDamage(float damage, DamageSource source, bool isCritical)
         {
+            return TakeDamage(damage, source, isCritical, Vector3.zero);
+        }
+
+        /// <summary>
+        /// 承接一次伤害，并让伤害数字额外偏移一段距离。
+        ///
+        /// 用于「来自不同建筑的伤害数字分开显示」：建筑效果按自己的固定槽位传入偏移，
+        /// 同一座建筑的伤害数字始终出现在同一个位置，多座建筑之间不会叠在一起。
+        /// 偏移只影响飘字位置，不影响伤害结算。
+        /// </summary>
+        /// <param name="damage">伤害值，由 DamageSystem 计算后传入。</param>
+        /// <param name="source">伤害来源，决定伤害数字的样式。</param>
+        /// <param name="isCritical">本次伤害是否暴击。</param>
+        /// <param name="popupOffset">伤害数字相对默认位置的额外偏移。零向量表示与玩家伤害数字同位置。</param>
+        /// <returns>本次伤害是否导致矿石被击碎。</returns>
+        public bool TakeDamage(float damage, DamageSource source, bool isCritical, Vector3 popupOffset)
+        {
             if (!IsAlive)
             {
                 return false;
@@ -239,7 +264,7 @@ namespace Yujian.Mining
 
             currentHealth = Mathf.Max(0f, currentHealth - damage);
 
-            SpawnDamagePopup(damage, source, isCritical);
+            SpawnDamagePopup(damage, source, isCritical, popupOffset);
             PlayHitFeedback();
 
             OreHitFlash hitFlash = GetComponent<OreHitFlash>();
@@ -572,18 +597,23 @@ namespace Yujian.Mining
         /// 在矿石上方的随机位置生成一次伤害数字。
         /// 预制体独立于矿石，因此矿石被销毁时伤害数字仍能正常播放完毕。
         /// </summary>
-        private void SpawnDamagePopup(float damage, DamageSource source, bool isCritical)
+        private void SpawnDamagePopup(float damage, DamageSource source, bool isCritical, Vector3 popupOffset)
         {
             if (damagePopupPrefab == null)
             {
                 return;
             }
 
-            Vector3 center = transform.position + damagePopupOffset;
+            // 建筑伤害数字收窄抖动：抖动太大会把各建筑的车道糊在一起（玩家伤害保持原样）
+            float jitterScale = source == DamageSource.Building
+                ? Mathf.Clamp01(buildingPopupJitterScale)
+                : 1f;
+
+            Vector3 center = transform.position + damagePopupOffset + popupOffset;
             Vector3 jitter = new Vector3(
-                Random.Range(-damagePopupRandomRange.x, damagePopupRandomRange.x),
-                Random.Range(-damagePopupRandomRange.y, damagePopupRandomRange.y),
-                Random.Range(-damagePopupRandomRange.z, damagePopupRandomRange.z));
+                Random.Range(-damagePopupRandomRange.x, damagePopupRandomRange.x) * jitterScale,
+                Random.Range(-damagePopupRandomRange.y, damagePopupRandomRange.y) * jitterScale,
+                Random.Range(-damagePopupRandomRange.z, damagePopupRandomRange.z) * jitterScale);
 
             DamagePopup popup = Instantiate(damagePopupPrefab, center + jitter, Quaternion.identity);
             popup.Play(damage, source, isCritical);

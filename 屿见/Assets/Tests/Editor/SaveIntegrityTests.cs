@@ -262,6 +262,36 @@ namespace Yujian.Tests
         }
 
         [Test]
+        public void Validate_NegativeGarbage_Fails()
+        {
+            SaveData data = NewValidSaveData();
+            data.garbage = -1;
+
+            Assert.That(SaveIntegrity.Validate(data, out string error), Is.False);
+            Assert.That(error, Does.Contain("垃圾"));
+        }
+
+        [Test]
+        public void Validate_NegativeQueuedGarbage_Fails()
+        {
+            SaveData data = NewValidSaveData();
+            data.recycling.queuedGarbage = -1;
+
+            Assert.That(SaveIntegrity.Validate(data, out string error), Is.False);
+            Assert.That(error, Does.Contain("回收队列"));
+        }
+
+        [Test]
+        public void Validate_InvalidCoinProgress_Fails()
+        {
+            SaveData data = NewValidSaveData();
+            data.recycling.coinProgress = 1.2f;
+
+            Assert.That(SaveIntegrity.Validate(data, out string error), Is.False);
+            Assert.That(error, Does.Contain("进度"));
+        }
+
+        [Test]
         public void Normalize_FillsAllNullCollections()
         {
             SaveData data = new SaveData
@@ -271,6 +301,7 @@ namespace Yujian.Tests
                 mining = null,
                 fragments = null,
                 blueprintRefund = null,
+                recycling = null,
             };
 
             data.Normalize();
@@ -282,6 +313,7 @@ namespace Yujian.Tests
             Assert.That(data.fragments, Is.Not.Null);
             Assert.That(data.fragments.unlockedIndices, Is.Not.Null);
             Assert.That(data.blueprintRefund, Is.Not.Null);
+            Assert.That(data.recycling, Is.Not.Null);
         }
 
         [Test]

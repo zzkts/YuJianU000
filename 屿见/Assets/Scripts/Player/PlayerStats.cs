@@ -31,6 +31,15 @@ namespace Yujian.Player
         /// <summary>运行时由建筑等来源写入的附加建筑伤害倍率（2026-11-05 商店策划案）。</summary>
         private float bonusBuildingDamageMultiplier;
 
+        /// <summary>运行时由建筑等来源写入的暴击点持续时间加成（0.2 = 基础持续时间 +20%）。</summary>
+        private float bonusCritPointDuration;
+
+        /// <summary>运行时由建筑等来源写入的全建筑攻速加成（0.1 = +10%）。</summary>
+        private float bonusGlobalAttackSpeed;
+
+        /// <summary>运行时由建筑等来源写入的玩家暴击倍率绝对加成（+1 = 倍率额外 +1）。</summary>
+        private float bonusCritMultiplier;
+
         /// <summary>基础攻击力。</summary>
         public float BaseAttack => baseAttack;
 
@@ -51,6 +60,15 @@ namespace Yujian.Player
 
         /// <summary>最终建筑伤害倍率 = 基础建筑倍率 + 建筑加成，不会低于 0。</summary>
         public float BuildingDamageMultiplier => Mathf.Max(0f, buildingDamageMultiplier + bonusBuildingDamageMultiplier);
+
+        /// <summary>建筑带来的暴击点持续时间比例加成（0.2 = 基础持续时间 +20%）。</summary>
+        public float CritPointDurationBonus => Mathf.Max(0f, bonusCritPointDuration);
+
+        /// <summary>全建筑攻速加成（0.1 = +10%），由建筑强化汇总。</summary>
+        public float GlobalAttackSpeedBonus => Mathf.Max(0f, bonusGlobalAttackSpeed);
+
+        /// <summary>建筑带来的玩家暴击倍率绝对加成（+1 = 倍率额外 +1）。</summary>
+        public float CritMultiplierBonus => Mathf.Max(0f, bonusCritMultiplier);
 
         /// <summary>最终伤害倍率变化时广播（参数为新值）。</summary>
         public event Action<float> OnDamageMultiplierChanged;
@@ -90,6 +108,34 @@ namespace Yujian.Player
 
             bonusBuildingDamageMultiplier = sanitized;
             OnBuildingDamageMultiplierChanged?.Invoke(BuildingDamageMultiplier);
+        }
+
+        /// <summary>
+        /// 设置建筑带来的暴击点持续时间比例加成（0.2 = +20%）。
+        /// 由 <see cref="BuildingDamageBonus"/> 在建筑增删 / 强化 / 读档后重新汇总；传 0 就是清空。
+        /// 不改已生成的暴击点，之后刷新的点才会用新时长。
+        /// </summary>
+        public void SetCritPointDurationBonus(float bonus)
+        {
+            bonusCritPointDuration = Mathf.Max(0f, bonus);
+        }
+
+        /// <summary>
+        /// 设置建筑带来的玩家暴击倍率绝对加成（+1 = 倍率额外 +1）。
+        /// 由 <see cref="BuildingDamageBonus"/> 汇总；传 0 就是清空。
+        /// </summary>
+        public void SetCritMultiplierBonus(float bonus)
+        {
+            bonusCritMultiplier = Mathf.Max(0f, bonus);
+        }
+
+        /// <summary>
+        /// 设置全建筑攻速加成（0.1 = +10%）。
+        /// 由 <see cref="BuildingDamageBonus"/> 汇总全局强化后写入；传 0 就是清空。
+        /// </summary>
+        public void SetGlobalAttackSpeedBonus(float bonus)
+        {
+            bonusGlobalAttackSpeed = Mathf.Max(0f, bonus);
         }
 
         private void Awake()

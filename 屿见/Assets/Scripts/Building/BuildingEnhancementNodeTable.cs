@@ -25,6 +25,30 @@ namespace Yujian.Building
 
         /// <summary>玩家伤害倍率。目前只有全局效果。</summary>
         PlayerDamage = 2,
+
+        /// <summary>
+        /// 回收站的垃圾转化速度。全局效果：+0.2 表示所有回收站转换速度 +20%
+        /// （策划案 Node_Huishouzhan_01「回收速度提升」）。
+        /// </summary>
+        RecyclingSpeed = 3,
+
+        /// <summary>
+        /// 回收站的回收效率。个体效果：+0.1 表示该站每批产出的金币 +10%
+        /// （策划案 Node_Huishouzhan_02「回收效率提升」，小数部分累计到下一批）。
+        /// </summary>
+        RecyclingEfficiency = 4,
+
+        /// <summary>
+        /// 暴击点持续时间。全局效果，数值是**比例**（0.2 = 基础持续时间 +20%）。
+        /// 由 BuildingDamageBonus 汇总后写进 PlayerStats，CritPointSystem 在刷点时读取。
+        /// </summary>
+        CritPointDuration = 5,
+
+        /// <summary>
+        /// 玩家暴击倍率。全局效果，数值是**绝对值**（+1 = 暴击倍率额外 +1）。
+        /// 由 BuildingDamageBonus 汇总后写进 PlayerStats，DamageSystem 计算暴击伤害时读取。
+        /// </summary>
+        PlayerCriticalMultiplier = 6,
     }
 
     /// <summary>
@@ -104,6 +128,18 @@ namespace Yujian.Building
                     case BuildingEnhancementStat.PlayerDamage:
                         return "玩家伤害";
 
+                    case BuildingEnhancementStat.RecyclingSpeed:
+                        return "回收速度";
+
+                    case BuildingEnhancementStat.RecyclingEfficiency:
+                        return "回收效率";
+
+                    case BuildingEnhancementStat.CritPointDuration:
+                        return "暴击点持续时间";
+
+                    case BuildingEnhancementStat.PlayerCriticalMultiplier:
+                        return "玩家暴击倍率";
+
                     default:
                         return stat.ToString();
                 }
@@ -114,6 +150,13 @@ namespace Yujian.Building
         public string GetEffectSummary()
         {
             string sign = magnitude >= 0f ? "+" : string.Empty;
+
+            // 暴击倍率是绝对值（+1），其余数值按百分比显示
+            if (stat == BuildingEnhancementStat.PlayerCriticalMultiplier)
+            {
+                return $"{ScopeName}·{StatName} {sign}{magnitude:0.##}";
+            }
+
             return $"{ScopeName}·{StatName} {sign}{magnitude * 100f:0.#}%";
         }
 

@@ -77,6 +77,33 @@ namespace Yujian.Save
                 return false;
             }
 
+            if (data.garbage < 0)
+            {
+                error = $"垃圾为负数（{data.garbage}）。";
+                return false;
+            }
+
+            if (data.recycling == null)
+            {
+                error = "回收站数据为空引用（Normalize 未生效）。";
+                return false;
+            }
+
+            if (data.recycling.queuedGarbage < 0)
+            {
+                error = $"回收队列垃圾为负数（{data.recycling.queuedGarbage}）。";
+                return false;
+            }
+
+            if (float.IsNaN(data.recycling.coinProgress) ||
+                float.IsInfinity(data.recycling.coinProgress) ||
+                data.recycling.coinProgress < 0f ||
+                data.recycling.coinProgress >= 1.0001f)
+            {
+                error = $"回收站金币进度非法（{data.recycling.coinProgress}），应在 [0, 1) 内。";
+                return false;
+            }
+
             if (!ValidateMaterials(data.materials, "库存", out error))
             {
                 return false;

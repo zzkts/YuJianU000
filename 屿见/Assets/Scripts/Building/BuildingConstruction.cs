@@ -55,6 +55,11 @@ namespace Yujian.Building
         [Tooltip("原料库存。材料进蓝图时从这里扣，撤回时退回这里。这是「玩家有多少料」的唯一真相源")]
         [SerializeField] private MaterialInventory inventory;
 
+        [Header("金币商店（隔离模式）")]
+        [Tooltip("建筑金币商店。配置且开关打开时，建筑直接花金币建造，不再需要原料；" +
+                 "留空或关掉开关则完全回到原料流程")]
+        [SerializeField] private BuildingGoldShop goldShop;
+
         [Header("拖拽落点判定")]
         [Tooltip("用于把屏幕坐标换算成世界坐标的相机。留空则用 MainCamera")]
         [SerializeField] private Camera viewCamera;
@@ -90,7 +95,34 @@ namespace Yujian.Building
         /// <summary>蓝图里已放入的材料块数。</summary>
         public int PlacedCount => placementHistory.Count;
 
-        /// <summary>当前建筑是否已经凑齐材料，可以确认建造。</summary>
+        /// <summary>当前是否处于金币建造模式。由 BuildingGoldShop 的开关决定。</summary>
+        public bool UsesGoldPurchase => goldShop != null && goldShop.IsEnabled;
+
+        /// <summary>当前金币余额；不在金币模式或没有配置货币时返回 0。</summary>
+        public int CurrentMoney => UsesGoldPurchase && goldShop != null ? goldShop.CurrentMoney : 0;
+
+        /// <summary>当前选中的建筑是否够金币建造。原料模式下恒为 true（由 IsSatisfied 负责）。</summary>
+        public bool CanAfford
+        {
+            get
+            {
+                if (!UsesGoldPurchase)
+                {
+                    return true;
+                }
+
+                return TryGetGoldPrice(out int price) && goldShop.CanAfford(price);
+            }
+        }
+
+        /// <summary>
+        /// 最终的「能不能点 √ 建成」。
+        /// 原料模式看材料是否齐；金币模式看价目是否配置且余额足够。
+        /// UI 的按钮可用性与 ConfirmBuild 的校验共用这一份判断。
+        /// </summary>
+        public bool CanConfirmBuild => IsSatisfied && CanAfford;
+
+        /// <summary>当前建筑是否已经满足建造前提，可以确认建造。</summary>
         public bool IsSatisfied
         {
             get
@@ -100,6 +132,12 @@ namespace Yujian.Building
                 if (data == null)
                 {
                     return false;
+                }
+
+                // 金币商店模式完全不看材料：蓝图落位即可建，钱在 ConfirmBuild 里扣
+                if (UsesGoldPurchase)
+                {
+                    return true;
                 }
 
                 IReadOnlyList<BuildingMaterialRequirement> requirements = data.RequiredMaterials;
@@ -133,6 +171,12 @@ namespace Yujian.Building
             if (buildingManager == null)
             {
                 Debug.LogError("[BuildingConstruction] BuildingManager 未配置，建造功能完全不会工作。", this);
+            }
+
+            // 场景里漏接时退回同物体上的组件，避免「美术数据都在、只是引用没拖」导致金币模式静默失效
+            if (goldShop == null)
+            {
+                goldShop = GetComponent<BuildingGoldShop>();
             }
 
             if (inventory == null)
@@ -372,6 +416,12 @@ namespace Yujian.Building
                 return false;
             }
 
+            // 金币商店模式：查价 → 扣金币 → 建成；建成失败原额退款
+            if (UsesGoldPurchase)
+            {
+                return ConfirmGoldBuild();
+            }
+
             // 先把材料列表拷出来：BuildAtAnchor 会销毁蓝图并触发 OnBlueprintClosed，
             // 那时 placementHistory 已经被清空
             List<MaterialData> layerMaterials = new List<MaterialData>(placementHistory.Count);
@@ -395,6 +445,102 @@ namespace Yujian.Building
             }
 
             return built;
+        }
+
+        /// <summary>金币商店模式下确认建造：查价、扣款、生成实体；生成失败原额退款。</summary>
+        private bool ConfirmGoldBuild()
+        {
+            BuildingData data = SelectedData;
+
+            if (data == null || goldShop == null)
+            {
+                Report("金币商店未配置，无法建造", false);
+                return false;
+            }
+
+            if (!goldShop.TryGetPrice(data, out int price))
+            {
+                Report($"「{data.BuildingName}」没有配置金币价格，无法建造", false);
+                return false;
+            }
+
+            if (!goldShop.CanAfford(price))
+            {
+                Report($"金币不足：需要 {price}，当前 {goldShop.CurrentMoney}", false);
+                return false;
+            }
+
+            if (!goldShop.TrySpend(price))
+            {
+                Report("金币扣除失败，建造已取消", false);
+                return false;
+            }
+
+            // 传一个 null，让楼层栈保留一层兜底色；
+            // 空列表也能建，但存档时不会写入任何楼层，读档会按材料配方补层，视觉会跳变。
+            bool built = buildingManager.BuildAtAnchor(new MaterialData[] { null });
+
+            if (!built)
+            {
+                goldShop.Refund(price);
+                Report($"建造失败，已退还 {price} 金币", false);
+                return false;
+            }
+
+            if (logConstructionFlow)
+            {
+                Debug.Log($"[BuildingConstruction] 金币购买建成「{data.BuildingName}」，花费 {price} 金币。");
+            }
+
+            return true;
+        }
+
+        /// <summary>查当前建筑的金币价。非金币模式或未配置价格时返回 false。</summary>
+        public bool TryGetGoldPrice(out int price)
+        {
+            price = 0;
+
+            if (!UsesGoldPurchase || goldShop == null)
+            {
+                return false;
+            }
+
+            return goldShop.TryGetPrice(SelectedData, out price);
+        }
+
+        /// <summary>金币模式下的进度文案：花费 / 还差多少。非金币模式时返回原料进度。</summary>
+        public string GetPurchaseProgressText()
+        {
+            if (!UsesGoldPurchase)
+            {
+                return $"材料：{GetProgressText()}";
+            }
+
+            BuildingData data = SelectedData;
+
+            if (data == null)
+            {
+                return "金币商店";
+            }
+
+            if (!TryGetGoldPrice(out int price))
+            {
+                return "未配置金币价格";
+            }
+
+            if (price <= 0)
+            {
+                return "免费建造";
+            }
+
+            int money = CurrentMoney;
+
+            if (money >= price)
+            {
+                return $"花费：{price} 金币（当前 {money}）";
+            }
+
+            return $"金币不足：还差 {price - money}（需要 {price}，当前 {money}）";
         }
 
         /// <summary>

@@ -112,6 +112,10 @@ namespace Yujian.Building
         private RectInt originalRect;
         private Vector3 originalPosition;
 
+        // 迁移期间的朝向（0~3 个 90°）。确认时才写进存档；撤回时恢复成原值
+        private int quarterTurns;
+        private int originalQuarterTurns;
+
         // 抓取偏移：长按那一刻「建筑中心 − 指针地面点」，拖动时保持这个偏移，建筑不会瞬移
         private Vector3 grabOffset;
 
@@ -171,6 +175,12 @@ namespace Yujian.Building
 
         /// <summary>候选中心世界坐标（UI 定位用）。拖动中就是建筑当前所在位置。</summary>
         public Vector3 CurrentCenter => target != null ? target.transform.position : default;
+
+        /// <summary>迁移中的朝向：旋转了几个 90°（0~3）。</summary>
+        public int QuarterTurns => quarterTurns;
+
+        /// <summary>当前是否可以旋转（迁移中且有目标建筑）。</summary>
+        public bool CanRotate => IsActive && target != null && targetInfo != null;
 
         private void Awake()
         {
@@ -283,6 +293,8 @@ namespace Yujian.Building
             targetInfo = info;
             originalRect = info.FootprintRect;
             originalPosition = building.transform.position;
+            quarterTurns = info.QuarterTurns;
+            originalQuarterTurns = quarterTurns;
             currentRect = originalRect;
             snappedCenter = originalPosition;
             grabOffset = Vector3.zero;
@@ -356,6 +368,49 @@ namespace Yujian.Building
             // 这样既有「贴到格子上」的对齐感，又不会在格线附近硬跳
             visualTarget = hasSnappedPose ? snappedCenter : desiredCenter;
             return isValid;
+        }
+
+        /// <summary>
+        /// 顺时针转 90°（建筑下方左侧按钮，策划案 3.3 第 4 条）。
+        /// 外观与占地一起转：转完立刻重新吸附，绿 / 红反馈马上刷新。
+        /// </summary>
+        public bool RotateClockwise()
+        {
+            return RotateBy(1);
+        }
+
+        /// <summary>
+        /// 逆时针转 90°（建筑下方右侧按钮，策划案 3.3 第 4 条）。
+        /// </summary>
+        public bool RotateCounterClockwise()
+        {
+            return RotateBy(-1);
+        }
+
+        private bool RotateBy(int delta)
+        {
+            if (!CanRotate)
+            {
+                return false;
+            }
+
+            quarterTurns = BuildingRotation.Normalize(quarterTurns + delta);
+            target.transform.rotation = BuildingRotation.ToQuaternion(quarterTurns);
+
+            // 旋转后宽高可能互换，原来吸附好的占格不再有效，必须按新尺寸重新吸附。
+            // 中心沿用上一次的候选中心，玩家看到的效果就是「原地转一圈」。
+            Vector3 desiredCenter = hasSnappedPose ? snappedCenter : target.transform.position;
+            EvaluatePose(desiredCenter);
+            visualTarget = hasSnappedPose ? snappedCenter : desiredCenter;
+
+            if (logMigrationFlow)
+            {
+                Debug.Log($"[BuildingMigration]「{targetInfo.Data.BuildingName}」旋转到 {quarterTurns * 90}°，" +
+                          $"候选占格 {currentRect}，{(isValid ? "可以放下" : $"不可放置（{invalidReason}）")}。");
+            }
+
+            OnMigrationChanged?.Invoke();
+            return true;
         }
 
         /// <summary>
@@ -467,7 +522,8 @@ namespace Yujian.Building
             visualTarget = snappedCenter;
             target.transform.position = snappedCenter;
 
-            if (buildingManager.TryMoveBuilding(target, snappedCenter, currentRect, out string error))
+            if (buildingManager.TryMoveBuilding(
+                    target, snappedCenter, currentRect, out string error, quarterTurns))
             {
                 message = $"已迁移「{targetInfo.Data.BuildingName}」";
                 EndMigration();
@@ -493,6 +549,9 @@ namespace Yujian.Building
             if (target != null)
             {
                 target.transform.position = originalPosition;
+
+                // 撤回也要把朝向转回去，否则「转了没确认」会留下一个歪着的建筑
+                target.transform.rotation = BuildingRotation.ToQuaternion(originalQuarterTurns);
 
                 if (logMigrationFlow)
                 {
@@ -534,10 +593,12 @@ namespace Yujian.Building
                 return;
             }
 
-            // FootprintCells 是「格数」，TryGetSnappedPose 要的是「世界尺寸」。
+            // 占地格数要按当前朝向算（转 90° / 270° 时宽高互换），
+            // 再用 CellsToWorldFootprint 换成 TryGetSnappedPose 要的「世界尺寸」。
             // 之前直接把 FootprintCells 传进去，2×2 的建筑会被当成 2×2 世界单位 → 只算出 1×1 格，
             // 确认时又被 BuildingManager 的尺寸校验拒绝，表现就是「怎么点都没法确认」。
-            Vector2 worldFootprint = grid.CellsToWorldFootprint(targetInfo.Data.FootprintCells);
+            Vector2Int cells = BuildingRotation.RotateCells(targetInfo.Data.FootprintCells, quarterTurns);
+            Vector2 worldFootprint = grid.CellsToWorldFootprint(cells);
 
             if (!grid.TryGetSnappedPose(desiredCenter, worldFootprint,
                     out Vector3 candidateCenter, out RectInt candidateRect))
@@ -610,6 +671,8 @@ namespace Yujian.Building
             hasSnappedPose = false;
             isValid = false;
             invalidReason = null;
+            quarterTurns = 0;
+            originalQuarterTurns = 0;
             state = BuildingMigrationState.Idle;
 
             OnMigrationChanged?.Invoke();

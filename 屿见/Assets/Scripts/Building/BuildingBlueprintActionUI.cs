@@ -175,13 +175,15 @@ namespace Yujian.Building
 
             bool filling = buildingManager.Phase == BuildingPhase.Filling;
             bool canPlace = !filling && placement != null && placement.IsCurrentPlacementValid;
-            bool canBuild = filling && construction != null && construction.IsSatisfied;
+            bool satisfied = filling && construction != null && construction.IsSatisfied;
+            bool canBuild = satisfied && construction.CanAfford;
 
             // 落位前：× 与 √ 都在，√ 的可用性表示「这里能不能放」；
-            // 落位后：撤回占 × 的位置，√ 先消失，材料齐了再出现
+            // 落位后：撤回占 × 的位置，√ 在满足建造前提时出现；
+            // 金币模式下前提恒成立，但钱不够时 √ 显示为灰色，点不动。
             SetButtonVisible(cancelButton, !filling);
             SetButtonVisible(undoButton, filling);
-            SetButtonVisible(confirmButton, filling ? canBuild : true);
+            SetButtonVisible(confirmButton, filling ? satisfied : true);
 
             if (confirmButton != null)
             {

@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -18,8 +17,9 @@ namespace Yujian.UI
     /// 运行时生成可以保证不碰场景文件，也不会因为少拖一个引用而整块不显示。
     /// 美术定稿后可以把这里的尺寸 / 颜色换成预制体，逻辑不用动。
     ///
-    /// 包含：退出关卡、垃圾栏、当前照明 / 挖矿工具、当前矿石、两个可滑动升级列表、
-    /// x1 / Max 切换（同时作用于两个列表）、光标右侧悬浮说明、垃圾缩写。
+    /// 包含：退出关卡、当前照明 / 挖矿工具、当前矿石、两个可滑动升级列表、
+    /// x1 / Max 切换（同时作用于两个列表）、光标右侧悬浮说明、数字缩写。
+    /// 「垃圾 · 金币」资源栏不在这里生成，统一由全局唯一的 RecyclingHudUI 显示。
     /// </summary>
     [DisallowMultipleComponent]
     public class MiningHudUI : MonoBehaviour
@@ -34,22 +34,8 @@ namespace Yujian.UI
         [SerializeField] private LevelManager levelManager;
 
         [Header("升级方式")]
-        [Tooltip("true = Max（升到垃圾不足为止），false = x1（每次一级）")]
+        [Tooltip("true = Max（升到金币不足为止），false = x1（每次一级）")]
         [SerializeField] private bool useMaxMode;
-
-        [Header("资源栏动画")]
-        [Tooltip("一块垃圾入账时，资源栏数字 / 图标放大的倍数")]
-        [SerializeField, Min(1f)] private float punchScale = 1.25f;
-
-        [Tooltip("一块垃圾入账时，资源栏数字旋转的角度（度）")]
-        [SerializeField] private float punchAngle = 12f;
-
-        [Tooltip("一次弹跳的总时长（秒）")]
-        [SerializeField, Min(0.05f)] private float punchDuration = 0.36f;
-
-        [Header("资源栏图标")]
-        [Tooltip("资源栏图标。留空时在运行时绘制一个垃圾桶图标")]
-        [SerializeField] private Sprite resourceIconSprite;
 
         [Header("聚合体血条")]
         [Tooltip("血条自然色。剩余血量减少时立即缩短")]
@@ -106,15 +92,6 @@ namespace Yujian.UI
         private bool authoringMode;
         private Sprite authoringSprite;
 
-        private Text coinText;
-        private Image coinIconImage;
-        private Sprite generatedIconSprite;
-        private RectTransform coinBarRect;
-        private Vector3 coinTextBaseScale = Vector3.one;
-        private Vector3 coinIconBaseScale = Vector3.one;
-        private Quaternion coinTextBaseRotation = Quaternion.identity;
-        private Quaternion coinIconBaseRotation = Quaternion.identity;
-        private Coroutine coinPunchRoutine;
         private Text lightIconText;
         private Text lightNameText;
         private Text lightStatsText;
@@ -150,7 +127,10 @@ namespace Yujian.UI
         private float feedbackClearTime = -1f;
         private bool tooltipVisible;
 
-        /// <summary>岛上常驻的「垃圾：N」栏。清洁界面自己也有资源栏，进入清洁区时要收起来。</summary>
+        /// <summary>
+        /// 旧的常驻金币栏。资源显示已经统一到全局唯一的 RecyclingHudUI，
+        /// 这里只在进入关卡时顺手把它收起来，防止旧场景里有人手动打开又叠一层。
+        /// </summary>
         private CoinHudUI standaloneResourceHud;
         private bool hidStandaloneResourceHud;
 
@@ -205,17 +185,6 @@ namespace Yujian.UI
             if (barFillSprite != null)
             {
                 Destroy(barFillSprite);
-            }
-
-            if (generatedIconSprite != null)
-            {
-                Texture2D texture = generatedIconSprite.texture;
-                Destroy(generatedIconSprite);
-
-                if (texture != null)
-                {
-                    Destroy(texture);
-                }
             }
         }
 
@@ -350,7 +319,7 @@ namespace Yujian.UI
                 canvasObject.SetActive(value);
             }
 
-            // 清洁界面自带资源栏，进清洁区时把岛上那份「垃圾：N」收起来，避免叠两层
+            // 资源栏已经统一到 RecyclingHudUI；进清洁区时顺手把旧 CoinHud 收起来，避免叠两层
             SetStandaloneResourceHudVisible(!value);
 
             if (value)
@@ -477,7 +446,7 @@ namespace Yujian.UI
 
             if (!CanAfford(cost))
             {
-                ShowFeedback($"垃圾不足，还差 {cost - CurrentMoney()}", false);
+                ShowFeedback($"金币不足，还差 {cost - CurrentMoney()}", false);
                 RefreshAll();
                 return;
             }
@@ -508,7 +477,7 @@ namespace Yujian.UI
 
             if (!CanAfford(cost))
             {
-                ShowFeedback($"垃圾不足，还差 {cost - CurrentMoney()}", false);
+                ShowFeedback($"金币不足，还差 {cost - CurrentMoney()}", false);
                 RefreshAll();
                 return;
             }
@@ -585,20 +554,11 @@ namespace Yujian.UI
                 return;
             }
 
-            RefreshCoin();
             RefreshEquipped();
             RefreshLightRows();
             RefreshMineRows();
             RefreshMode();
             RefreshOre();
-        }
-
-        private void RefreshCoin()
-        {
-            if (coinText != null)
-            {
-                coinText.text = $"垃圾 {FormatNumber(CurrentMoney())}";
-            }
         }
 
         private void RefreshEquipped()
@@ -701,9 +661,9 @@ namespace Yujian.UI
                 bool affordable = money >= cost;
 
                 SetText(row.Gain, $"升级 x{count}");
-                SetText(row.Cost, $"{FormatNumber(cost)} 垃圾");
+                SetText(row.Cost, $"{FormatNumber(cost)} 金币");
                 SetText(row.ButtonText, "未解锁");
-                // 垃圾不足时只降低亮度，仍然可以点：点了会在右下提示还差多少。
+                // 金币不足时只降低亮度，仍然可以点：点了会在右下提示还差多少。
                 SetButtonInteractable(row.Button, true);
                 SetRowDim(row.Group, !affordable);
             }
@@ -737,7 +697,7 @@ namespace Yujian.UI
             bool affordable = CurrentMoney() >= cost;
 
             SetText(row.Gain, $"升级 x{count}");
-            SetText(row.Cost, $"共 {FormatNumber(cost)} 垃圾");
+            SetText(row.Cost, $"共 {FormatNumber(cost)} 金币");
             SetText(row.ButtonText, "升级");
             SetButtonInteractable(row.Button, true);
             SetRowDim(row.Group, !affordable);
@@ -1078,99 +1038,6 @@ namespace Yujian.UI
             }
         }
 
-        // ---------------- 资源栏动画 ----------------
-
-        /// <summary>
-        /// 资源栏在屏幕上的位置。垃圾收集器用它反算世界坐标里的飞行目标。
-        /// 界面还没构建或不可见时返回 false。
-        /// </summary>
-        public bool TryGetResourceScreenPoint(out Vector2 screenPoint)
-        {
-            RectTransform target = coinBarRect != null
-                ? coinBarRect
-                : coinText != null ? coinText.rectTransform : null;
-
-            if (target == null)
-            {
-                screenPoint = default;
-                return false;
-            }
-
-            screenPoint = RectTransformUtility.WorldToScreenPoint(null, target.position);
-            return true;
-        }
-
-        /// <summary>一块垃圾入账时调用：资源栏数字放大后缩回。</summary>
-        public void PlayResourcePunch()
-        {
-            if (coinText == null)
-            {
-                return;
-            }
-
-            if (coinPunchRoutine != null)
-            {
-                StopCoroutine(coinPunchRoutine);
-            }
-
-            coinPunchRoutine = StartCoroutine(CoinPunchRoutine());
-        }
-
-        private IEnumerator CoinPunchRoutine()
-        {
-            float duration = Mathf.Max(0.05f, punchDuration);
-            float elapsed = 0f;
-
-            while (elapsed < duration)
-            {
-                elapsed += Time.unscaledDeltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-
-                // 0 → 1 → 0：先旋转并放大，再转回来并缩小
-                float phase = t < 0.45f
-                    ? t / 0.45f
-                    : 1f - (t - 0.45f) / 0.55f;
-                float eased = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(phase));
-
-                float scale = 1f + (Mathf.Max(1f, punchScale) - 1f) * eased;
-                float angle = punchAngle * eased;
-
-                if (coinText != null)
-                {
-                    RectTransform rect = coinText.rectTransform;
-                    rect.localScale = coinTextBaseScale * scale;
-                    rect.localRotation = coinTextBaseRotation * Quaternion.Euler(0f, 0f, angle);
-                }
-
-                if (coinIconImage != null)
-                {
-                    RectTransform rect = coinIconImage.rectTransform;
-                    rect.localScale = coinIconBaseScale * scale;
-                    rect.localRotation = coinIconBaseRotation;
-                }
-
-                yield return null;
-            }
-
-            ResetResourceTransform();
-            coinPunchRoutine = null;
-        }
-
-        private void ResetResourceTransform()
-        {
-            if (coinText != null)
-            {
-                coinText.rectTransform.localScale = coinTextBaseScale;
-                coinText.rectTransform.localRotation = coinTextBaseRotation;
-            }
-
-            if (coinIconImage != null)
-            {
-                coinIconImage.rectTransform.localScale = coinIconBaseScale;
-                coinIconImage.rectTransform.localRotation = coinIconBaseRotation;
-            }
-        }
-
         // ---------------- 悬浮说明 ----------------
 
         /// <summary>HoverTooltipTrigger 的入口。</summary>
@@ -1307,7 +1174,6 @@ namespace Yujian.UI
             root.gameObject.AddComponent<CanvasGroup>();
 
             BuildExitButton(root);
-            BuildCoinBar(root);
             BuildEquippedPanel(root);
             BuildUpgradePanel(root);
             BuildOreBar(root);
@@ -1363,9 +1229,14 @@ namespace Yujian.UI
                 return false;
             }
 
-            coinBarRect = FindRect(hud, "CoinBar");
-            coinText = FindText(hud, "CoinBar/CoinText");
-            coinIconImage = FindImage(hud, "CoinBar/Icon/GarbageIcon");
+            // 「垃圾 · 金币」资源栏已经统一到全局唯一的 RecyclingHudUI：
+            // 旧场景烘焙出来的 CoinBar 直接藏起来，避免关卡内再冒出一份。
+            Transform legacyCoinBar = hud.Find("CoinBar");
+
+            if (legacyCoinBar != null)
+            {
+                legacyCoinBar.gameObject.SetActive(false);
+            }
 
             lightIconText = FindText(hud, "EquippedPanel/LightCard/Icon/Glyph");
             lightNameText = FindText(hud, "EquippedPanel/LightCard/Name");
@@ -1398,8 +1269,7 @@ namespace Yujian.UI
             tooltipRect = FindRect(hud, "Tooltip");
             tooltipText = FindText(hud, "Tooltip/Text");
 
-            bool coreOk = coinBarRect != null && coinText != null && coinIconImage != null &&
-                          lightIconText != null && lightNameText != null &&
+            bool coreOk = lightIconText != null && lightNameText != null &&
                           lightStatsText != null && mineIconText != null &&
                           mineNameText != null && mineStatsText != null &&
                           modeText != null && feedbackText != null &&
@@ -1418,10 +1288,6 @@ namespace Yujian.UI
                 return false;
             }
 
-            coinTextBaseScale = coinText.rectTransform.localScale;
-            coinTextBaseRotation = coinText.rectTransform.localRotation;
-            coinIconBaseScale = coinIconImage.rectTransform.localScale;
-            coinIconBaseRotation = coinIconImage.rectTransform.localRotation;
             countdownTextBasePosition = countdownText.rectTransform.anchoredPosition;
 
             BindAuthoredLightRows(lightContent);
@@ -1566,7 +1432,7 @@ namespace Yujian.UI
                 mode.onClick.RemoveAllListeners();
                 mode.onClick.AddListener(HandleModeClicked);
                 BindHoverTooltip(mode.gameObject, () => useMaxMode
-                    ? "Max——升级到垃圾不足为止"
+                    ? "Max——升级到金币不足为止"
                     : "x1——每次升一级");
             }
         }
@@ -1587,11 +1453,6 @@ namespace Yujian.UI
 
         private void ApplyAuthoredRuntimeSprites()
         {
-            if (coinIconImage != null)
-            {
-                coinIconImage.sprite = ResolveResourceIconSprite();
-            }
-
             Sprite fill = ResolveBarFillSprite();
             ApplyFillSprite(oreHurtFill, fill);
             ApplyFillSprite(oreHpFill, fill);
@@ -1625,7 +1486,8 @@ namespace Yujian.UI
 
         /// <summary>
         /// 策划案 2.3.2：进入关卡后显示退出按钮。
-        /// 与旧的「返回主岛」合并后放在左上角，原右上角改成只放垃圾资源栏。
+        /// 与旧的「返回主岛」合并后放在左上角；右上角不再放资源栏，
+        /// 「垃圾 · 金币」统一由全局唯一的 RecyclingHudUI 显示。
         /// </summary>
         private void BuildExitButton(RectTransform root)
         {
@@ -1634,57 +1496,6 @@ namespace Yujian.UI
                 new Vector2(110f, 46f));
 
             button.onClick.AddListener(HandleExitLevelClicked);
-        }
-
-        private void BuildCoinBar(RectTransform root)
-        {
-            RectTransform panel = CreatePanel(root, "CoinBar",
-                new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-32f, -26f),
-                new Vector2(240f, 46f));
-            coinBarRect = panel;
-
-            // 资源图标：默认运行时画一个垃圾桶；美术出图后拖到 resourceIconSprite 即可替换
-            RectTransform iconBox = CreatePanel(panel, "Icon",
-                new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(6f, 0f),
-                new Vector2(34f, 34f), new Color(1f, 1f, 1f, 0.14f));
-
-            RectTransform iconRect = CreateRect("GarbageIcon", iconBox);
-            iconRect.anchorMin = Vector2.zero;
-            iconRect.anchorMax = Vector2.one;
-            iconRect.pivot = new Vector2(0.5f, 0.5f);
-            iconRect.offsetMin = new Vector2(2f, 2f);
-            iconRect.offsetMax = new Vector2(-2f, -2f);
-
-            coinIconImage = iconRect.gameObject.AddComponent<Image>();
-            coinIconImage.sprite = authoringMode
-                ? ResolveAuthoringSprite()
-                : ResolveResourceIconSprite();
-            coinIconImage.preserveAspect = true;
-            coinIconImage.raycastTarget = false;
-            coinIconBaseScale = iconRect.localScale;
-            coinIconBaseRotation = iconRect.localRotation;
-
-            coinText = CreateText(panel, "CoinText", 22,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(4f, 0f),
-                new Vector2(190f, 40f), TextAnchor.MiddleRight, accentColor, true);
-            coinText.text = "垃圾 0";
-            coinTextBaseScale = coinText.rectTransform.localScale;
-            coinTextBaseRotation = coinText.rectTransform.localRotation;
-        }
-
-        private Sprite ResolveResourceIconSprite()
-        {
-            if (resourceIconSprite != null)
-            {
-                return resourceIconSprite;
-            }
-
-            if (generatedIconSprite == null)
-            {
-                generatedIconSprite = GarbageIconFactory.Create();
-            }
-
-            return generatedIconSprite;
         }
 
         private void BuildEquippedPanel(RectTransform root)
@@ -1761,7 +1572,7 @@ namespace Yujian.UI
             modeText = modeButton.GetComponentInChildren<Text>();
 
             AddHoverTooltip(modeButton.gameObject, () => useMaxMode
-                ? "Max——升级到垃圾不足为止"
+                ? "Max——升级到金币不足为止"
                 : "x1——每次升一级");
 
             feedbackText = CreateText(panel, "Feedback", 16,

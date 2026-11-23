@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -271,6 +272,80 @@ namespace Yujian.Tests
         {
             Assert.That(GridPlacementFailure.Occupied.ToChineseName(), Is.EqualTo("格子已被占用"));
             Assert.That(GridPlacementFailure.LevelLocked.ToChineseName(), Is.EqualTo("关卡污染区未净化"));
+        }
+
+        // ---------- 手绘可建面积掩码 ----------
+
+        [Test]
+        public void AreaMask_WhenEnabled_ReplacesTerrainMask()
+        {
+            BuildableAreaMask mask = Track(ScriptableObject.CreateInstance<BuildableAreaMask>());
+            mask.Initialize(Vector3.zero, 2f, new Vector2Int(10, 10), false);
+            mask.SetCell(5, 5, true);
+
+            grid.SetAreaMask(mask, true);
+
+            Assert.That(grid.IsAreaMaskActive, Is.True);
+            Assert.That(grid.HasCompatibleAreaMask, Is.True);
+            Assert.That(grid.IsCellBuildable(new Vector2Int(5, 5)), Is.True);
+            Assert.That(grid.IsCellBuildable(new Vector2Int(0, 0)), Is.False);
+            Assert.That(grid.CanPlace(new RectInt(5, 5, 1, 1), out GridPlacementFailure failure), Is.True);
+            Assert.That(failure, Is.EqualTo(GridPlacementFailure.None));
+        }
+
+        [Test]
+        public void AreaMask_WhenDisabled_UsesTerrain()
+        {
+            BuildableAreaMask mask = Track(ScriptableObject.CreateInstance<BuildableAreaMask>());
+            mask.Initialize(Vector3.zero, 2f, new Vector2Int(10, 10), false);
+
+            grid.SetAreaMask(mask, false);
+
+            Assert.That(grid.IsAreaMaskActive, Is.False);
+            Assert.That(grid.IsCellBuildable(new Vector2Int(0, 0)), Is.True);
+        }
+
+        [Test]
+        public void AreaMask_Incompatible_FallsBackToTerrain()
+        {
+            BuildableAreaMask mask = Track(ScriptableObject.CreateInstance<BuildableAreaMask>());
+            mask.Initialize(Vector3.zero, 2f, new Vector2Int(4, 4), true);
+
+            LogAssert.Expect(LogType.Error, new Regex("可建面积掩码与当前网格不匹配"));
+            grid.SetAreaMask(mask, true);
+
+            Assert.That(grid.IsAreaMaskActive, Is.True);
+            Assert.That(grid.HasCompatibleAreaMask, Is.False);
+            Assert.That(grid.IsCellBuildable(new Vector2Int(0, 0)), Is.True);
+        }
+
+        [Test]
+        public void AreaMask_LevelLockStillApplies()
+        {
+            BuildableAreaMask mask = Track(ScriptableObject.CreateInstance<BuildableAreaMask>());
+            mask.Initialize(Vector3.zero, 2f, new Vector2Int(10, 10), true);
+            grid.SetAreaMask(mask, true);
+
+            grid.RegisterLevelFootprint(1, new RectInt(4, 4, 2, 2), new Vector2Int(4, 4), false);
+
+            Assert.That(grid.IsCellBuildable(new Vector2Int(4, 4)), Is.False);
+            Assert.That(grid.IsCellBuildable(new Vector2Int(5, 5)), Is.False);
+            Assert.That(grid.IsCellBuildable(new Vector2Int(3, 3)), Is.True);
+        }
+
+        [Test]
+        public void BakeProceduralMaskInto_WritesTerrainResult()
+        {
+            IslandDefinition smallIsland = NewGameObject("SmallIsland").AddComponent<IslandDefinition>();
+            smallIsland.Configure(Vector3.zero, new Vector2(6f, 6f), -1f);
+            grid.Configure(Vector3.zero, 2f, new Vector2Int(10, 10), smallIsland, null);
+
+            BuildableAreaMask mask = Track(ScriptableObject.CreateInstance<BuildableAreaMask>());
+            grid.BakeProceduralMaskInto(mask);
+
+            Assert.That(mask.IsCompatible(Vector3.zero, 2f, new Vector2Int(10, 10)), Is.True);
+            Assert.That(mask.GetCell(5, 5), Is.True);
+            Assert.That(mask.GetCell(0, 0), Is.False);
         }
     }
 }

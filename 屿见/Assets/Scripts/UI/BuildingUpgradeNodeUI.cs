@@ -139,6 +139,9 @@ namespace Yujian.UI
             }
 
             root.SetActive(true);
+
+            // 整个强化窗口容器也要置顶，否则升级按钮组后显示时会盖住强化选项
+            transform.SetAsLastSibling();
             root.transform.SetAsLastSibling();
             LateUpdate();
         }
@@ -222,6 +225,8 @@ namespace Yujian.UI
                 item.Bind(captured, () => ShowConfirm(captured));
             }
 
+            // 容器与内容都置顶：按钮组即使同帧被重新显示，也会排在强化窗口前面
+            transform.SetAsLastSibling();
             root.transform.SetAsLastSibling();
         }
 

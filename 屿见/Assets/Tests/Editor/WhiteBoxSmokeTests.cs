@@ -14,7 +14,7 @@ namespace Yujian.Tests
         [Test]
         public void GameAssembly_IsAccessible()
         {
-            Assert.That(SaveData.CurrentVersion, Is.EqualTo(3));
+            Assert.That(SaveData.CurrentVersion, Is.EqualTo(4));
         }
 
         [Test]

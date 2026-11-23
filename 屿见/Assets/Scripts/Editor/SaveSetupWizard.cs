@@ -3,6 +3,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using Yujian.Building;
+using Yujian.Building.Recycling;
 using Yujian.Mining;
 using Yujian.Player;
 using Yujian.Save;
@@ -44,6 +45,7 @@ namespace Yujian.EditorTools
             EnsureSaveSystem(catalog);
             EnsureMiningParticipants();
             EnsurePlayerLevelParticipant();
+            EnsureEconomyParticipants();
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -443,6 +445,64 @@ namespace Yujian.EditorTools
             EditorUtility.SetDirty(participant);
             EditorUtility.SetDirty(saveSystem);
             return true;
+        }
+
+        /// <summary>
+        /// 补上垃圾与回收站队列的存档适配器（v4）。
+        /// 顺序在建筑之后：读档时先重建建筑，回收站站点随后在 Start 里注册，
+        /// 队列恢复由 RecyclingSystem 延后到第一次 Update。
+        /// </summary>
+        public static bool EnsureEconomyParticipants()
+        {
+            SaveSystem saveSystem = Object.FindFirstObjectByType<SaveSystem>(FindObjectsInactive.Include);
+
+            if (saveSystem == null)
+            {
+                Debug.LogWarning("[存档配置] 场景里没有 SaveSystem，垃圾与回收队列暂时不会写档。");
+                return false;
+            }
+
+            GameObject host = saveSystem.gameObject;
+            List<SaveParticipant> required = new List<SaveParticipant>();
+
+            PlayerGarbage garbage = Object.FindFirstObjectByType<PlayerGarbage>(FindObjectsInactive.Include);
+
+            if (garbage != null)
+            {
+                GarbageSaveParticipant garbageParticipant =
+                    EnsureComponent<GarbageSaveParticipant>(host);
+                SetReference(garbageParticipant, "garbage", garbage);
+                required.Add(garbageParticipant);
+                EditorUtility.SetDirty(garbageParticipant);
+            }
+            else
+            {
+                Debug.LogWarning("[存档配置] 场景里没有 PlayerGarbage，跳过垃圾存档。");
+            }
+
+            RecyclingSystem recycling = Object.FindFirstObjectByType<RecyclingSystem>(
+                FindObjectsInactive.Include);
+
+            if (recycling != null)
+            {
+                RecyclingSaveParticipant recyclingParticipant =
+                    EnsureComponent<RecyclingSaveParticipant>(host);
+                SetReference(recyclingParticipant, "recycling", recycling);
+                required.Add(recyclingParticipant);
+                EditorUtility.SetDirty(recyclingParticipant);
+            }
+            else
+            {
+                Debug.LogWarning("[存档配置] 场景里没有 RecyclingSystem，跳过回收队列存档。");
+            }
+
+            if (required.Count > 0)
+            {
+                EnsureParticipants(saveSystem, required.ToArray());
+                EditorUtility.SetDirty(saveSystem);
+            }
+
+            return required.Count > 0;
         }
 
         private static T EnsureComponent<T>(GameObject target) where T : Component

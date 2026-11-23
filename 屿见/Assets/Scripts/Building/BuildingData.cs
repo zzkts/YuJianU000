@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
+using UnityEngine.Serialization;
 using Yujian.Shop;
 
 namespace Yujian.Building
@@ -12,6 +13,9 @@ namespace Yujian.Building
     public enum BuildingType
     {
         Museum = 0,
+
+        /// <summary>回收站：把垃圾转换成金币（策划案「垃圾回收站系统」）。</summary>
+        RecyclingStation = 1,
     }
 
     /// <summary>BuildingType 的中文显示名。目前只用于日志与将来的 UI 显示。</summary>
@@ -24,6 +28,10 @@ namespace Yujian.Building
             {
                 case BuildingType.Museum:
                     return "博物馆";
+
+                case BuildingType.RecyclingStation:
+                    return "回收站";
+
                 default:
                     // 未定义的类型返回枚举名：一旦看到英文名就知道枚举加了值但这里没补 case
                     return type.ToString();
@@ -98,6 +106,23 @@ namespace Yujian.Building
                  "建筑上方的升级按钮会提示「未配置升级表」")]
         [SerializeField] private BuildingUpgradeTable upgradeTable;
 
+        [Header("暴击点")]
+        [Tooltip("建成后对暴击点持续时间的比例加成（0.2 = +20%）。0 = 不影响；" +
+                 "可叠加：同一建筑建多座算多份。后续建筑可以用它或强化节点「暴击点持续时间」来延长")]
+        [SerializeField, Min(0f)] private float critPointDurationBonus;
+
+        [Header("建筑栏位（策划案 3.7）")]
+        [Tooltip("解锁需要的玩家等级。1 = 开局就能建；小于 1 的一律按 1 处理")]
+        [SerializeField] private int unlockLevel = 1;
+
+        [Tooltip("场上最多同时存在几座。0 = 不限制。主要建筑（里程碑）会被强制按 1 座处理。" +
+                 "旧字段名 maxOnField 会自动迁移到这里")]
+        [FormerlySerializedAs("maxOnField")]
+        [SerializeField, Min(0)] private int buildLimit = 0;
+
+        [Tooltip("在建筑栏位里归入「特殊」分组。主要建筑（里程碑）即使不勾也会自动算作特殊")]
+        [SerializeField] private bool specialGroup;
+
         [Header("所需材料（阶段 3 只记录，不消耗）")]
         [Tooltip("建造该建筑需要的原料清单。阶段 3 完全不读取这张表——" +
                  "即使玩家一个原料都没有也允许放置。材料检查与扣除是阶段 4 的事")]
@@ -125,6 +150,24 @@ namespace Yujian.Building
 
         /// <summary>采用的升级表，可能为 null（不可升级）。</summary>
         public BuildingUpgradeTable UpgradeTable => upgradeTable;
+
+        /// <summary>这座建筑对暴击点持续时间的比例加成（0.2 = +20%），0 表示不影响。</summary>
+        public float CritPointDurationBonus => Mathf.Max(0f, critPointDurationBonus);
+
+        /// <summary>解锁需要的玩家等级，最小为 1。</summary>
+        public int UnlockLevel => Mathf.Max(1, unlockLevel);
+
+        /// <summary>场上数量上限，0 表示不限制。</summary>
+        public int BuildLimit => Mathf.Max(0, buildLimit);
+
+        /// <summary>是否配置了场上数量上限。</summary>
+        public bool HasFieldLimit => BuildLimit > 0;
+
+        /// <summary>是否归入建筑栏位的「特殊」分组。</summary>
+        public bool IsSpecial => specialGroup;
+
+        /// <summary>旧名称，等价于 <see cref="BuildLimit"/>，保留给旧调用方。</summary>
+        public int MaxOnField => BuildLimit;
 
         /// <summary>所需材料清单，只读。阶段 3 不消费它。</summary>
         public IReadOnlyList<BuildingMaterialRequirement> RequiredMaterials =>
@@ -168,6 +211,10 @@ namespace Yujian.Building
 
         private void OnValidate()
         {
+            unlockLevel = Mathf.Max(1, unlockLevel);
+            buildLimit = Mathf.Max(0, buildLimit);
+            critPointDurationBonus = Mathf.Max(0f, critPointDurationBonus);
+
             if (string.IsNullOrWhiteSpace(buildingName))
             {
                 Debug.LogWarning($"[BuildingData] 资产「{name}」的显示名称为空。", this);

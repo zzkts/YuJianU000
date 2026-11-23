@@ -286,7 +286,8 @@ namespace Yujian.Save
             if (logSaveFlow)
             {
                 Debug.Log($"[SaveSystem] 已保存：{store.SavePath}\n" +
-                          $"版本 {data.version}，金币 {data.currency}，材料 {data.materials.Count} 格，" +
+                          $"版本 {data.version}，金币 {data.currency}，垃圾 {data.garbage}，" +
+                          $"回收队列 {data.recycling.queuedGarbage}，材料 {data.materials.Count} 格，" +
                           $"建筑 {data.buildings.Count} 座。");
             }
 
@@ -432,8 +433,9 @@ namespace Yujian.Save
                     : $"{fileVersion}（已迁移到 {data.version}）";
 
                 Debug.Log($"[SaveSystem] 已读取{DescribeSource(source)}：{store.GetPath(source)}\n" +
-                          $"版本 {versionText}，保存时间 {savedAt}，金币 {data.currency}，" +
-                          $"材料 {data.materials.Count} 格，建筑 {data.buildings.Count} 座。");
+                          $"版本 {versionText}，保存时间 {savedAt}，金币 {data.currency}，垃圾 {data.garbage}，" +
+                          $"回收队列 {data.recycling.queuedGarbage}，材料 {data.materials.Count} 格，" +
+                          $"建筑 {data.buildings.Count} 座。");
             }
 
             OnLoaded?.Invoke();

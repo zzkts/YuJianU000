@@ -20,8 +20,9 @@ namespace Yujian.Save
         /// 当前存档结构版本。字段含义变化或新增迁移步骤时 +1。
         /// v2 起文件带 <see cref="checksum"/>，读取时校验完整性。
         /// v3 移除了原料颜色：库存按原料合并，建筑楼层改存材料 ID。
+        /// v4 拆分垃圾 / 金币：新增 <see cref="garbage"/> 与回收站队列 <see cref="recycling"/>。
         /// </summary>
-        public const int CurrentVersion = 3;
+        public const int CurrentVersion = 4;
 
         /// <summary>
         /// 存档结构版本。**默认 0 表示未知**，不能默认成 CurrentVersion——
@@ -39,8 +40,14 @@ namespace Yujian.Save
         /// <summary>保存时间（UTC ticks）。只用于日志与“最后游玩时间”，不参与玩法。</summary>
         public long savedAtUtc;
 
-        /// <summary>玩家金币。</summary>
+        /// <summary>玩家金币。v4 起金币只由回收站产出。</summary>
         public int currency;
+
+        /// <summary>玩家持有的垃圾。v4 新增；旧存档没有该字段时为 0。</summary>
+        public int garbage;
+
+        /// <summary>回收站共享队列。v4 新增；旧存档没有该字段时为空队列。</summary>
+        public RecyclingSave recycling = new RecyclingSave();
 
         /// <summary>材料库存：每条是 (原料 ID, 数量)。旧存档里的颜色字段会被忽略并合并。</summary>
         public List<MaterialSave> materials = new List<MaterialSave>();
@@ -112,6 +119,11 @@ namespace Yujian.Save
                 fragments.unlockedIndices = new List<int>();
             }
 
+            if (recycling == null)
+            {
+                recycling = new RecyclingSave();
+            }
+
             if (blueprintRefund == null)
             {
                 blueprintRefund = new List<MaterialSave>();
@@ -171,6 +183,25 @@ namespace Yujian.Save
         /// 旧存档没有该字段时为空列表，升级到节点等级后会重新要求选择。
         /// </summary>
         public List<string> enhancementOptionIds = new List<string>();
+
+        /// <summary>
+        /// 建筑朝向：旋转了几个 90°（0~3，策划案 3.3 第 4 条）。
+        /// 旧存档没有该字段时为 0，等价于不旋转；宽高已按朝向写入 width / height。
+        /// </summary>
+        public int rotation;
+    }
+
+    /// <summary>
+    /// 回收站共享队列。所有回收站共用一条队列，所以存档只需要一份。
+    /// queuedGarbage 是还没转换的垃圾；coinProgress 是当前批次已经攒到的金币小数（0 ～ 1）。
+    /// </summary>
+    [Serializable]
+    public class RecyclingSave
+    {
+        public int queuedGarbage;
+
+        /// <summary>当前批次金币进度（0 ～ 1，小数累计到下一批）。</summary>
+        public float coinProgress;
     }
 
     /// <summary>矿石生成进度：当前档位 + 每个档位已经抽过的条目。</summary>

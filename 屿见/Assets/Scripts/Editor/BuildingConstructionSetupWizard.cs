@@ -604,23 +604,26 @@ namespace Yujian.EditorTools
             return button;
         }
 
-        /// <summary>在 Canvas 里找一个可以当模板的按钮，跳过两个自建面板里的按钮。</summary>
+        /// <summary>在 Canvas 里找一个可以当模板的按钮，跳过自建面板（含面板里嵌套的按钮）里的按钮。</summary>
         private static Transform FindTemplateButton(Canvas canvas)
         {
             Button[] buttons = canvas.GetComponentsInChildren<Button>(true);
+            Transform existingPanel = canvas.transform.Find(ExistingPanelName);
+            Transform materialPanel = canvas.transform.Find(MaterialPanelName);
+            Transform blueprintPanel = canvas.transform.Find(BlueprintActionPanelName);
 
             for (int i = 0; i < buttons.Length; i++)
             {
-                if (buttons[i] == null || buttons[i].transform.parent == null)
+                if (buttons[i] == null)
                 {
                     continue;
                 }
 
-                string parentName = buttons[i].transform.parent.name;
-
-                if (parentName == ExistingPanelName ||
-                    parentName == MaterialPanelName ||
-                    parentName == BlueprintActionPanelName)
+                // IsChildOf：建筑面板里的按钮现在住在 Scroll View/Viewport/Content 下面，
+                // 只看直接父物体名字会把它们当成外部模板
+                if ((existingPanel != null && buttons[i].transform.IsChildOf(existingPanel)) ||
+                    (materialPanel != null && buttons[i].transform.IsChildOf(materialPanel)) ||
+                    (blueprintPanel != null && buttons[i].transform.IsChildOf(blueprintPanel)))
                 {
                     continue;
                 }

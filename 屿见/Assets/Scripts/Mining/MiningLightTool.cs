@@ -7,8 +7,8 @@ namespace Yujian.Mining
     /// <summary>
     /// 照明工具（飞书 2.1.4 照明系统）。
     ///
-    /// 它本身不发光——矿洞氛围由 MiningLightingController 负责。
-    /// 这里只做玩法层的事：玩家买到的等级 → 暴击点刷新冷却 / 半径 / 数量 / 暴击倍率。
+    /// 它本身不发光，也不控制画面明暗；只做玩法层的事：
+    /// 玩家买到的等级 → 暴击点刷新冷却 / 半径 / 数量 / 暴击倍率。
     ///
     /// 等级（下标 = Level），共 6 档：
     ///   0 未拥有：不生成暴击点
@@ -57,11 +57,12 @@ namespace Yujian.Mining
             { 1f, 2f, 2.1f, 2.2f, 2.3f, 2.4f, 2.5f };
 
         [Header("暴击点停留")]
-        [Tooltip("勾选后暴击点一直保留到被点击（飞书规则）。取消勾选则回到旧的倒计时逻辑")]
-        [SerializeField] private bool critPointsPersist = true;
+        [Tooltip("勾选后暴击点永久保留、不显示剩余时间进度条。默认关闭：按下面的等级表倒计时存在")]
+        [SerializeField] private bool critPointsPersist;
 
         [Header("暴击点停留时长，秒（下标 = 等级；仅倒计时模式使用）")]
-        [SerializeField] private float[] lifetimeByLevel = { 2.5f, 4f, 4.5f, 5f, 5.5f, 6f, 6.5f };
+        [Tooltip("基础存在时间。后续建筑可以在此基础上追加秒数")]
+        [SerializeField] private float[] lifetimeByLevel = { 2.5f, 3f, 3.5f, 4f, 4.5f, 5f, 5.5f };
 
         [Header("购买价格")]
         [Tooltip("从当前等级买到下一级需要的金币。长度 = 等级数 - 1")]
@@ -118,7 +119,7 @@ namespace Yujian.Mining
             ? CritPointDamageMultiplier
             : Mathf.Max(1f, LookupFloat(criticalDamageMultiplierByLevel, Level + 1, CritPointDamageMultiplier));
 
-        /// <summary>暴击点是否一直保留到被点击。</summary>
+        /// <summary>暴击点是否永久保留（不显示剩余时间进度条）。</summary>
         public bool CritPointsPersist => critPointsPersist;
 
         /// <summary>当前是否具备刷新暴击点的条件。</summary>

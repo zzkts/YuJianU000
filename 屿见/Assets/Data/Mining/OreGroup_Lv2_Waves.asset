@@ -1,0 +1,76 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4223cd51d6a8e7d49af3432b84354669, type: 3}
+  m_Name: OreGroup_Lv2_Waves
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Mining.OreGroup
+  entries:
+  - type: 0
+    weight: 1
+    maxHealth: 500
+    reward: 300
+    isMidBoss: 0
+    visualScale: 1
+  - type: 1
+    weight: 1
+    maxHealth: 560
+    reward: 336
+    isMidBoss: 0
+    visualScale: 1
+  - type: 2
+    weight: 1
+    maxHealth: 620
+    reward: 372
+    isMidBoss: 0
+    visualScale: 1
+  - type: 3
+    weight: 1
+    maxHealth: 900
+    reward: 540
+    isMidBoss: 1
+    visualScale: 1.35
+  - type: 0
+    weight: 1
+    maxHealth: 700
+    reward: 420
+    isMidBoss: 0
+    visualScale: 1
+  - type: 1
+    weight: 1
+    maxHealth: 780
+    reward: 468
+    isMidBoss: 0
+    visualScale: 1
+  - type: 2
+    weight: 1
+    maxHealth: 860
+    reward: 516
+    isMidBoss: 0
+    visualScale: 1
+  - type: 3
+    weight: 1
+    maxHealth: 940
+    reward: 564
+    isMidBoss: 0
+    visualScale: 1
+  - type: 0
+    weight: 1
+    maxHealth: 1020
+    reward: 612
+    isMidBoss: 0
+    visualScale: 1
+  - type: 1
+    weight: 1
+    maxHealth: 1100
+    reward: 660
+    isMidBoss: 0
+    visualScale: 1
+  sequential: 1

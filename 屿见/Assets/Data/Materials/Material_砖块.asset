@@ -14,8 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Shop.MaterialData
   materialName: "\u5C0F\u7816"
   materialType: 0
-  price: 2
+  price: 1
   damageMultiplierBonus: 0.1
+  buildingDamageMultiplierBonus: 0
   displayColor: {r: 0.8, g: 0.22, b: 0.2, a: 1}
   prefab: {fileID: 0}
   saveId: 9f1a5c65d730e014daa9213d786dea96

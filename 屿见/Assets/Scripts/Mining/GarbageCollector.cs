@@ -19,11 +19,11 @@ namespace Yujian.Mining
     public class GarbageCollector : MonoBehaviour
     {
         [Header("依赖")]
-        [Tooltip("资源栏所在界面。留空时自动查找")]
-        [SerializeField] private MiningHudUI hud;
+        [Tooltip("全局唯一的「垃圾 · 金币」资源栏。留空时自动查找")]
+        [SerializeField] private RecyclingHudUI resourceHud;
 
-        [Tooltip("玩家货币。留空时自动查找")]
-        [SerializeField] private PlayerCurrency currency;
+        [Tooltip("玩家垃圾。留空时自动查找（2026-11-19 起垃圾是独立资源，金币只由回收站产出）")]
+        [SerializeField] private PlayerGarbage garbage;
 
         [Tooltip("取景相机，用来把 UI 屏幕坐标换算成世界坐标。留空时用 Main Camera")]
         [SerializeField] private Camera viewCamera;
@@ -188,25 +188,25 @@ namespace Yujian.Mining
         }
 
         /// <summary>编辑器向导调用。</summary>
-        public void ConfigureForSetup(MiningHudUI newHud, PlayerCurrency newCurrency,
+        public void ConfigureForSetup(RecyclingHudUI newResourceHud, PlayerGarbage newGarbage,
             Camera newCamera, Material newTrailMaterial)
         {
-            hud = newHud;
-            currency = newCurrency;
+            resourceHud = newResourceHud;
+            garbage = newGarbage;
             viewCamera = newCamera;
             trailMaterial = newTrailMaterial;
         }
 
         private void ResolveDependencies()
         {
-            if (hud == null)
+            if (resourceHud == null)
             {
-                hud = FindFirstObjectByType<MiningHudUI>(FindObjectsInactive.Include);
+                resourceHud = FindFirstObjectByType<RecyclingHudUI>(FindObjectsInactive.Include);
             }
 
-            if (currency == null)
+            if (garbage == null)
             {
-                currency = FindFirstObjectByType<PlayerCurrency>(FindObjectsInactive.Include);
+                garbage = FindFirstObjectByType<PlayerGarbage>(FindObjectsInactive.Include);
             }
 
             if (viewCamera == null)
@@ -314,10 +314,10 @@ namespace Yujian.Mining
                     batchAmount += batchBuffer[i].Amount;
                 }
 
-                if (hud != null && !hud.IsVisible)
+                if (resourceHud != null && !resourceHud.IsResourceVisible)
                 {
-                    // 玩家已经离开清洁区，资源栏不在屏幕上：
-                    // 整批直接结算并清掉世界里的垃圾块，避免垃圾飘在主岛上。
+                    // 资源栏不在屏幕上（界面未构建 / 被关掉）：
+                    // 整批直接结算并清掉世界里的垃圾块，避免垃圾飘在场景里。
                     for (int i = 0; i < batchBuffer.Count; i++)
                     {
                         if (batchBuffer[i].Piece != null)
@@ -398,9 +398,9 @@ namespace Yujian.Mining
             // 一批 4 块只分到 2 点垃圾时，会有 0 点的块；
             // 它们只负责飞行动画，不应该让资源栏空弹一下。
             // 同批的块在同一帧到达，重复调用会重启同一个弹跳协程，视觉上只弹一次。
-            if (entry.Amount > 0 && hud != null)
+            if (entry.Amount > 0 && resourceHud != null)
             {
-                hud.PlayResourcePunch();
+                resourceHud.PlayResourcePunch();
             }
 
             if (trail != null)
@@ -425,7 +425,7 @@ namespace Yujian.Mining
 
             Vector2 screenPoint;
 
-            if (hud == null || !hud.TryGetResourceScreenPoint(out screenPoint))
+            if (resourceHud == null || !resourceHud.TryGetResourceScreenPoint(out screenPoint))
             {
                 screenPoint = new Vector2(Screen.width * 0.92f, Screen.height * 0.95f);
             }
@@ -546,14 +546,15 @@ namespace Yujian.Mining
                 return;
             }
 
-            if (currency == null)
+            if (garbage == null)
             {
-                Debug.LogError("[GarbageCollector] 找不到 PlayerCurrency，垃圾无法入账。", this);
+                Debug.LogError("[GarbageCollector] 找不到 PlayerGarbage，垃圾无法入账。" +
+                               "请运行菜单「屿见/建筑/配置垃圾回收站系统」自动接线。", this);
                 return;
             }
 
-            // AddMoney 对 <= 0 会报警，这里已经挡掉了
-            currency.AddMoney(amount);
+            // AddGarbage 对 <= 0 会报警，这里已经挡掉了
+            garbage.AddGarbage(amount);
         }
 
         private static Material CreateRuntimeFlightMaterial(Color color)

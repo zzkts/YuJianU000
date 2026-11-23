@@ -25,6 +25,16 @@ namespace Yujian.Building.Effects
     ///   玩家伤害 / 全建筑伤害的全局加成与材料加成写进同一组 PlayerStats 倍率，
     ///   避免出现第二个汇总入口。个体强化不进这里，由建筑效果自己读施工实例。
     ///
+    /// 2026-11-23 起同时汇总**暴击点持续时间**：
+    ///   每座建筑的 BuildingData.CritPointDurationBonus（比例，0.2 = +20%）
+    ///   + 全局强化「暴击点持续时间延长」选项，写入 PlayerStats，CritPointSystem 刷点时读取。
+    ///
+    /// 2026-11-23 起也汇总**全建筑攻速**（强化选项「建筑攻速提升」，全局）：
+    ///   写入 PlayerStats，OrganMuseumAutoAttack 计算攻击间隔时读取。
+    ///
+    /// 2026-11-23 起也汇总**玩家暴击倍率**（强化选项「玩家暴击倍率提升」，全局）：
+    ///   写入 PlayerStats，DamageSystem 计算暴击点时读取。
+    ///
     /// 不修改基础倍率、不碰金币、不处理输入。
     /// </summary>
     [DisallowMultipleComponent]
@@ -47,6 +57,15 @@ namespace Yujian.Building.Effects
 
         /// <summary>当前建筑带来的附加建筑伤害倍率。</summary>
         public float CurrentBuildingBonus { get; private set; }
+
+        /// <summary>当前建筑带来的暴击点持续时间附加秒数。</summary>
+        public float CurrentCritPointBonus { get; private set; }
+
+        /// <summary>当前建筑带来的全建筑攻速加成（0.1 = +10%）。</summary>
+        public float CurrentAttackSpeedBonus { get; private set; }
+
+        /// <summary>当前建筑带来的玩家暴击倍率绝对加成（+1 = 倍率额外 +1）。</summary>
+        public float CurrentCritMultiplierBonus { get; private set; }
 
         private void Awake()
         {
@@ -87,6 +106,9 @@ namespace Yujian.Building.Effects
 
             float playerTotal = 0f;
             float buildingTotal = 0f;
+            float critPointTotal = 0f;
+            float attackSpeedTotal = 0f;
+            float critMultiplierTotal = 0f;
             System.Collections.Generic.IReadOnlyList<GameObject> placed = buildingManager.PlacedBuildings;
 
             for (int i = 0; i < placed.Count; i++)
@@ -111,29 +133,60 @@ namespace Yujian.Building.Effects
                 buildingTotal += CalculateBuildingBonus(info.Data) +
                     info.GetEnhancementBonus(
                         BuildingEnhancementScope.Global, BuildingEnhancementStat.BuildingDamage);
+
+                // 暴击点持续时间：建筑基础值 + 全局强化选项，单位秒
+                critPointTotal += info.Data.CritPointDurationBonus +
+                    info.GetEnhancementBonus(
+                        BuildingEnhancementScope.Global, BuildingEnhancementStat.CritPointDuration);
+
+                // 全建筑攻速：只看全局强化（个体攻速由建筑效果自己读施工实例）
+                attackSpeedTotal += info.GetEnhancementBonus(
+                    BuildingEnhancementScope.Global, BuildingEnhancementStat.AttackSpeed);
+
+                // 玩家暴击倍率：全局强化，绝对值加在照明工具倍率上
+                critMultiplierTotal += info.GetEnhancementBonus(
+                    BuildingEnhancementScope.Global, BuildingEnhancementStat.PlayerCriticalMultiplier);
             }
 
             if (Mathf.Approximately(playerTotal, CurrentBonus) &&
-                Mathf.Approximately(buildingTotal, CurrentBuildingBonus))
+                Mathf.Approximately(buildingTotal, CurrentBuildingBonus) &&
+                Mathf.Approximately(critPointTotal, CurrentCritPointBonus) &&
+                Mathf.Approximately(attackSpeedTotal, CurrentAttackSpeedBonus) &&
+                Mathf.Approximately(critMultiplierTotal, CurrentCritMultiplierBonus))
             {
                 // 数值没变也要保证 PlayerStats 上是这个值（例如刚被别的系统清零）
                 playerStats.SetBonusDamageMultiplier(playerTotal);
                 playerStats.SetBonusBuildingDamageMultiplier(buildingTotal);
+                playerStats.SetCritPointDurationBonus(critPointTotal);
+                playerStats.SetGlobalAttackSpeedBonus(attackSpeedTotal);
+                playerStats.SetCritMultiplierBonus(critMultiplierTotal);
                 return;
             }
 
             float previousPlayer = CurrentBonus;
             float previousBuilding = CurrentBuildingBonus;
+            float previousCritPoint = CurrentCritPointBonus;
+            float previousAttackSpeed = CurrentAttackSpeedBonus;
+            float previousCritMultiplier = CurrentCritMultiplierBonus;
             CurrentBonus = playerTotal;
             CurrentBuildingBonus = buildingTotal;
+            CurrentCritPointBonus = critPointTotal;
+            CurrentAttackSpeedBonus = attackSpeedTotal;
+            CurrentCritMultiplierBonus = critMultiplierTotal;
             playerStats.SetBonusDamageMultiplier(playerTotal);
             playerStats.SetBonusBuildingDamageMultiplier(buildingTotal);
+            playerStats.SetCritPointDurationBonus(critPointTotal);
+            playerStats.SetGlobalAttackSpeedBonus(attackSpeedTotal);
+            playerStats.SetCritMultiplierBonus(critMultiplierTotal);
 
             if (logBonusFlow)
             {
                 Debug.Log($"[BuildingDamageBonus] 建筑 {placed.Count} 座，" +
                           $"玩家伤害倍率加成 {previousPlayer:0.##} → {CurrentBonus:0.##}，" +
-                          $"建筑伤害倍率加成 {previousBuilding:0.##} → {CurrentBuildingBonus:0.##}；" +
+                          $"建筑伤害倍率加成 {previousBuilding:0.##} → {CurrentBuildingBonus:0.##}，" +
+                          $"暴击点持续 +{previousCritPoint * 100f:0.#}% → +{CurrentCritPointBonus * 100f:0.#}%，" +
+                          $"全建筑攻速 +{previousAttackSpeed * 100f:0.#}% → +{CurrentAttackSpeedBonus * 100f:0.#}%，" +
+                          $"玩家暴击倍率 +{previousCritMultiplier:0.##} → +{CurrentCritMultiplierBonus:0.##}；" +
                           $"最终倍率 玩家 {playerStats.DamageMultiplier:0.##} / " +
                           $"建筑 {playerStats.BuildingDamageMultiplier:0.##}");
             }
