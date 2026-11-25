@@ -35,7 +35,7 @@ namespace Yujian.EditorTools
         private const string WhiteMaterialPath = MaterialFolder + "/Garbage_White.mat";
         private const string PurpleMaterialPath = MaterialFolder + "/Garbage_Purple.mat";
         private const string TrailMaterialPath = MaterialFolder + "/Garbage_Trail.mat";
-        private const string SampleScenePath = "Assets/Scenes/SampleScene.unity";
+        private static string SampleScenePath => EditorScenePaths.MainScenePath;
 
         [MenuItem("屿见/清洁/配置垃圾聚合体", false, 345)]
         public static void Configure()

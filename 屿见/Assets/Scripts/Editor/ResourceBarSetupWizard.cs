@@ -21,7 +21,7 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class ResourceBarSetupWizard
     {
-        private const string SampleScenePath = "Assets/Scenes/SampleScene.unity";
+        private static string SampleScenePath => EditorScenePaths.MainScenePath;
 
         [MenuItem("屿见/界面/只保留挖矿资源栏", false, 250)]
         public static void KeepOnlyMiningResourceBar()

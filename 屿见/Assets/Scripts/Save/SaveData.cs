@@ -46,6 +46,12 @@ namespace Yujian.Save
         /// <summary>玩家持有的垃圾。v4 新增；旧存档没有该字段时为 0。</summary>
         public int garbage;
 
+        /// <summary>
+        /// 垃圾背包（策划案 2.1.6，2026-11-25 新增）。
+        /// 旧存档没有该字段时按「1 级空包」处理，不会报空引用。
+        /// </summary>
+        public GarbageBagSave bag = new GarbageBagSave();
+
         /// <summary>回收站共享队列。v4 新增；旧存档没有该字段时为空队列。</summary>
         public RecyclingSave recycling = new RecyclingSave();
 
@@ -122,6 +128,21 @@ namespace Yujian.Save
             if (recycling == null)
             {
                 recycling = new RecyclingSave();
+            }
+
+            if (bag == null)
+            {
+                bag = new GarbageBagSave();
+            }
+
+            if (bag.level <= 0)
+            {
+                bag.level = 1;
+            }
+
+            if (bag.garbage < 0)
+            {
+                bag.garbage = 0;
             }
 
             if (blueprintRefund == null)
@@ -202,6 +223,17 @@ namespace Yujian.Save
 
         /// <summary>当前批次金币进度（0 ～ 1，小数累计到下一批）。</summary>
         public float coinProgress;
+    }
+
+    /// <summary>
+    /// 垃圾背包的存档：等级 + 当前存量（策划案 2.1.6）。
+    /// 只存这两个数：容量由等级表算出来，属派生值，不落盘。
+    /// </summary>
+    [Serializable]
+    public class GarbageBagSave
+    {
+        public int level = 1;
+        public int garbage = 0;
     }
 
     /// <summary>矿石生成进度：当前档位 + 每个档位已经抽过的条目。</summary>

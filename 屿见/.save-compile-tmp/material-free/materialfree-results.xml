@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<test-run id="2" testcasecount="9" result="Passed" total="9" passed="9" failed="0" inconclusive="0" skipped="0" asserts="0" engine-version="3.5.0.0" clr-version="4.0.30319.42000" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.0858973">
+  <test-suite type="TestSuite" id="1000" name="屿见" fullname="屿见" runstate="Runnable" testcasecount="392" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.085897" total="9" passed="9" failed="0" inconclusive="0" skipped="0" asserts="0">
+    <properties>
+      <property name="platform" value="EditMode" />
+    </properties>
+    <test-suite type="Assembly" id="1429" name="Assembly-CSharp-Editor.dll" fullname="D:/Unity stuff/YuJianU0001/屿见/Library/ScriptAssemblies/Assembly-CSharp-Editor.dll" runstate="Runnable" testcasecount="392" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.076054" total="9" passed="9" failed="0" inconclusive="0" skipped="0" asserts="0">
+      <properties>
+        <property name="_PID" value="22104" />
+        <property name="_APPDOMAIN" value="Unity Child Domain" />
+        <property name="platform" value="EditMode" />
+        <property name="EditorOnly" value="True" />
+      </properties>
+      <test-suite type="TestSuite" id="1430" name="Yujian" fullname="Yujian" runstate="Runnable" testcasecount="392" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.072694" total="9" passed="9" failed="0" inconclusive="0" skipped="0" asserts="0">
+        <properties />
+        <test-suite type="TestSuite" id="1431" name="Tests" fullname="Yujian.Tests" runstate="Runnable" testcasecount="392" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.067410" total="9" passed="9" failed="0" inconclusive="0" skipped="0" asserts="0">
+          <properties />
+          <test-suite type="TestFixture" id="1188" name="MaterialFreeLoopTests" fullname="Yujian.Tests.MaterialFreeLoopTests" classname="Yujian.Tests.MaterialFreeLoopTests" runstate="Runnable" testcasecount="9" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.058021" total="9" passed="9" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1191" name="BuildingBar_AvailableAndShowsPrice_WhenAffordable" fullname="Yujian.Tests.MaterialFreeLoopTests.BuildingBar_AvailableAndShowsPrice_WhenAffordable" methodname="BuildingBar_AvailableAndShowsPrice_WhenAffordable" classname="Yujian.Tests.MaterialFreeLoopTests" runstate="Runnable" seed="2100000528" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.026096" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1193" name="BuildingBar_FreeBuilding_IsAvailableAtZeroMoney" fullname="Yujian.Tests.MaterialFreeLoopTests.BuildingBar_FreeBuilding_IsAvailableAtZeroMoney" methodname="BuildingBar_FreeBuilding_IsAvailableAtZeroMoney" classname="Yujian.Tests.MaterialFreeLoopTests" runstate="Runnable" seed="221969160" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.000880" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1192" name="BuildingBar_InsufficientGold_GraysOutWithReason" fullname="Yujian.Tests.MaterialFreeLoopTests.BuildingBar_InsufficientGold_GraysOutWithReason" methodname="BuildingBar_InsufficientGold_GraysOutWithReason" classname="Yujian.Tests.MaterialFreeLoopTests" runstate="Runnable" seed="592616259" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.002549" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1194" name="BuildingBar_LevelLockWinsOverGold" fullname="Yujian.Tests.MaterialFreeLoopTests.BuildingBar_LevelLockWinsOverGold" methodname="BuildingBar_LevelLockWinsOverGold" classname="Yujian.Tests.MaterialFreeLoopTests" runstate="Runnable" seed="1735301770" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.000832" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1195" name="BuildingBar_NoGoldShop_IsInvalidNotSilentlyFree" fullname="Yujian.Tests.MaterialFreeLoopTests.BuildingBar_NoGoldShop_IsInvalidNotSilentlyFree" methodname="BuildingBar_NoGoldShop_IsInvalidNotSilentlyFree" classname="Yujian.Tests.MaterialFreeLoopTests" runstate="Runnable" seed="585933150" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.001044" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1189" name="MaterialFree_IsTheDefault" fullname="Yujian.Tests.MaterialFreeLoopTests.MaterialFree_IsTheDefault" methodname="MaterialFree_IsTheDefault" classname="Yujian.Tests.MaterialFreeLoopTests" runstate="Runnable" seed="1469321977" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.000563" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1190" name="MaterialFree_KeepsGoldModeEvenWhenInspectorSwitchIsOff" fullname="Yujian.Tests.MaterialFreeLoopTests.MaterialFree_KeepsGoldModeEvenWhenInspectorSwitchIsOff" methodname="MaterialFree_KeepsGoldModeEvenWhenInspectorSwitchIsOff" classname="Yujian.Tests.MaterialFreeLoopTests" runstate="Runnable" seed="1265196402" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.000503" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1196" name="MaterialFree_RefusesMaterialPlacement" fullname="Yujian.Tests.MaterialFreeLoopTests.MaterialFree_RefusesMaterialPlacement" methodname="MaterialFree_RefusesMaterialPlacement" classname="Yujian.Tests.MaterialFreeLoopTests" runstate="Runnable" seed="1411508982" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.001499" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1197" name="MaterialsEnabled_RestoresMaterialGating" fullname="Yujian.Tests.MaterialFreeLoopTests.MaterialsEnabled_RestoresMaterialGating" methodname="MaterialsEnabled_RestoresMaterialGating" classname="Yujian.Tests.MaterialFreeLoopTests" runstate="Runnable" seed="1709511699" result="Passed" start-time="2026-11-24 12:36:45Z" end-time="2026-11-24 12:36:45Z" duration="0.004114" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[[MaterialInventory] 增加 小砖 ×3，现有 3
+Saving results to: C:/Users/Admit/AppData/LocalLow/DefaultCompany/屿见\TestResults.xml
+]]></output>
+            </test-case>
+          </test-suite>
+        </test-suite>
+      </test-suite>
+    </test-suite>
+  </test-suite>
+</test-run>

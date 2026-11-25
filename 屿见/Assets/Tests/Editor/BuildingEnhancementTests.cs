@@ -462,10 +462,13 @@ namespace Yujian.Tests
             Assert.That(nodes, Is.Not.Null);
             Assert.That(upgrade, Is.Not.Null);
             Assert.That(upgrade.EnhancementNodeTable, Is.SameAs(nodes));
-            Assert.That(nodes.Nodes.Count, Is.EqualTo(5));
-            Assert.That(nodes.Options.Count, Is.EqualTo(10));
 
-            int[] expectedLevels = { 10, 20, 30, 40, 50 };
+            // 2026-11-23 第 135 节按最新《屿见-建筑系统.docx》改成「两阶强化 + 4 个普通选项」，
+            // 这里跟着数据走；节点等级待 Demo 清单拍板后再前移（第 138.10 节）。
+            Assert.That(nodes.Nodes.Count, Is.EqualTo(2));
+            Assert.That(nodes.Options.Count, Is.EqualTo(4));
+
+            int[] expectedLevels = { 25, 50 };
 
             for (int i = 0; i < expectedLevels.Length; i++)
             {

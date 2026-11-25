@@ -69,8 +69,11 @@ namespace Yujian.Building
             goldShop = goldShopSource;
         }
 
-        /// <summary>当前是否处于金币建造模式。拆除弹窗据此把「返还原料」显示成「返还建造金币」。</summary>
-        public bool UsesGoldPurchase => goldShop != null && goldShop.IsEnabled;
+        /// <summary>
+        /// 当前是否处于金币建造模式。拆除弹窗据此把「返还原料」显示成「返还建造金币」。
+        /// 原料被全局剔除时同样算金币模式（金币是唯一建造路径）。
+        /// </summary>
+        public bool UsesGoldPurchase => goldShop != null && goldShop.IsGoldModeActive;
 
         /// <summary>弹窗默认勾选状态：是否返还升级金币。</summary>
         public bool DefaultRefundUpgradeMoney => refundUpgradeMoney;

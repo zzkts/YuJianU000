@@ -496,6 +496,23 @@ namespace Yujian.EditorTools
                 Debug.LogWarning("[存档配置] 场景里没有 RecyclingSystem，跳过回收队列存档。");
             }
 
+            // 2026-11-25：垃圾背包单独存一份（等级 + 存量）。
+            // 只有场景里真的挂了 GarbageBag 才接，避免给还没上背包的旧场景塞空参与者。
+            GarbageBag bag = Object.FindFirstObjectByType<GarbageBag>(FindObjectsInactive.Include);
+
+            if (bag != null)
+            {
+                GarbageBagSaveParticipant bagParticipant =
+                    EnsureComponent<GarbageBagSaveParticipant>(host);
+                SetReference(bagParticipant, "bag", bag);
+                required.Add(bagParticipant);
+                EditorUtility.SetDirty(bagParticipant);
+            }
+            else
+            {
+                Debug.Log("[存档配置] 场景里没有 GarbageBag，跳过垃圾背包存档。");
+            }
+
             if (required.Count > 0)
             {
                 EnsureParticipants(saveSystem, required.ToArray());

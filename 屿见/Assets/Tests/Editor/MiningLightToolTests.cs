@@ -61,7 +61,9 @@ namespace Yujian.Tests
             Assert.That(tool.RefreshCooldown, Is.EqualTo(4f));
             Assert.That(tool.CritPointRadius, Is.EqualTo(3.5f));
             Assert.That(tool.CritPointDamageMultiplier, Is.EqualTo(2.2f));
-            Assert.That(tool.CritPointLifetime, Is.EqualTo(5f));
+            // 2026-11-23 第 132 节「暴击点基础时长缩短」把整张 lifetimeByLevel 下调了 1 秒，
+            // 3 级从 5s 变成 4s；这里跟数据表对齐。
+            Assert.That(tool.CritPointLifetime, Is.EqualTo(4f));
             Assert.That(tool.CanSpawnCritPoints, Is.True);
 
             Assert.That(tool.NextItemId, Is.EqualTo("light_04"));
@@ -85,7 +87,8 @@ namespace Yujian.Tests
             Assert.That(tool.RefreshCooldown, Is.EqualTo(3f));
             Assert.That(tool.CritPointRadius, Is.EqualTo(4f));
             Assert.That(tool.CritPointDamageMultiplier, Is.EqualTo(2.5f));
-            Assert.That(tool.CritPointLifetime, Is.EqualTo(6.5f));
+            // 同上：满级时长由 6.5s 下调到 5.5s（第 132 节）。
+            Assert.That(tool.CritPointLifetime, Is.EqualTo(5.5f));
             Assert.That(tool.NextUpgradeCost, Is.EqualTo(0));
             Assert.That(tool.NextLevelName, Is.EqualTo("头灯"));
         }

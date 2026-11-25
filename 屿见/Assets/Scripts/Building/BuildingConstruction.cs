@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
+using Yujian.Core;
 using Yujian.Core.Events;
 using Yujian.Shop;
 
@@ -95,20 +96,27 @@ namespace Yujian.Building
         /// <summary>蓝图里已放入的材料块数。</summary>
         public int PlacedCount => placementHistory.Count;
 
-        /// <summary>当前是否处于金币建造模式。由 BuildingGoldShop 的开关决定。</summary>
-        public bool UsesGoldPurchase => goldShop != null && goldShop.IsEnabled;
+        /// <summary>
+        /// 当前是否处于金币建造模式。
+        /// 由 BuildingGoldShop 的开关与全局原料开关共同决定（原料被剔除时恒为 true）。
+        /// </summary>
+        public bool UsesGoldPurchase => goldShop != null && goldShop.IsGoldModeActive;
 
         /// <summary>当前金币余额；不在金币模式或没有配置货币时返回 0。</summary>
         public int CurrentMoney => UsesGoldPurchase && goldShop != null ? goldShop.CurrentMoney : 0;
 
-        /// <summary>当前选中的建筑是否够金币建造。原料模式下恒为 true（由 IsSatisfied 负责）。</summary>
+        /// <summary>
+        /// 当前选中的建筑是否够金币建造。
+        /// 金币模式看余额；原料模式恒为 true（由 IsSatisfied 负责）；
+        /// 原料已被全局剔除、但金币商店没接线时恒为 false——宁可建不了，也不能静默白送。
+        /// </summary>
         public bool CanAfford
         {
             get
             {
                 if (!UsesGoldPurchase)
                 {
-                    return true;
+                    return GameFeatureFlags.MaterialsEnabled;
                 }
 
                 return TryGetGoldPrice(out int price) && goldShop.CanAfford(price);
@@ -138,6 +146,12 @@ namespace Yujian.Building
                 if (UsesGoldPurchase)
                 {
                     return true;
+                }
+
+                // 原料已被全局剔除、金币商店又没接线：不能退回到材料判定（否则零需求建筑会白送）
+                if (!GameFeatureFlags.MaterialsEnabled)
+                {
+                    return false;
                 }
 
                 IReadOnlyList<BuildingMaterialRequirement> requirements = data.RequiredMaterials;
@@ -179,7 +193,7 @@ namespace Yujian.Building
                 goldShop = GetComponent<BuildingGoldShop>();
             }
 
-            if (inventory == null)
+            if (inventory == null && GameFeatureFlags.MaterialsEnabled)
             {
                 Debug.LogError("[BuildingConstruction] MaterialInventory 未配置，材料无法从库存扣减也无法退回。" +
                                "请在场景里把挂 MaterialInventory 的物体拖到该字段。", this);
@@ -224,6 +238,13 @@ namespace Yujian.Building
         public bool CanAcceptMaterial(MaterialData material, out string reason)
         {
             reason = null;
+
+            // 原料已全局剔除：任何材料都不该再进蓝图，否则会出现「料进去了、钱也照扣」的双重成本
+            if (!GameFeatureFlags.MaterialsEnabled)
+            {
+                reason = "原料系统已关闭：直接点蓝图旁的 √ 花金币建造";
+                return false;
+            }
 
             if (buildingManager == null)
             {
@@ -407,6 +428,18 @@ namespace Yujian.Building
             if (buildingManager.Phase != BuildingPhase.Filling || buildingManager.CurrentBlueprint == null)
             {
                 Report("请先把蓝图放到地面上", false);
+                return false;
+            }
+
+            // 原料已被全局剔除，却没有可用的金币商店：必须在这里就拦下。
+            // 若放到 IsSatisfied 之后，玩家只会看到「材料还不够」这种莫名其妙的提示，
+            // 而且一旦有零需求建筑就会白送。
+            if (!UsesGoldPurchase && !GameFeatureFlags.MaterialsEnabled)
+            {
+                Debug.LogError("[BuildingConstruction] 原料系统已关闭，但金币商店未接线" +
+                               "（BuildingGoldShop 缺失或组件被禁用），本关无法建造。" +
+                               "请在场景里给建造系统挂上 BuildingGoldShop 并指定价目表。", this);
+                Report("建造系统未配置金币商店，无法建造", false);
                 return false;
             }
 

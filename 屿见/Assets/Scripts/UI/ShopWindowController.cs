@@ -14,6 +14,10 @@ namespace Yujian.UI
     ///   · 商店不再作为底部导航的独立主系统，因此不参与 GameAreaController 的面板数组，
     ///     显隐只由本类负责。
     ///
+    /// 2026-11-24：原料退出核心循环（<see cref="GameFeatureFlags.MaterialsEnabled"/> = false）后，
+    /// 这家店只卖原料、已经没有可买的东西，入口与浮窗一律不出现。
+    /// 组件与场景物体保留，原料回来时不用重做 UI。
+    ///
     /// 本类不碰购买、不碰金币，只做显隐与区域联动。
     /// </summary>
     [DisallowMultipleComponent]
@@ -58,6 +62,21 @@ namespace Yujian.UI
             {
                 entryButtonComponent = entryButton.GetComponent<Button>();
             }
+
+            if (!GameFeatureFlags.MaterialsEnabled)
+            {
+                // 店里只有原料，原料已剔除 → 入口永远不出现。
+                // 这里立刻关掉，是为了避免 Start / 区域事件之前有一帧穿帮。
+                if (entryButton != null)
+                {
+                    entryButton.SetActive(false);
+                }
+
+                if (logWindowFlow)
+                {
+                    Debug.Log("[ShopWindowController] 原料系统已关闭，材料商店入口保持隐藏。", this);
+                }
+            }
         }
 
         private void Start()
@@ -96,9 +115,19 @@ namespace Yujian.UI
             }
         }
 
-        /// <summary>打开浮窗。</summary>
+        /// <summary>打开浮窗。原料已剔除时不做任何事（没有可买的东西）。</summary>
         public void Open()
         {
+            if (!GameFeatureFlags.MaterialsEnabled)
+            {
+                if (logWindowFlow)
+                {
+                    Debug.Log("[ShopWindowController] 原料系统已关闭，商店不打开。", this);
+                }
+
+                return;
+            }
+
             if (shopWindow == null)
             {
                 Debug.LogError("[ShopWindowController] Shop Window 未配置，商店打不开。", this);
@@ -150,10 +179,11 @@ namespace Yujian.UI
 
         /// <summary>
         /// 按区域应用：入口只在建筑区出现；离开建筑区时无条件关窗。
+        /// 原料系统关闭时，入口在任何区域都不出现。
         /// </summary>
         private void ApplyArea(GameArea area)
         {
-            bool inBuilding = area == GameArea.Building;
+            bool inBuilding = area == GameArea.Building && GameFeatureFlags.MaterialsEnabled;
 
             if (entryButton != null && entryButton.activeSelf != inBuilding)
             {

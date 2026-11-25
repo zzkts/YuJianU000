@@ -16,7 +16,7 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class MiningHudBakeWizard
     {
-        private const string SampleScenePath = "Assets/Scenes/SampleScene.unity";
+        private static string SampleScenePath => EditorScenePaths.MainScenePath;
         private const string CanvasName = "MiningHUDRuntime";
 
         [MenuItem("屿见/挖矿/生成可编辑清洁界面", false, 339)]
