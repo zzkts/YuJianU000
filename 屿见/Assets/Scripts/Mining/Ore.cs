@@ -238,6 +238,15 @@ namespace Yujian.Mining
         }
 
         /// <summary>
+        /// 承接一次暴击点伤害，并标明是不是「超级暴击」（2026-11-26）。
+        /// 两者都只影响飘字表现，伤害值已由 DamageSystem 乘好。
+        /// </summary>
+        public bool TakeDamage(float damage, DamageSource source, bool isCritical, bool isSuperCritical)
+        {
+            return TakeDamageInternal(damage, source, isCritical, isSuperCritical, Vector3.zero);
+        }
+
+        /// <summary>
         /// 承接一次伤害，并让伤害数字额外偏移一段距离。
         ///
         /// 用于「来自不同建筑的伤害数字分开显示」：建筑效果按自己的固定槽位传入偏移，
@@ -250,6 +259,12 @@ namespace Yujian.Mining
         /// <param name="popupOffset">伤害数字相对默认位置的额外偏移。零向量表示与玩家伤害数字同位置。</param>
         /// <returns>本次伤害是否导致矿石被击碎。</returns>
         public bool TakeDamage(float damage, DamageSource source, bool isCritical, Vector3 popupOffset)
+        {
+            return TakeDamageInternal(damage, source, isCritical, false, popupOffset);
+        }
+
+        private bool TakeDamageInternal(float damage, DamageSource source, bool isCritical,
+            bool isSuperCritical, Vector3 popupOffset)
         {
             if (!IsAlive)
             {
@@ -264,11 +279,11 @@ namespace Yujian.Mining
 
             currentHealth = Mathf.Max(0f, currentHealth - damage);
 
-            SpawnDamagePopup(damage, source, isCritical, popupOffset);
+            SpawnDamagePopup(damage, source, isCritical, isSuperCritical, popupOffset);
             PlayHitFeedback();
 
             OreHitFlash hitFlash = GetComponent<OreHitFlash>();
-            if (hitFlash != null) hitFlash.Play();
+            if (hitFlash != null) hitFlash.Play(isSuperCritical);
 
             if (logMiningFlow)
             {
@@ -597,7 +612,8 @@ namespace Yujian.Mining
         /// 在矿石上方的随机位置生成一次伤害数字。
         /// 预制体独立于矿石，因此矿石被销毁时伤害数字仍能正常播放完毕。
         /// </summary>
-        private void SpawnDamagePopup(float damage, DamageSource source, bool isCritical, Vector3 popupOffset)
+        private void SpawnDamagePopup(float damage, DamageSource source, bool isCritical,
+            bool isSuperCritical, Vector3 popupOffset)
         {
             if (damagePopupPrefab == null)
             {
@@ -616,7 +632,7 @@ namespace Yujian.Mining
                 Random.Range(-damagePopupRandomRange.z, damagePopupRandomRange.z) * jitterScale);
 
             DamagePopup popup = Instantiate(damagePopupPrefab, center + jitter, Quaternion.identity);
-            popup.Play(damage, source, isCritical);
+            popup.Play(damage, source, isCritical, isSuperCritical);
         }
 
         /// <summary>

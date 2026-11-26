@@ -24,6 +24,19 @@ namespace Yujian.UI
     [DisallowMultipleComponent]
     public class MiningHudUI : MonoBehaviour
     {
+        /// <summary>升级方式（2026-11-26 增加 xP）。</summary>
+        private enum UpgradeMode
+        {
+            /// <summary>每次升一级。</summary>
+            Single = 0,
+
+            /// <summary>买到金币不够为止。</summary>
+            Max = 1,
+
+            /// <summary>买到「下一个晋升等级的前一级」（9 / 19 / 29…），钱不够就买到能买到的等级。</summary>
+            ToMilestone = 2,
+        }
+
         [Header("依赖（留空会自动查找）")]
         [SerializeField] private GameAreaController areas;
         [SerializeField] private PlayerCurrency currency;
@@ -34,8 +47,8 @@ namespace Yujian.UI
         [SerializeField] private LevelManager levelManager;
 
         [Header("升级方式")]
-        [Tooltip("true = Max（升到金币不足为止），false = x1（每次一级）")]
-        [SerializeField] private bool useMaxMode;
+        [Tooltip("x1 = 每次一级；Max = 升到金币不足为止；xP = 升到晋升前一级（9/19/29…）")]
+        [SerializeField] private UpgradeMode upgradeMode = UpgradeMode.Single;
 
         [Header("聚合体血条")]
         [Tooltip("血条自然色。剩余血量减少时立即缩短")]
@@ -134,7 +147,7 @@ namespace Yujian.UI
         private CoinHudUI standaloneResourceHud;
         private bool hidStandaloneResourceHud;
 
-        public bool UseMaxMode => useMaxMode;
+        public bool UseMaxMode => upgradeMode == UpgradeMode.Max;
 
         /// <summary>挖矿界面当前是否显示。收集器用它决定还要不要做飞行动画。</summary>
         public bool IsVisible => visible;
@@ -410,38 +423,36 @@ namespace Yujian.UI
 
         private void HandleModeClicked()
         {
-            useMaxMode = !useMaxMode;
+            upgradeMode = (UpgradeMode)(((int)upgradeMode + 1) % 3);
             RefreshAll();
         }
 
-        private void HandleLightRowClicked(int level)
+        /// <summary>
+        /// 照明升级入口（2026-11-26 起无限等级，一行代表「升到下一级」）。
+        /// 里程碑那一下会额外提示概率跳变，因为那是「数字在跳」的关键节点。
+        /// </summary>
+        private void HandleLightUpgradeClicked()
         {
             if (lightTool == null)
             {
                 return;
             }
 
-            int current = lightTool.Level;
-
-            if (level <= current)
+            if (lightTool.IsMaxed)
             {
-                if (level != current)
-                {
-                    lightTool.SetLevel(level);
-                    ShowFeedback($"已装备「{lightTool.GetLevelName(level)}」", true);
-                }
+                ShowFeedback("照明工具已满级", false);
+                return;
+            }
 
+            int count = ResolveLightUpgradeCount(lightTool.Level + 1);
+
+            if (count <= 0)
+            {
+                ShowFeedback("没有可升级的等级", false);
                 RefreshAll();
                 return;
             }
 
-            if (level > current + 1)
-            {
-                ShowFeedback("请先解锁上一件照明工具", false);
-                return;
-            }
-
-            int count = ResolveLightUpgradeCount(level);
             int cost = lightTool.GetUpgradeCostForLevels(count);
 
             if (!CanAfford(cost))
@@ -451,9 +462,16 @@ namespace Yujian.UI
                 return;
             }
 
+            int before = lightTool.Level;
+
             if (lightTool.TryUpgrade(count))
             {
-                ShowFeedback($"升级成功，已装备「{lightTool.LevelName}」", true);
+                bool crossedMilestone = lightTool.Level / 10 > before / 10;
+
+                ShowFeedback(crossedMilestone
+                        ? $"照明 Lv.{lightTool.Level}：超级暴击 {lightTool.SuperCritChance * 100f:0}% · {lightTool.SuperCritMultiplier:0.#}×"
+                        : $"照明升到 Lv.{lightTool.Level}",
+                    true);
             }
 
             RefreshAll();
@@ -473,6 +491,14 @@ namespace Yujian.UI
             }
 
             int count = ResolveMineUpgradeCount();
+
+            if (count <= 0)
+            {
+                ShowFeedback("没有可升级的等级", false);
+                RefreshAll();
+                return;
+            }
+
             int cost = miningTool.GetUpgradeCostForLevels(count);
 
             if (!CanAfford(cost))
@@ -492,20 +518,15 @@ namespace Yujian.UI
 
         private int ResolveLightUpgradeCount(int targetLevel)
         {
-            int available = lightTool != null
-                ? Mathf.Max(1, lightTool.MaxLevel - LightLevel())
-                : Mathf.Max(1, targetLevel - LightLevel());
-
-            if (!useMaxMode)
+            if (lightTool == null)
             {
                 return 1;
             }
 
-            int affordable = lightTool != null
-                ? lightTool.GetAffordableUpgradeCount(CurrentMoney())
-                : 0;
+            int affordable = lightTool.GetAffordableUpgradeCount(CurrentMoney());
 
-            return Mathf.Clamp(affordable, 1, available);
+            return ResolveUpgradeCount(lightTool.Level, lightTool.MaxLevel,
+                lightTool.NextMilestoneLevel, affordable);
         }
 
         private int ResolveMineUpgradeCount()
@@ -515,19 +536,55 @@ namespace Yujian.UI
                 return 1;
             }
 
-            int available = Mathf.Max(0, miningTool.MaxLevel - miningTool.CurrentLevel);
+            int affordable = miningTool.GetAffordableUpgradeCount(CurrentMoney());
+
+            return ResolveUpgradeCount(miningTool.CurrentLevel, miningTool.MaxLevel,
+                miningTool.NextMilestoneLevel, affordable);
+        }
+
+        /// <summary>
+        /// 按当前升级模式决定这一次要升几级。返回 0 = 没有可升的（已经站在晋升前一级）。
+        /// </summary>
+        /// <param name="currentLevel">当前等级。</param>
+        /// <param name="maxLevel">等级上限。</param>
+        /// <param name="nextMilestone">下一个里程碑等级（10/20/30…）。</param>
+        /// <param name="affordable">当前金币最多能升几级。</param>
+        private int ResolveUpgradeCount(int currentLevel, int maxLevel, int nextMilestone, int affordable)
+        {
+            int available = Mathf.Max(0, maxLevel - currentLevel);
+
             if (available <= 0)
             {
                 return 0;
             }
 
-            if (!useMaxMode)
+            switch (upgradeMode)
             {
-                return 1;
-            }
+                case UpgradeMode.Max:
+                    return Mathf.Clamp(affordable, 1, available);
 
-            int affordable = miningTool.GetAffordableUpgradeCount(CurrentMoney());
-            return Mathf.Clamp(affordable, 1, available);
+                case UpgradeMode.ToMilestone:
+                {
+                    // 目标 = 下一个晋升等级的前一级（9 / 19 / 29…）
+                    int target = Mathf.Max(0, nextMilestone - 1);
+                    int needed = Mathf.Clamp(target - currentLevel, 0, available);
+
+                    if (needed <= 0)
+                    {
+                        // 已经站在晋升前一级：这一下直接完成晋升（买 1 级）。
+                        // 2026-11-26 用户要求「同一颗按钮连点到底」，不留死按钮。
+                        return 1;
+                    }
+
+                    // 钱够就一步到位；不够就有多少买多少。至少试一级，
+                    // 这样买不起时界面还能提示「还差多少」。
+                    int take = Mathf.Min(needed, Mathf.Max(0, affordable));
+                    return Mathf.Clamp(Mathf.Max(1, take), 1, needed);
+                }
+
+                default:
+                    return 1;
+            }
         }
 
         private int LightLevel()
@@ -570,13 +627,13 @@ namespace Yujian.UI
                 SetText(lightStatsText,
                     $"冷却 {lightTool.RefreshCooldown:0.#} 秒\n" +
                     $"暴击点 {lightTool.CritPointCapacity} 个\n" +
-                    $"暴击伤害 {lightTool.CritPointDamageMultiplier * 100f:0}%");
+                    $"超级暴击 {lightTool.SuperCritChance * 100f:0}% · {lightTool.SuperCritMultiplier:0.#}×");
             }
             else if (lightTool != null)
             {
                 SetText(lightIconText, "灯");
                 SetText(lightNameText, "未装备照明工具");
-                SetText(lightStatsText, "先从右侧解锁火把，\n才会开始刷新暴击点。");
+                SetText(lightStatsText, "先从右侧解锁照明工具，\n才会开始刷新暴击点。");
             }
             else
             {
@@ -591,7 +648,7 @@ namespace Yujian.UI
                 SetText(mineNameText, miningTool.ToolName);
                 SetText(mineStatsText,
                     $"等级 {miningTool.CurrentLevel}" +
-                    (miningTool.IsMaxLevel ? "（满级）" : string.Empty) + "\n" +
+                    (miningTool.IsMaxLevel ? "（满级）" : $"\n下个里程碑 Lv.{miningTool.NextMilestoneLevel}") + "\n" +
                     $"攻击力 {miningTool.CurrentAttack:0.##}");
             }
             else
@@ -609,64 +666,62 @@ namespace Yujian.UI
                 return;
             }
 
+            ToolRow row = lightRows[0];
             int current = lightTool.Level;
             int money = CurrentMoney();
 
-            for (int i = 0; i < lightRows.Count; i++)
+            row.Background.color = current > 0 ? rowOwnedColor : rowColor;
+            SetText(row.Icon, IconGlyph(lightTool.Level > 0 ? "灯" : "未"));
+
+            if (current <= 0)
             {
-                ToolRow row = lightRows[i];
-                int level = row.Level;
-                bool owned = level <= current;
-                bool equipped = level == current;
-
-                SetText(row.Icon, IconGlyph(lightTool.GetLevelName(level)));
-                SetText(row.Name, lightTool.GetLevelName(level));
-
-                if (equipped)
-                {
-                    row.Background.color = rowOwnedColor;
-                    SetText(row.Gain, "当前装备");
-                    SetText(row.Cost, "—");
-                    SetText(row.ButtonText, "已装备");
-                    SetButtonInteractable(row.Button, false);
-                    SetRowDim(row.Group, false);
-                    continue;
-                }
-
-                if (owned)
-                {
-                    row.Background.color = rowOwnedColor;
-                    SetText(row.Gain, "已拥有");
-                    SetText(row.Cost, "—");
-                    SetText(row.ButtonText, "装备");
-                    SetButtonInteractable(row.Button, true);
-                    SetRowDim(row.Group, false);
-                    continue;
-                }
-
-                row.Background.color = rowColor;
-
-                if (level > current + 1)
-                {
-                    SetText(row.Gain, "未解锁");
-                    SetText(row.Cost, "需先解锁上一件");
-                    SetText(row.ButtonText, "未解锁");
-                    SetButtonInteractable(row.Button, false);
-                    SetRowDim(row.Group, true);
-                    continue;
-                }
-
-                int count = ResolveLightUpgradeCount(level);
-                int cost = lightTool.GetUpgradeCostForLevels(count);
-                bool affordable = money >= cost;
-
-                SetText(row.Gain, $"升级 x{count}");
-                SetText(row.Cost, $"{FormatNumber(cost)} 金币");
-                SetText(row.ButtonText, "未解锁");
-                // 金币不足时只降低亮度，仍然可以点：点了会在右下提示还差多少。
-                SetButtonInteractable(row.Button, true);
-                SetRowDim(row.Group, !affordable);
+                SetText(row.Name, "照明 · 未拥有");
+                SetText(row.Gain, "解锁后开启暴击点");
             }
+            else
+            {
+                SetText(row.Name, $"照明 Lv.{current}");
+                SetText(row.Gain,
+                    $"超级暴击 {lightTool.SuperCritChance * 100f:0}% · {lightTool.SuperCritMultiplier:0.#}×");
+            }
+
+            if (lightTool.IsMaxed)
+            {
+                SetText(row.Cost, "—");
+                SetText(row.ButtonText, "已满级");
+                SetButtonInteractable(row.Button, false);
+                SetRowDim(row.Group, false);
+                return;
+            }
+
+            int count = ResolveLightUpgradeCount(current + 1);
+
+            if (count <= 0)
+            {
+                SetText(row.Cost, "—");
+                SetText(row.ButtonText, "晋升");
+                SetButtonInteractable(row.Button, true);
+                SetRowDim(row.Group, false);
+                return;
+            }
+
+            int cost = lightTool.GetUpgradeCostForLevels(count);
+            bool affordable = money >= cost;
+
+            SetText(row.Cost, lightTool.IsNextLevelMilestone && count == 1
+                ? $"{FormatNumber(cost)} 金币（里程碑）"
+                : $"{FormatNumber(cost)} 金币");
+
+            string action = current <= 0
+                ? "解锁"
+                : lightTool.IsNextLevelMilestone && count == 1
+                    ? "晋升"
+                    : "升级";
+            SetText(row.ButtonText, count > 1 ? $"{action} x{count}" : action);
+
+            // 金币不足时只降低亮度，仍然可以点：点了会在右下提示还差多少
+            SetButtonInteractable(row.Button, true);
+            SetRowDim(row.Group, !affordable);
         }
 
         private void RefreshMineRows()
@@ -679,8 +734,18 @@ namespace Yujian.UI
             ToolRow row = mineRows[0];
 
             SetText(row.Icon, IconGlyph(miningTool.ToolName));
-            SetText(row.Name, $"{miningTool.ToolName}　Lv.{miningTool.CurrentLevel}/{miningTool.MaxLevel}");
+            SetText(row.Name, $"{miningTool.ToolName}　Lv.{miningTool.CurrentLevel}");
             row.Background.color = rowColor;
+
+            // 2026-11-26：等级无上限，下一级是里程碑时把「大跳」写在脸上
+            if (miningTool.IsNextLevelMilestone)
+            {
+                SetText(row.Gain, "下一级：里程碑（伤害 ×2）");
+            }
+            else
+            {
+                SetText(row.Gain, $"距离里程碑 Lv.{miningTool.NextMilestoneLevel}");
+            }
 
             if (miningTool.IsMaxLevel)
             {
@@ -693,19 +758,59 @@ namespace Yujian.UI
             }
 
             int count = ResolveMineUpgradeCount();
+
+            if (count <= 0)
+            {
+                SetText(row.Gain, "已在晋升前一级");
+                SetText(row.Cost, "—");
+                SetText(row.ButtonText, "晋升");
+                SetButtonInteractable(row.Button, true);
+                SetRowDim(row.Group, false);
+                return;
+            }
+
             int cost = miningTool.GetUpgradeCostForLevels(count);
             bool affordable = CurrentMoney() >= cost;
 
-            SetText(row.Gain, $"升级 x{count}");
+            if (count > 1)
+            {
+                SetText(row.Gain, $"升级 x{count} → Lv.{miningTool.CurrentLevel + count}");
+            }
             SetText(row.Cost, $"共 {FormatNumber(cost)} 金币");
-            SetText(row.ButtonText, "升级");
+            SetText(row.ButtonText, miningTool.IsNextLevelMilestone && count == 1 ? "晋升" : "升级");
             SetButtonInteractable(row.Button, true);
             SetRowDim(row.Group, !affordable);
         }
 
         private void RefreshMode()
         {
-            SetText(modeText, useMaxMode ? "Max" : "x1");
+            SetText(modeText, ModeLabel(upgradeMode));
+        }
+
+        private static string ModeLabel(UpgradeMode mode)
+        {
+            switch (mode)
+            {
+                case UpgradeMode.Max:
+                    return "Max";
+                case UpgradeMode.ToMilestone:
+                    return "xP";
+                default:
+                    return "x1";
+            }
+        }
+
+        private string ModeDescription()
+        {
+            switch (upgradeMode)
+            {
+                case UpgradeMode.Max:
+                    return "Max——升级到金币不足为止";
+                case UpgradeMode.ToMilestone:
+                    return "xP——升到晋升前一级（9/19/29…）；已在 9 级时再点一下就是晋升";
+                default:
+                    return "x1——每次升一级";
+            }
         }
 
         private void RefreshOre()
@@ -1431,17 +1536,16 @@ namespace Yujian.UI
             {
                 mode.onClick.RemoveAllListeners();
                 mode.onClick.AddListener(HandleModeClicked);
-                BindHoverTooltip(mode.gameObject, () => useMaxMode
-                    ? "Max——升级到金币不足为止"
-                    : "x1——每次升一级");
+                BindHoverTooltip(mode.gameObject, ModeDescription);
             }
         }
 
         private void WireLightRow(ToolRow row, int level)
         {
+            // 2026-11-26：照明无限等级后不再「装备某一件」，这一行统一是「升到下一级」
             row.Button.onClick.RemoveAllListeners();
-            row.Button.onClick.AddListener(() => HandleLightRowClicked(level));
-            BindHoverTooltip(row.Background.gameObject, () => DescribeLightTool(level));
+            row.Button.onClick.AddListener(HandleLightUpgradeClicked);
+            BindHoverTooltip(row.Background.gameObject, DescribeLightTool);
         }
 
         private void WireMineRow(ToolRow row)
@@ -1571,9 +1675,7 @@ namespace Yujian.UI
             modeButton.onClick.AddListener(HandleModeClicked);
             modeText = modeButton.GetComponentInChildren<Text>();
 
-            AddHoverTooltip(modeButton.gameObject, () => useMaxMode
-                ? "Max——升级到金币不足为止"
-                : "x1——每次升一级");
+            AddHoverTooltip(modeButton.gameObject, ModeDescription);
 
             feedbackText = CreateText(panel, "Feedback", 16,
                 new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(180f, -470f),
@@ -1582,19 +1684,14 @@ namespace Yujian.UI
 
         private void BuildLightRows(RectTransform content)
         {
-            int maxLevel = lightTool != null ? lightTool.MaxLevel : 0;
+            // 2026-11-26：照明改为无限等级，不再一件一件列装备，只保留一行「升到下一级」
+            ToolRow row = CreateToolRow(content, "LightRow");
+            row.Level = 0;
 
-            for (int level = 1; level <= maxLevel; level++)
-            {
-                int captured = level;
-                ToolRow row = CreateToolRow(content, $"LightRow_{level}");
-                row.Level = level;
+            row.Button.onClick.AddListener(HandleLightUpgradeClicked);
+            AddHoverTooltip(row.Background.gameObject, DescribeLightTool);
 
-                row.Button.onClick.AddListener(() => HandleLightRowClicked(captured));
-                AddHoverTooltip(row.Background.gameObject, () => DescribeLightTool(captured));
-
-                lightRows.Add(row);
-            }
+            lightRows.Add(row);
         }
 
         private void BuildMineRows(RectTransform content)
@@ -1629,20 +1726,22 @@ namespace Yujian.UI
             }
         }
 
-        private string DescribeLightTool(int level)
+        private string DescribeLightTool()
         {
             if (lightTool == null)
             {
                 return "照明工具未配置";
             }
 
-            string name = lightTool.GetLevelName(level);
-            float cooldown = lightTool.GetRefreshCooldownAt(level);
-            int capacity = lightTool.GetCritPointCapacityAt(level);
-            float crit = lightTool.GetCritPointMultiplierAt(level);
+            if (lightTool.Level <= 0)
+            {
+                return "照明 · 未拥有\n解锁后开启暴击点，并开始累计超级暴击概率";
+            }
 
-            return $"{name}\n冷却 {cooldown:0.#} 秒　暴击点 {capacity} 个\n" +
-                   $"暴击伤害 {crit * 100f:0}%";
+            return $"照明 Lv.{lightTool.Level}\n" +
+                   $"暴击点 {lightTool.CritPointCapacity} 个　冷却 {lightTool.RefreshCooldown:0.#} 秒\n" +
+                   $"普通暴击 {lightTool.CritPointDamageMultiplier * 100f:0}%\n" +
+                   $"超级暴击 {lightTool.SuperCritChance * 100f:0}% × {lightTool.SuperCritMultiplier:0.#}";
         }
 
         private string DescribeMiningTool()
@@ -1896,55 +1995,12 @@ namespace Yujian.UI
         }
 
         /// <summary>
-        /// 垃圾缩写：1000 → 1k，1,500,000 → 1.5m；
-        /// 超过常规单位（k / m / b / t）后按 aa、bb、cc…… 递增。
+        /// 数字缩写（1000 → 1k）。2026-11-26 起实现搬到 <see cref="NumberFormat"/>，
+        /// 和伤害数字共用一套规则，避免界面与飘字写法不一致。
         /// </summary>
         public static string FormatNumber(long value)
         {
-            if (value < 0)
-            {
-                return "-" + FormatNumber(-value);
-            }
-
-            if (value < 1000)
-            {
-                return value.ToString();
-            }
-
-            string[] common = { string.Empty, "k", "m", "b", "t" };
-            double scaled = value;
-            int unit = 0;
-
-            while (scaled >= 1000d && unit < common.Length - 1)
-            {
-                scaled /= 1000d;
-                unit++;
-            }
-
-            string suffix;
-
-            if (scaled >= 1000d)
-            {
-                int extra = 0;
-
-                while (scaled >= 1000d)
-                {
-                    scaled /= 1000d;
-                    extra++;
-                }
-
-                suffix = SuffixFor(extra);
-            }
-            else
-            {
-                suffix = common[unit];
-            }
-
-            string number = scaled >= 100d ? scaled.ToString("0")
-                : scaled >= 10d ? scaled.ToString("0.#")
-                : scaled.ToString("0.##");
-
-            return number + suffix;
+            return NumberFormat.Compact(value);
         }
 
         /// <summary>

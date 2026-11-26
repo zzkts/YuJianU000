@@ -126,6 +126,13 @@ namespace Yujian.Player
                 Debug.LogError("[GarbageBag] 找不到 GameAreaController，无法判断进出关卡，" +
                                "背包会一直处于关闭状态（垃圾直接进岛屿存储）。", this);
             }
+
+            if (logBagFlow && table != null)
+            {
+                // 这行是给调参用的：想知道「我改的速度到底生效没」，看这里打印的数字和资产名
+                Debug.Log($"[GarbageBag] 等级表「{table.name}」→ 容量 {Capacity}、" +
+                          $"转移速度 {table.TransferPerSecond}/s、方式 {TransferMode.ToChineseName()}。", this);
+            }
         }
 
         /// <summary>

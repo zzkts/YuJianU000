@@ -3,6 +3,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.UI;
 using Yujian.Core;
+using Yujian.Levels;
 using Yujian.Player;
 using Yujian.UI;
 
@@ -51,6 +52,12 @@ namespace Yujian.EditorTools
 
             GarbageBag bag = EnsureBag(garbage, table, currency, areas);
             EnsureGarbageKnowsBag(garbage, bag);
+
+            // 2026-11-26：关卡暂存池。背包满时掉在关卡里的垃圾记在这里，下次进关再灌回背包。
+            LevelManager levels = Object.FindFirstObjectByType<LevelManager>(FindObjectsInactive.Include);
+            GarbageOverflow overflow = EnsureOverflow(garbage, bag, areas, levels);
+            EnsureGarbageKnowsOverflow(garbage, overflow);
+
             EnsurePanel(bag, garbage, resourceHud, areas);
             EnsureNavOnSides();
 
@@ -61,7 +68,7 @@ namespace Yujian.EditorTools
             EditorUtility.SetDirty(bag);
 
             Selection.activeGameObject = bag.gameObject;
-            Debug.Log("[垃圾背包] 配置完成：背包挂在 " + garbage.name + " 上，UI 为 Canvas/" + PanelName +
+            Debug.Log("[垃圾背包] 配置完成：背包 + 关卡暂存池挂在 " + garbage.name + " 上，UI 为 Canvas/" + PanelName +
                       "。请 Ctrl+S 保存场景。");
         }
 
@@ -121,6 +128,41 @@ namespace Yujian.EditorTools
             if (property.objectReferenceValue != bag)
             {
                 property.objectReferenceValue = bag;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+            }
+        }
+
+        /// <summary>关卡暂存池：挂在玩家身上，跟着 PlayerGarbage 走。</summary>
+        private static GarbageOverflow EnsureOverflow(PlayerGarbage garbage, GarbageBag bag,
+            GameAreaController areas, LevelManager levels)
+        {
+            GarbageOverflow overflow = garbage.GetComponent<GarbageOverflow>();
+
+            if (overflow == null)
+            {
+                overflow = Undo.AddComponent<GarbageOverflow>(garbage.gameObject);
+                Debug.Log($"[垃圾背包] 已给「{garbage.name}」添加 GarbageOverflow（关卡暂存池）。");
+            }
+
+            overflow.ConfigureForSetup(bag, areas, levels);
+            EditorUtility.SetDirty(overflow);
+            return overflow;
+        }
+
+        private static void EnsureGarbageKnowsOverflow(PlayerGarbage garbage, GarbageOverflow overflow)
+        {
+            SerializedObject serialized = new SerializedObject(garbage);
+            SerializedProperty property = serialized.FindProperty("overflow");
+
+            if (property == null)
+            {
+                Debug.LogError("[垃圾背包] PlayerGarbage 上找不到 overflow 字段，脚本是否已编译？");
+                return;
+            }
+
+            if (property.objectReferenceValue != overflow)
+            {
+                property.objectReferenceValue = overflow;
                 serialized.ApplyModifiedPropertiesWithoutUndo();
             }
         }
@@ -196,6 +238,8 @@ namespace Yujian.EditorTools
             SetRef(serialized, "storage", storage);
             SetRef(serialized, "resourceHud", resourceHud);
             SetRef(serialized, "areas", areas);
+            SetRef(serialized, "overflow",
+                Object.FindFirstObjectByType<GarbageOverflow>(FindObjectsInactive.Include));
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
             EditorUtility.SetDirty(ui);

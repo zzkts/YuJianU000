@@ -6,8 +6,12 @@ using Yujian.Player;
 namespace Yujian.Tests
 {
     /// <summary>
-    /// 照明工具的 6 档数值、等级夹紧、购买价格与 Max 模式。
-    /// 数值直接对照 MiningLightTool 顶部的设计表。
+    /// 照明工具（2026-11-26 改版）：无限等级、超级暴击概率/倍率、里程碑花费。
+    ///
+    /// 核心契约：
+    ///   · 等级没有上限（maxLevel = 999），不再有「6 件装备」这回事；
+    ///   · 每 10 级涨一次超级暴击概率（封顶 36%），倍率每级都涨；
+    ///   · 升到 10/20/30… 级那一档要花 4 倍金币。
     /// </summary>
     public class MiningLightToolTests : WhiteBoxTestBase
     {
@@ -20,7 +24,7 @@ namespace Yujian.Tests
             // Awake 会尝试自动查找金币，但这里随后显式注入
             LogAssert.ignoreFailingMessages = true;
 
-            currency = TestFactory.MakeCurrency(NewGameObject("Currency"), 10000);
+            currency = TestFactory.MakeCurrency(NewGameObject("Currency"), 100000);
             tool = AddComponent<MiningLightTool>(NewGameObject("LightTool"));
             tool.ConfigureForSetup(currency);
         }
@@ -31,261 +35,108 @@ namespace Yujian.Tests
         public void Default_StartsUnowned()
         {
             Assert.That(tool.Level, Is.EqualTo(0));
-            Assert.That(tool.MaxLevel, Is.EqualTo(6));
+            Assert.That(tool.MaxLevel, Is.EqualTo(999), "无限升级：上限只是防溢出");
             Assert.That(tool.IsUnlocked, Is.False);
             Assert.That(tool.IsMaxed, Is.False);
 
-            Assert.That(tool.ItemId, Is.EqualTo("none"));
             Assert.That(tool.LevelName, Is.EqualTo("未拥有"));
             Assert.That(tool.CritPointCapacity, Is.EqualTo(0));
             Assert.That(tool.RefreshCooldown, Is.EqualTo(0f));
-            Assert.That(tool.CritPointRadius, Is.EqualTo(0f));
             Assert.That(tool.CritPointDamageMultiplier, Is.EqualTo(1f));
             Assert.That(tool.CanSpawnCritPoints, Is.False);
 
-            Assert.That(tool.NextUpgradeCost, Is.EqualTo(286));
-            Assert.That(tool.NextLevelName, Is.EqualTo("火把"));
+            Assert.That(tool.SuperCritChance, Is.EqualTo(0f), "没有照明工具就不该有超级暴击");
         }
 
-        // ---------- 各档数值 ----------
-
         [Test]
-        public void Level3_MatchesDesignTable()
+        public void Level1_UnlocksCritPointsAndSuperCrit()
         {
-            tool.ConfigureStartingLevel(3);
+            tool.SetLevel(1);
 
-            Assert.That(tool.Level, Is.EqualTo(3));
-            Assert.That(tool.ItemId, Is.EqualTo("light_03"));
-            Assert.That(tool.LevelName, Is.EqualTo("矿灯"));
-            Assert.That(tool.CritPointCapacity, Is.EqualTo(2));
-            Assert.That(tool.RefreshCooldown, Is.EqualTo(4f));
-            Assert.That(tool.CritPointRadius, Is.EqualTo(3.5f));
-            Assert.That(tool.CritPointDamageMultiplier, Is.EqualTo(2.2f));
-            // 2026-11-23 第 132 节「暴击点基础时长缩短」把整张 lifetimeByLevel 下调了 1 秒，
-            // 3 级从 5s 变成 4s；这里跟数据表对齐。
-            Assert.That(tool.CritPointLifetime, Is.EqualTo(4f));
+            Assert.That(tool.IsUnlocked, Is.True);
             Assert.That(tool.CanSpawnCritPoints, Is.True);
+            Assert.That(tool.CritPointCapacity, Is.EqualTo(1));
+            Assert.That(tool.RefreshCooldown, Is.EqualTo(5f));
+            Assert.That(tool.CritPointDamageMultiplier, Is.EqualTo(2f), "普通暴击固定 2 倍");
 
-            Assert.That(tool.NextItemId, Is.EqualTo("light_04"));
-            Assert.That(tool.NextLevelName, Is.EqualTo("强光灯"));
-            Assert.That(tool.NextCritPointCapacity, Is.EqualTo(3));
-            Assert.That(tool.NextRefreshCooldown, Is.EqualTo(3.5f));
-            Assert.That(tool.NextCritPointRadius, Is.EqualTo(3.5f));
-            Assert.That(tool.NextCritPointDamageMultiplier, Is.EqualTo(2.3f));
-            Assert.That(tool.NextUpgradeCost, Is.EqualTo(40950));
+            Assert.That(tool.SuperCritChance, Is.EqualTo(0.08f).Within(0.0001f));
+            Assert.That(tool.SuperCritMultiplier, Is.EqualTo(5f).Within(0.0001f));
         }
 
         [Test]
-        public void MaxLevel_MatchesDesignTableAndStops()
+        public void Milestone10_RaisesChanceAndMultiplier()
         {
-            tool.ConfigureStartingLevel(6);
+            tool.SetLevel(10);
 
-            Assert.That(tool.IsMaxed, Is.True);
-            Assert.That(tool.ItemId, Is.EqualTo("light_06"));
-            Assert.That(tool.LevelName, Is.EqualTo("头灯"));
+            // 概率：8% + 7% × 1 = 15%
+            Assert.That(tool.SuperCritChance, Is.EqualTo(0.15f).Within(0.0001f));
+
+            // 倍率：5 + 0.15 × 9 + 1 × 1 = 7.35
+            Assert.That(tool.SuperCritMultiplier, Is.EqualTo(7.35f).Within(0.01f));
+
+            // 覆盖率封顶在第 6 档的数值
             Assert.That(tool.CritPointCapacity, Is.EqualTo(3));
             Assert.That(tool.RefreshCooldown, Is.EqualTo(3f));
-            Assert.That(tool.CritPointRadius, Is.EqualTo(4f));
-            Assert.That(tool.CritPointDamageMultiplier, Is.EqualTo(2.5f));
-            // 同上：满级时长由 6.5s 下调到 5.5s（第 132 节）。
-            Assert.That(tool.CritPointLifetime, Is.EqualTo(5.5f));
-            Assert.That(tool.NextUpgradeCost, Is.EqualTo(0));
-            Assert.That(tool.NextLevelName, Is.EqualTo("头灯"));
         }
 
         [Test]
-        public void SetLevel_ClampsAndRaisesEventOnlyOnChange()
+        public void Level40_ChanceCapsButMultiplierKeepsGrowing()
         {
-            int changes = 0;
-            tool.OnToolChanged += _ => changes++;
+            tool.SetLevel(40);
 
-            tool.SetLevel(2);
-            Assert.That(tool.Level, Is.EqualTo(2));
-            Assert.That(changes, Is.EqualTo(1));
+            Assert.That(tool.SuperCritChance, Is.EqualTo(0.36f).Within(0.0001f), "概率封顶 36%");
+            Assert.That(tool.SuperCritMultiplier, Is.EqualTo(14.85f).Within(0.01f));
 
-            tool.SetLevel(2);
-            Assert.That(changes, Is.EqualTo(1), "等级没变就不广播");
+            tool.SetLevel(60);
 
-            tool.SetLevel(99);
-            Assert.That(tool.Level, Is.EqualTo(6));
-
-            tool.SetLevel(-5);
-            Assert.That(tool.Level, Is.EqualTo(0));
-
-            Assert.That(currency.CurrentMoney, Is.EqualTo(10000), "读档恢复不扣金币");
+            Assert.That(tool.SuperCritChance, Is.EqualTo(0.36f).Within(0.0001f), "封顶后不再涨");
+            Assert.That(tool.SuperCritMultiplier, Is.GreaterThan(16f), "倍率无上限");
         }
 
         [Test]
-        public void ConfigureStartingLevel_Clamps()
+        public void Costs_GrowGeometrically_AndSpikeOnMilestones()
         {
-            tool.ConfigureStartingLevel(99);
-            Assert.That(tool.Level, Is.EqualTo(6));
+            Assert.That(tool.GetUpgradeCostAt(0), Is.EqualTo(4), "0 → 1 级只要 4 金币");
 
-            tool.ConfigureStartingLevel(-1);
-            Assert.That(tool.Level, Is.EqualTo(0));
-        }
+            int normal = tool.GetUpgradeCostAt(8);   // 8 → 9
+            int milestone = tool.GetUpgradeCostAt(9); // 9 → 10（里程碑）
 
-        // ---------- 价格 ----------
-
-        [Test]
-        public void UpgradeCostAt_MapsEveryOwnedLevel()
-        {
-            Assert.That(tool.GetUpgradeCostAt(0), Is.EqualTo(286));
-            Assert.That(tool.GetUpgradeCostAt(1), Is.EqualTo(1508));
-            Assert.That(tool.GetUpgradeCostAt(2), Is.EqualTo(7800));
-            Assert.That(tool.GetUpgradeCostAt(3), Is.EqualTo(40950));
-            Assert.That(tool.GetUpgradeCostAt(4), Is.EqualTo(217750));
-            Assert.That(tool.GetUpgradeCostAt(5), Is.EqualTo(1143000));
-
-            Assert.That(tool.GetUpgradeCostAt(-1), Is.EqualTo(0));
-            Assert.That(tool.GetUpgradeCostAt(6), Is.EqualTo(0));
+            // 里程碑是「基础花费再 ×4」，而基础花费本身还带一级成长，所以比值略大于 4
+            Assert.That(milestone, Is.GreaterThan(normal * 4), "里程碑那一档要明显更贵");
+            Assert.That(tool.GetUpgradeCostAt(999), Is.EqualTo(0), "到顶后没有下一级");
         }
 
         [Test]
-        public void UpgradeCosts_EveryOwnedLevelHasPrice()
+        public void Upgrade_SpendsMoneyAndUnlocks()
         {
-            for (int level = 0; level < tool.MaxLevel; level++)
-            {
-                Assert.That(tool.GetUpgradeCostAt(level), Is.GreaterThan(0),
-                    $"等级 {level} → {level + 1} 缺少价格");
-            }
-        }
-
-        [Test]
-        public void UpgradeCostForLevels_SumsAndClamps()
-        {
-            tool.SetLevel(1);
-            Assert.That(tool.GetUpgradeCostForLevels(2), Is.EqualTo(9308));  // 1508 + 7800
-            Assert.That(tool.GetUpgradeCostForLevels(99), Is.EqualTo(1411008)); // 1508 + 7800 + 40950 + 217750 + 1143000
-
-            tool.SetLevel(6);
-            Assert.That(tool.GetUpgradeCostForLevels(1), Is.EqualTo(0));
-        }
-
-        [Test]
-        public void AffordableUpgradeCount_StopsAtMoneyLimit()
-        {
-            tool.SetLevel(1);
-
-            Assert.That(tool.GetAffordableUpgradeCount(1507), Is.EqualTo(0));
-            Assert.That(tool.GetAffordableUpgradeCount(1508), Is.EqualTo(1));
-            Assert.That(tool.GetAffordableUpgradeCount(9308), Is.EqualTo(2));
-            Assert.That(tool.GetAffordableUpgradeCount(999999), Is.EqualTo(4));
-
-            tool.SetLevel(5);
-            Assert.That(tool.GetAffordableUpgradeCount(1142999), Is.EqualTo(0));
-            Assert.That(tool.GetAffordableUpgradeCount(1143000), Is.EqualTo(1));
-
-            tool.SetLevel(6);
-            Assert.That(tool.GetAffordableUpgradeCount(999999), Is.EqualTo(0));
-        }
-
-        // ---------- 购买 ----------
-
-        [Test]
-        public void TryUpgrade_SpendsMoneyAndRaisesEvent()
-        {
-            tool.SetLevel(1);
-            int changes = 0;
-            tool.OnToolChanged += _ => changes++;
+            int before = currency.CurrentMoney;
 
             Assert.That(tool.TryUpgrade(), Is.True);
 
-            Assert.That(tool.Level, Is.EqualTo(2));
-            Assert.That(currency.CurrentMoney, Is.EqualTo(8492)); // 10000 - 1508
-            Assert.That(changes, Is.EqualTo(1));
+            Assert.That(tool.Level, Is.EqualTo(1));
+            Assert.That(currency.CurrentMoney, Is.EqualTo(before - 4));
         }
 
         [Test]
-        public void TryUpgrade_InsufficientMoney_ChangesNothing()
+        public void Upgrade_StopsWhenMoneyIsShort()
         {
-            tool.SetLevel(1);
-            currency.RestoreMoney(1000);
-            int changes = 0;
-            tool.OnToolChanged += _ => changes++;
+            PlayerCurrency broke = TestFactory.MakeCurrency(NewGameObject("Broke"), 0);
+            tool.ConfigureForSetup(broke);
 
             Assert.That(tool.TryUpgrade(), Is.False);
-
-            Assert.That(tool.Level, Is.EqualTo(1));
-            Assert.That(currency.CurrentMoney, Is.EqualTo(1000));
-            Assert.That(changes, Is.EqualTo(0));
+            Assert.That(tool.Level, Is.EqualTo(0));
         }
 
         [Test]
-        public void TryUpgrade_MultipleLevels_ChargesSumOnce()
+        public void MaxMode_SkipsMilestoneInOneGo()
         {
-            tool.SetLevel(1);
-            currency.RestoreMoney(9308);
+            tool.SetLevel(8);
+            int spentBefore = currency.CurrentMoney;
 
+            // 8 → 10 连升两级，第二级是里程碑
             Assert.That(tool.TryUpgrade(2), Is.True);
-
-            Assert.That(tool.Level, Is.EqualTo(3));
-            Assert.That(currency.CurrentMoney, Is.EqualTo(0));
-        }
-
-        [Test]
-        public void TryUpgrade_MultipleLevels_NotEnough_DoesNothing()
-        {
-            tool.SetLevel(1);
-            currency.RestoreMoney(9307);
-
-            Assert.That(tool.TryUpgrade(2), Is.False);
-            Assert.That(tool.Level, Is.EqualTo(1));
-            Assert.That(currency.CurrentMoney, Is.EqualTo(9307));
-        }
-
-        [Test]
-        public void TryUpgrade_LastLevel_ChargesNewPrice()
-        {
-            tool.SetLevel(5);
-            currency.RestoreMoney(1143000);
-
-            Assert.That(tool.TryUpgrade(), Is.True);
-
-            Assert.That(tool.Level, Is.EqualTo(6));
-            Assert.That(currency.CurrentMoney, Is.EqualTo(0));
-        }
-
-        [Test]
-        public void TryUpgrade_AtMax_ReturnsFalse()
-        {
-            tool.SetLevel(6);
-            int changes = 0;
-            tool.OnToolChanged += _ => changes++;
-
-            Assert.That(tool.TryUpgrade(), Is.False);
-            Assert.That(tool.Level, Is.EqualTo(6));
-            Assert.That(currency.CurrentMoney, Is.EqualTo(10000));
-            Assert.That(changes, Is.EqualTo(0));
-        }
-
-        [Test]
-        public void TryUpgrade_NonPositiveCount_ReturnsFalse()
-        {
-            tool.SetLevel(1);
-
-            Assert.That(tool.TryUpgrade(0), Is.False);
-            Assert.That(tool.TryUpgrade(-3), Is.False);
-            Assert.That(tool.Level, Is.EqualTo(1));
-        }
-
-        // ---------- 界面查询辅助 ----------
-
-        [Test]
-        public void LookupHelpers_ClampLevelsToRange()
-        {
-            Assert.That(tool.GetRefreshCooldownAt(99), Is.EqualTo(3f));
-            Assert.That(tool.GetRefreshCooldownAt(-3), Is.EqualTo(0f));
-            Assert.That(tool.GetCritPointCapacityAt(99), Is.EqualTo(3));
-            Assert.That(tool.GetCritPointCapacityAt(-3), Is.EqualTo(0));
-            Assert.That(tool.GetCritPointMultiplierAt(99), Is.EqualTo(2.5f));
-            Assert.That(tool.GetCritPointMultiplierAt(-3), Is.EqualTo(1f));
-            Assert.That(tool.GetCritPointRadiusAt(99), Is.EqualTo(4f));
-            Assert.That(tool.GetCritPointRadiusAt(-3), Is.EqualTo(0f));
-            Assert.That(tool.GetLevelName(99), Is.EqualTo("头灯"));
-            Assert.That(tool.GetLevelName(-3), Is.EqualTo("未拥有"));
-            Assert.That(tool.GetItemId(99), Is.EqualTo("light_06"));
-            Assert.That(tool.GetItemId(-3), Is.EqualTo("none"));
+            Assert.That(tool.Level, Is.EqualTo(10));
+            Assert.That(currency.CurrentMoney, Is.LessThan(spentBefore - tool.GetUpgradeCostAt(8)));
         }
     }
 }

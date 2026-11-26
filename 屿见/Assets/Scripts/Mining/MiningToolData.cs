@@ -37,7 +37,17 @@ namespace Yujian.Mining
         [SerializeField, Min(0)] private int goldCostIncreasePerLevel = 15;
 
         [Tooltip("工具最高等级。到顶后不再提供升级，攻击力停在满级值")]
-        [SerializeField, Min(1)] private int maxLevel = 6;
+        [SerializeField, Min(1)] private int maxLevel = 999;
+
+        [Header("十级里程碑（2026-11-26）")]
+        [Tooltip("每多少级算一个里程碑。10 = 第 10/20/30… 级")]
+        [SerializeField, Min(1)] private int milestoneEvery = 10;
+
+        [Tooltip("里程碑等级的伤害倍数。2 = 第 10 级直接把伤害翻倍")]
+        [SerializeField, Min(1f)] private float milestoneAttackMultiplier = 2f;
+
+        [Tooltip("升到里程碑等级的花费倍数。4 = 第 10 级要花平时 4 倍")]
+        [SerializeField, Min(1f)] private float milestoneCostMultiplier = 4f;
 
         public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? name : displayName;
         public string ItemId => itemId;
@@ -49,25 +59,53 @@ namespace Yujian.Mining
         public int GoldCostIncreasePerLevel => Mathf.Max(0, goldCostIncreasePerLevel);
         public int MaxLevel => Mathf.Max(1, maxLevel);
 
+        /// <summary>里程碑间隔（每多少级一次大跳）。</summary>
+        public int MilestoneEvery => Mathf.Max(1, milestoneEvery);
+
+        /// <summary>里程碑的伤害倍数。</summary>
+        public float MilestoneAttackMultiplier => Mathf.Max(1f, milestoneAttackMultiplier);
+
+        /// <summary>里程碑等级的花费倍数。</summary>
+        public float MilestoneCostMultiplier => Mathf.Max(1f, milestoneCostMultiplier);
+
+        /// <summary>该等级是不是里程碑（10/20/30…）。</summary>
+        public bool IsMilestoneLevel(int level)
+        {
+            return MilestoneEvery > 0 && level > 0 && level % MilestoneEvery == 0;
+        }
+
+        /// <summary>下一次里程碑等级；已过则返回下一个（永远算得出来，因为等级无上限）。</summary>
+        public int NextMilestoneLevel(int level)
+        {
+            int safe = Mathf.Max(0, level);
+            return (safe / MilestoneEvery + 1) * MilestoneEvery;
+        }
+
         /// <summary>
         /// 指定等级的工具攻击力。1 级 = 基础攻击力。
-        /// D7=A 起默认走几何曲线：基础攻击力 × 成长倍数^(等级-1)。
+        /// D7=A 起默认走几何曲线：基础攻击力 × 成长倍数^(等级-1)；
+        /// 2026-11-26 起再乘上里程碑倍数：2^(经历过的里程碑数)。
         /// </summary>
         public float GetAttackAtLevel(int level)
         {
             int safeLevel = Mathf.Clamp(level, 1, MaxLevel);
 
+            // 第 10/20/30… 级本身就算里程碑（所以用 level / every，而不是 (level-1) / every）
+            int milestones = safeLevel / MilestoneEvery;
+            float milestoneFactor = Mathf.Pow(MilestoneAttackMultiplier, milestones);
+
             if (AttackGrowthPerLevel > 1.0001f)
             {
-                return BaseAttack * Mathf.Pow(AttackGrowthPerLevel, safeLevel - 1);
+                return BaseAttack * Mathf.Pow(AttackGrowthPerLevel, safeLevel - 1) * milestoneFactor;
             }
 
-            return BaseAttack + (safeLevel - 1) * AttackPerLevel;
+            return (BaseAttack + (safeLevel - 1) * AttackPerLevel) * milestoneFactor;
         }
 
         /// <summary>
         /// 指定等级升到下一级需要的金币。
-        /// D7=A 起默认走几何曲线：基础花费 × 成长倍数^(等级-1)，与攻击曲线同速。
+        /// D7=A 起默认走几何曲线：基础花费 × 成长倍数^(等级-1)，与攻击曲线同速；
+        /// 2026-11-26 起「升到 10/20/30… 级」那一级再乘里程碑花费倍数。
         /// </summary>
         public int GetUpgradeCost(int level)
         {
@@ -79,13 +117,22 @@ namespace Yujian.Mining
                 return 0;
             }
 
-            if (GoldCostGrowthPerLevel > 1.0001f)
+            float cost = GoldCostGrowthPerLevel > 1.0001f
+                ? goldCostPerLevel * Mathf.Pow(GoldCostGrowthPerLevel, safeLevel - 1)
+                : goldCostPerLevel + (safeLevel - 1) * goldCostIncreasePerLevel;
+
+            // 下一级是里程碑 → 这一下要贵很多，玩家得攒
+            if (IsMilestoneLevel(safeLevel + 1))
             {
-                return Mathf.Max(0, Mathf.RoundToInt(
-                    goldCostPerLevel * Mathf.Pow(GoldCostGrowthPerLevel, safeLevel - 1)));
+                cost *= MilestoneCostMultiplier;
             }
 
-            return Mathf.Max(0, goldCostPerLevel + (safeLevel - 1) * goldCostIncreasePerLevel);
+            if (cost >= int.MaxValue)
+            {
+                return int.MaxValue;
+            }
+
+            return Mathf.Max(0, Mathf.RoundToInt(cost));
         }
 
         public void ConfigureForSetup(string newDisplayName, string newItemId,

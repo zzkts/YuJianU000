@@ -50,7 +50,8 @@ namespace Yujian.Player
         [SerializeField, Min(1f)] private float upgradeCostGrowth = 1.18f;
 
         [Header("转移")]
-        [Tooltip("每秒从背包转移到岛屿存储站的垃圾数量。基础 10 个/s")]
+        [Tooltip("每秒从背包转移到岛屿存储站的垃圾数量。基础 10 个/s。" +
+                 "**这是全工程唯一的转移速度来源**，改这里才生效；场景里 GarbageBag 上的 table 只是引用它")]
         [SerializeField, Min(1f)] private float transferPerSecond = 10f;
 
         [Tooltip("长按转移的最高等级。等级 > 该值后改为点击")]
@@ -154,6 +155,14 @@ namespace Yujian.Player
             longPressMaxLevel = Mathf.Clamp(longPressMaxLevel, 1, maxLevel);
             clickMaxLevel = Mathf.Clamp(clickMaxLevel, longPressMaxLevel, Mathf.Max(longPressMaxLevel, maxLevel));
             baseCapacity = Mathf.Max(1, baseCapacity);
+
+            if (transferPerSecond < 1f)
+            {
+                // 夹紧会让人以为「改了没反应」，所以明确喊一声
+                Debug.LogWarning($"[GarbageBagTable] 转移速度 {transferPerSecond} 小于 1，运行时会被夹成 1 个/秒。" +
+                                 "想更慢请改转移间隔而不是填小数。", this);
+            }
+
             transferPerSecond = Mathf.Max(1f, transferPerSecond);
 
             if (upgradeCostGrowth < 1f)

@@ -695,8 +695,10 @@ namespace Yujian.EditorTools
 
                 if (costs == null)
                 {
-                    Fail("MiningLightTool 上找不到 upgradeCosts 字段，场景数值迁移已中止。");
-                    return;
+                    // 2026-11-26：照明改成无限等级后价格走公式，旧数组已经删掉，
+                    // 这里不再需要「旧价格 ÷ 除数」的迁移，跳过即可。
+                    lightSo = null;
+                    Debug.Log("[回收站配置] 照明价格已改为公式曲线，跳过旧价格迁移。");
                 }
             }
 

@@ -513,6 +513,19 @@ namespace Yujian.EditorTools
                 Debug.Log("[存档配置] 场景里没有 GarbageBag，跳过垃圾背包存档。");
             }
 
+            // 2026-11-26：关卡暂存垃圾（背包满时掉在关卡里的那一堆）。
+            // 不存的话，玩家打满后直接退出游戏，这部分奖励会凭空消失。
+            // 它已经并进 GarbageBagSaveParticipant（那个参与者本来就在场景里），
+            // 所以这里不再单独加一个参与者——免得又多一处需要手工接的线。
+            GarbageOverflow overflow = Object.FindFirstObjectByType<GarbageOverflow>(
+                FindObjectsInactive.Include);
+
+            if (overflow != null && bag != null)
+            {
+                EditorUtility.SetDirty(bag);
+                Debug.Log("[存档配置] 关卡暂存垃圾随「垃圾背包存档」一起存，无需额外参与者。");
+            }
+
             if (required.Count > 0)
             {
                 EnsureParticipants(saveSystem, required.ToArray());

@@ -31,6 +31,33 @@ namespace Yujian.Mining
         [Tooltip("是否在 Console 打印每次伤害计算结果")]
         [SerializeField] private bool logCalculatedDamage = false;
 
+        private void Awake()
+        {
+            // 2026-11-26：场景里 DamageSystem.miningLightTool 曾经是空的，
+            // 结果「超级暴击」永远不会触发，而代码本身没有任何报错——玩家只觉得「没效果」。
+            // 这里做一次兜底查找：少接一根线不该让一条玩法静默失效。
+            if (playerStats == null)
+            {
+                playerStats = FindFirstObjectByType<PlayerStats>(FindObjectsInactive.Include);
+            }
+
+            if (miningTool == null)
+            {
+                miningTool = FindFirstObjectByType<MiningToolProgress>(FindObjectsInactive.Include);
+            }
+
+            if (miningLightTool == null)
+            {
+                miningLightTool = FindFirstObjectByType<MiningLightTool>(FindObjectsInactive.Include);
+
+                if (miningLightTool == null)
+                {
+                    Debug.LogWarning("[DamageSystem] 找不到 MiningLightTool，" +
+                                     "超级暴击不会触发（普通暴击仍然正常）。", this);
+                }
+            }
+        }
+
         /// <summary>
         /// 当前暴击伤害倍数：优先读当前照明工具，未拥有照明工具时回退到本组件的默认值；
         /// 再加上建筑强化提供的玩家暴击倍率加成（PlayerStats.CritMultiplierBonus）。
@@ -119,12 +146,34 @@ namespace Yujian.Mining
         /// </summary>
         public float CalculateCritPointDamage()
         {
+            return CalculateCritPointDamage(out _);
+        }
+
+        /// <summary>
+        /// 计算一次暴击点伤害，并判定这一下是不是「超级暴击」（2026-11-26）。
+        ///
+        /// 判定顺序：先确定命中暴击点（这是玩家打准的结果，一定给暴击），
+        /// 再按照明工具的概率掷超级暴击。超级暴击额外乘 <see cref="MiningLightTool.SuperCritMultiplier"/>，
+        /// 所以最终伤害可能是普通伤害的十几倍——这是「数字在跳」的主要来源。
+        /// </summary>
+        /// <param name="isSuperCritical">本次是否触发超级暴击，仅影响飘字表现。</param>
+        public float CalculateCritPointDamage(out bool isSuperCritical)
+        {
             float multiplier = CriticalDamageMultiplier;
+            isSuperCritical = false;
+
+            if (miningLightTool != null && miningLightTool.IsUnlocked && miningLightTool.RollSuperCrit())
+            {
+                isSuperCritical = true;
+                multiplier *= Mathf.Max(1f, miningLightTool.SuperCritMultiplier);
+            }
+
             float damage = CalculatePlayerDamage() * multiplier;
 
             if (logCalculatedDamage)
             {
-                Debug.Log($"[DamageSystem] 暴击点伤害 = 普通伤害 × {multiplier} = {damage}");
+                Debug.Log($"[DamageSystem] 暴击点伤害 = 普通伤害 × {multiplier} = {damage}" +
+                          (isSuperCritical ? "（超级暴击）" : string.Empty));
             }
 
             return damage;

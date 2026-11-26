@@ -31,6 +31,10 @@ namespace Yujian.Player
                  "留空则所有垃圾直接进岛屿存储（旧行为）")]
         [SerializeField] private GarbageBag bag;
 
+        [Tooltip("关卡暂存池。背包满时被拒收的垃圾记到这里，下次进关再灌回背包；" +
+                 "留空则拒收的部分直接丢失（旧行为）")]
+        [SerializeField] private GarbageOverflow overflow;
+
         private int currentGarbage;
 
         /// <summary>当前垃圾数量（岛屿存储站的存量，不含背包里的）。</summary>
@@ -56,6 +60,21 @@ namespace Yujian.Player
             {
                 bag = FindFirstObjectByType<GarbageBag>(FindObjectsInactive.Include);
             }
+
+            if (overflow == null)
+            {
+                overflow = FindFirstObjectByType<GarbageOverflow>(FindObjectsInactive.Include);
+            }
+
+            // 兜底：场景里没挂暂存池就运行时补一个。
+            // 为什么不由「必须跑向导」约束：这个组件没有需要人填的配置（依赖全在 Awake 里自动找），
+            // 少接一次线就会让「背包满了垃圾不消失」这条规则静默失效——2026-11-26 就是这么漏的。
+            if (overflow == null)
+            {
+                overflow = gameObject.AddComponent<GarbageOverflow>();
+                Debug.Log("[PlayerGarbage] 场景里没有 GarbageOverflow，已在运行时代补一个，" +
+                          "背包满时的垃圾会记进关卡暂存池。", this);
+            }
         }
 
         /// <summary>
@@ -76,8 +95,15 @@ namespace Yujian.Player
 
             if (bag != null && bag.IsOpen)
             {
+                int accepted = bag.TryAdd(amount);
+
+                if (accepted < amount && overflow != null)
+                {
+                    // 背包满了：多出来的不消失，记进这一关的暂存池，下次进关再灌回背包
+                    overflow.Deposit(amount - accepted);
+                }
+
                 // 拒收与部分接收由背包自己广播，这里不重复发事件
-                bag.TryAdd(amount);
                 return;
             }
 

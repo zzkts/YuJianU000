@@ -52,6 +52,13 @@ namespace Yujian.Save
         /// </summary>
         public GarbageBagSave bag = new GarbageBagSave();
 
+        /// <summary>
+        /// 关卡内暂存的垃圾（2026-11-26 新增）：背包满时掉在关卡里的那一堆。
+        /// 键是 <see cref="Yujian.Levels.LevelEntrance.LevelNumber"/>，值是数量。
+        /// 旧存档没有该字段时为空列表。
+        /// </summary>
+        public List<LevelOverflowSave> levelOverflow = new List<LevelOverflowSave>();
+
         /// <summary>回收站共享队列。v4 新增；旧存档没有该字段时为空队列。</summary>
         public RecyclingSave recycling = new RecyclingSave();
 
@@ -145,6 +152,11 @@ namespace Yujian.Save
                 bag.garbage = 0;
             }
 
+            if (levelOverflow == null)
+            {
+                levelOverflow = new List<LevelOverflowSave>();
+            }
+
             if (blueprintRefund == null)
             {
                 blueprintRefund = new List<MaterialSave>();
@@ -234,6 +246,14 @@ namespace Yujian.Save
     {
         public int level = 1;
         public int garbage = 0;
+    }
+
+    /// <summary>关卡内暂存垃圾的一条记录（背包满时掉在关卡里的）。</summary>
+    [Serializable]
+    public class LevelOverflowSave
+    {
+        public int levelNumber;
+        public int garbage;
     }
 
     /// <summary>矿石生成进度：当前档位 + 每个档位已经抽过的条目。</summary>

@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -40,25 +41,22 @@ namespace Yujian.UI
         [Tooltip("资源栏。转移图标飞向它；留空时自动查找")]
         [SerializeField] private RecyclingHudUI resourceHud;
 
-        [Tooltip("区域状态。用来判断能不能转移（关卡内禁止）以及建筑区要不要抬高")]
+        [Tooltip("关卡暂存池。背包满时掉在关卡里的垃圾记在这里，用来显示「暂存 N」；留空时自动查找")]
+        [SerializeField] private GarbageOverflow overflow;
+
+        [Tooltip("区域状态。用来判断能不能转移（关卡内禁止）")]
         [SerializeField] private GameAreaController areas;
 
         [Header("布局")]
-        [Tooltip("平时的底部高度（像素，相对 Canvas 底部）")]
+        [Tooltip("底部高度（像素，相对 Canvas 底部）。**固定值**：不随区域变化，" +
+                 "进建筑区也不会跟着建筑栏一起抬起来")]
         [SerializeField] private float bottomOffset = 16f;
 
-        [Tooltip("建筑区时抬高多少，避免压住建筑栏（栏位是底部居中 1100×186）。" +
-                 "实机看一眼再调，0 = 不抬高")]
-        [SerializeField] private float buildingAreaLift = 200f;
-
-        [Tooltip("收起时向下沉多少像素。面板高 150 时，90 大约只露出上 40%")]
+        [Tooltip("收起时向下沉多少像素。面板高 150 时，92 大约只露出上 40%")]
         [SerializeField] private float collapsedDrop = 92f;
 
-        [Tooltip("展开 / 收起的跟随速度")]
+        [Tooltip("展开 / 收起的跟随速度。越大越快")]
         [SerializeField, Min(0.1f)] private float expandSpeed = 10f;
-
-        [Tooltip("失去交互后多久自动收起（秒）")]
-        [SerializeField, Min(0f)] private float autoCollapseDelay = 3f;
 
         [Header("手势")]
         [Tooltip("长按判定时长（秒）。1~19 级按住超过这个时间才开始转移")]
@@ -113,6 +111,8 @@ namespace Yujian.UI
         private RectTransform canvasRect;
         private Camera canvasCamera;
         private Image panelImage;
+        private RectTransform visualRoot;
+        private Image visualImage;
         private Image bagIcon;
         private Image barFill;
         private Text countText;
@@ -123,16 +123,28 @@ namespace Yujian.UI
         private readonly List<FlyingIcon> flyingIcons = new List<FlyingIcon>();
         private readonly Stack<Image> iconPool = new Stack<Image>();
 
-        private bool expanded;
         private bool pointerInside;
         private bool pointerDown;
         private float pointerDownTime;
-        private float lastInteractionTime;
-        private float transferAccumulator;
         private float iconAccumulator;
+        private Coroutine punchRoutine;
+
+        // ---------------- 转移曲线 ----------------
+        // 一次转移的速率不是常数，而是「总量 × SmoothStep(进度)」：
+        //   进度 t 从 0 到 1，产量曲线两端平、中间陡 → 开始时缓慢起步、中段最快、收尾再慢下来。
+        // 平均速率仍等于 GarbageBagTable.TransferPerSecond（SmoothStep 的均值是 0.5），
+        // 峰值约为它的 1.5 倍。总时长 = 起始存量 / 设定速度。
+        private int transferStartAmount;
+        private float transferDuration;
+        private float transferElapsed;
+        private int transferMoved;
+
+        /// <summary>再少的量也给一段最短动画，避免「啪」一下跳完看不出曲线。</summary>
+        private const float MinTransferDuration = 0.25f;
         private bool transferActive;
         private float lastRejectToastTime = -10f;
         private float lastMoneyRefreshTime;
+        private int lastPendingShown = -1;
 
         private struct FlyingIcon
         {
@@ -199,6 +211,11 @@ namespace Yujian.UI
                 areas.OnAreaChanged += HandleAreaChanged;
             }
 
+            if (overflow != null)
+            {
+                lastPendingShown = overflow.CurrentPending;
+            }
+
             RefreshAll();
         }
 
@@ -222,10 +239,38 @@ namespace Yujian.UI
         {
             float delta = Time.deltaTime;
 
+            UpdateOverflowProbe();
             UpdateExpand(delta);
             UpdateGesture(delta);
             UpdateTransfer(delta);
             UpdateFlyingIcons(delta);
+        }
+
+        /// <summary>
+        /// 暂存池可能在 UI 之后才被建出来（PlayerGarbage 运行时会补组件），
+        /// 所以这里懒查找 + 轮询变化，不依赖事件订阅的时序。
+        /// </summary>
+        private void UpdateOverflowProbe()
+        {
+            if (overflow == null)
+            {
+                overflow = FindFirstObjectByType<GarbageOverflow>(FindObjectsInactive.Include);
+
+                if (overflow == null)
+                {
+                    return;
+                }
+            }
+
+            int pending = overflow.CurrentPending;
+
+            if (pending == lastPendingShown)
+            {
+                return;
+            }
+
+            lastPendingShown = pending;
+            RefreshAll();
         }
 
         // ---------------- 转移 ----------------
@@ -278,45 +323,52 @@ namespace Yujian.UI
                 return;
             }
 
-            if (bag.Current <= 0)
+            if (transferStartAmount <= 0)
             {
                 EndTransfer("背包已空");
                 return;
             }
 
-            transferAccumulator += Mathf.Max(1f, bag.TransferPerSecond) * delta;
-            int want = Mathf.FloorToInt(transferAccumulator);
+            transferElapsed += delta;
 
-            if (want <= 0)
+            // 进度 0→1，再用 SmoothStep 拉成缓入缓出
+            float t = Mathf.Clamp01(transferElapsed / Mathf.Max(0.01f, transferDuration));
+            float eased = t * t * (3f - 2f * t);
+
+            // 目标累计搬运量 - 已搬运量 = 这一帧该走的量
+            int target = Mathf.RoundToInt(transferStartAmount * eased);
+            int want = target - transferMoved;
+
+            if (want > 0)
             {
-                return;
+                int moved = bag.TryTake(want);
+
+                if (moved <= 0)
+                {
+                    EndTransfer("背包已空");
+                    return;
+                }
+
+                transferMoved += moved;
+                storage.AddToStorage(moved);
+
+                // 图标密度跟着实际吞吐走：起步慢时几乎不冒图标，中段最密
+                iconAccumulator += moved;
+
+                float garbagePerIcon = Mathf.Max(1f,
+                    Mathf.Max(1f, bag.TransferPerSecond) / Mathf.Max(1f, iconPerSecond));
+
+                while (iconAccumulator >= garbagePerIcon && flyingIcons.Count < maxFlyingIcons)
+                {
+                    iconAccumulator -= garbagePerIcon;
+                    SpawnFlyingIcon();
+                }
             }
 
-            transferAccumulator -= want;
-
-            int moved = bag.TryTake(want);
-
-            if (moved <= 0)
+            if (t >= 1f)
             {
-                EndTransfer("背包已空");
-                return;
+                EndTransfer("转移完成");
             }
-
-            storage.AddToStorage(moved);
-
-            iconAccumulator += delta;
-
-            float interval = 1f / Mathf.Max(1f, iconPerSecond);
-
-            while (iconAccumulator >= interval && flyingIcons.Count < maxFlyingIcons)
-            {
-                iconAccumulator -= interval;
-                SpawnFlyingIcon();
-            }
-
-            // 转移过程中保持展开
-            lastInteractionTime = Time.unscaledTime;
-            expanded = true;
         }
 
         private void BeginTransfer(string reason)
@@ -327,14 +379,19 @@ namespace Yujian.UI
             }
 
             transferActive = true;
-            transferAccumulator = 0f;
+            transferElapsed = 0f;
+            transferMoved = 0;
+            transferStartAmount = bag.Current;
+
+            float speed = Mathf.Max(1f, bag.TransferPerSecond);
+            transferDuration = Mathf.Max(MinTransferDuration, transferStartAmount / speed);
+
             iconAccumulator = 0f;
-            expanded = true;
-            lastInteractionTime = Time.unscaledTime;
 
             if (logBagUiFlow)
             {
-                Debug.Log($"[GarbageBagUI] 开始转移（{reason}），{bag.Current}/{bag.Capacity}。", this);
+                Debug.Log($"[GarbageBagUI] 开始转移（{reason}），{bag.Current}/{bag.Capacity}，" +
+                          $"{bag.TransferPerSecond}/s。", this);
             }
         }
 
@@ -358,14 +415,12 @@ namespace Yujian.UI
         public void OnPointerEnter(PointerEventData eventData)
         {
             pointerInside = true;
-            expanded = true;
-            lastInteractionTime = Time.unscaledTime;
         }
 
         public void OnPointerExit(PointerEventData eventData)
         {
+            // 光标离开就立刻收起：没有延时，UpdateExpand 下一帧就开始往下走
             pointerInside = false;
-            lastInteractionTime = Time.unscaledTime;
 
             if (bag != null && bag.TransferMode == GarbageBagTransferMode.LongPress)
             {
@@ -384,15 +439,12 @@ namespace Yujian.UI
 
             pointerDown = true;
             pointerDownTime = Time.unscaledTime;
-            expanded = true;
-            lastInteractionTime = Time.unscaledTime;
         }
 
         public void OnPointerUp(PointerEventData eventData)
         {
             // 无论松手在哪，都要清掉按住状态，否则长按会一直转下去
             pointerDown = false;
-            lastInteractionTime = Time.unscaledTime;
 
             if (IsOverUpgradeButton(eventData))
             {
@@ -487,7 +539,7 @@ namespace Yujian.UI
             }
 
             lastRejectToastTime = Time.unscaledTime;
-            ToastUI.Show("存储已达上限，回岛卸货");
+            ToastUI.Show("背包已满，多出的垃圾暂存在关卡内");
         }
 
         private void HandleAreaChanged(GameArea area)
@@ -520,9 +572,19 @@ namespace Yujian.UI
 
             if (levelText != null)
             {
-                levelText.text = bag.IsMaxLevel
+                string label = bag.IsMaxLevel
                     ? $"Lv.{bag.Level} · 满级 · {bag.TransferMode.ToChineseName()}"
                     : $"Lv.{bag.Level} · {bag.TransferMode.ToChineseName()}";
+
+                // 背包满时多出来的垃圾留在关卡里，这里给玩家一个「还没丢」的交代
+                int pending = overflow != null ? overflow.CurrentPending : 0;
+
+                if (pending > 0)
+                {
+                    label += $" · 暂存 {pending}";
+                }
+
+                levelText.text = label;
             }
 
             if (barFill != null)
@@ -549,9 +611,9 @@ namespace Yujian.UI
                 upgradeButton.interactable = !bag.IsMaxLevel;
             }
 
-            if (panelImage != null)
+            if (visualImage != null)
             {
-                panelImage.color = bag.IsFull ? WithAlpha(fullColor, 0.28f) : panelColor;
+                visualImage.color = bag.IsFull ? WithAlpha(fullColor, 0.28f) : panelColor;
             }
         }
 
@@ -565,24 +627,20 @@ namespace Yujian.UI
 
         private void UpdateExpand(float delta)
         {
-            if (panelRect == null)
+            if (visualRoot == null)
             {
                 return;
             }
 
-            if (!transferActive && !pointerInside && !pointerDown &&
-                Time.unscaledTime - lastInteractionTime >= autoCollapseDelay)
-            {
-                expanded = false;
-            }
+            // 展开条件只有一个：指针在背包上 / 按住 / 正在转移。
+            // 指针一离开，下一帧就往下收——没有延时，也不看所在区域。
+            bool expand = pointerInside || pointerDown || transferActive;
+            float targetY = expand ? 0f : -collapsedDrop;
 
-            float lift = areas != null && areas.CurrentArea == GameArea.Building ? buildingAreaLift : 0f;
-            float targetY = bottomOffset + lift - (expanded ? 0f : collapsedDrop);
-
-            Vector2 position = panelRect.anchoredPosition;
+            Vector2 position = visualRoot.anchoredPosition;
             float speed = Mathf.Max(0.1f, expandSpeed);
             position.y = Mathf.Lerp(position.y, targetY, 1f - Mathf.Exp(-speed * delta));
-            panelRect.anchoredPosition = position;
+            visualRoot.anchoredPosition = position;
         }
 
         private void SpawnFlyingIcon()
@@ -731,6 +789,58 @@ namespace Yujian.UI
             return fallback;
         }
 
+        /// <summary>
+        /// 背包图标在屏幕上的位置，给垃圾飞行用。
+        /// 背包收起时图标下半截在屏幕外，所以往上抬一点，让垃圾落在看得见的部分。
+        /// </summary>
+        public bool TryGetBagScreenPoint(out Vector2 screenPoint)
+        {
+            screenPoint = default;
+
+            if (bagIcon == null || !isActiveAndEnabled)
+            {
+                return false;
+            }
+
+            screenPoint = RectTransformUtility.WorldToScreenPoint(canvasCamera, bagIcon.rectTransform.position);
+            screenPoint.y += 24f;
+            return true;
+        }
+
+        /// <summary>垃圾入包时弹一下，代替原来资源栏的那一下。</summary>
+        public void PlayPunch()
+        {
+            if (!isActiveAndEnabled || visualRoot == null)
+            {
+                return;
+            }
+
+            if (punchRoutine != null)
+            {
+                StopCoroutine(punchRoutine);
+            }
+
+            punchRoutine = StartCoroutine(PunchRoutine());
+        }
+
+        private IEnumerator PunchRoutine()
+        {
+            const float duration = 0.18f;
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float scale = 1f + Mathf.Sin(t * Mathf.PI) * 0.06f;
+                visualRoot.localScale = new Vector3(scale, scale, 1f);
+                yield return null;
+            }
+
+            visualRoot.localScale = Vector3.one;
+            punchRoutine = null;
+        }
+
         private void ResolveDependencies()
         {
             if (bag == null)
@@ -752,6 +862,11 @@ namespace Yujian.UI
             {
                 areas = FindFirstObjectByType<GameAreaController>(FindObjectsInactive.Include);
             }
+
+            if (overflow == null)
+            {
+                overflow = FindFirstObjectByType<GarbageOverflow>(FindObjectsInactive.Include);
+            }
         }
 
         private void ApplyStaticLayout()
@@ -759,8 +874,15 @@ namespace Yujian.UI
             panelRect.anchorMin = new Vector2(0.5f, 0f);
             panelRect.anchorMax = new Vector2(0.5f, 0f);
             panelRect.pivot = new Vector2(0.5f, 0f);
-            panelRect.sizeDelta = new Vector2(PanelWidth, PanelHeight);
-            panelRect.anchoredPosition = new Vector2(0f, bottomOffset - collapsedDrop);
+
+            // 命中区 = 展开与收起两种状态的总高度，自己永远不动
+            panelRect.sizeDelta = new Vector2(PanelWidth, PanelHeight + bottomOffset);
+            panelRect.anchoredPosition = Vector2.zero;
+
+            if (visualRoot != null)
+            {
+                visualRoot.anchoredPosition = new Vector2(0f, -collapsedDrop);
+            }
         }
 
         /// <summary>
@@ -769,6 +891,11 @@ namespace Yujian.UI
         /// </summary>
         private void BuildIfNeeded()
         {
+            // 根物体只当「坐标容器」，不参与射线，免得挡住身后的建筑栏。
+            // 真正的命中区有两块：
+            //   1) Visual（会上下滑动）—— 鼠标在背包本体上时由它接住；
+            //   2) HitStrip（静态，贴在屏幕最底部）—— 展开时 Visual 会让出最下面那一条，
+            //      没有它的话光标停在那条缝里就会「升起→出框→落下→又进框」地抽搐。
             panelImage = GetComponent<Image>();
 
             if (panelImage == null)
@@ -776,8 +903,37 @@ namespace Yujian.UI
                 panelImage = gameObject.AddComponent<Image>();
             }
 
-            panelImage.color = panelColor;
-            panelImage.raycastTarget = true;
+            panelImage.color = new Color(0f, 0f, 0f, 0f);
+            panelImage.raycastTarget = false;
+
+            EnsureHitStrip();
+
+            visualRoot = transform.Find("Visual") as RectTransform;
+
+            if (visualRoot == null)
+            {
+                GameObject visualObject = new GameObject("Visual", typeof(RectTransform));
+                visualRoot = visualObject.GetComponent<RectTransform>();
+                visualRoot.SetParent(transform, false);
+            }
+
+            // 贴在命中区顶部，向下滑 = 收起
+            visualRoot.anchorMin = new Vector2(0.5f, 1f);
+            visualRoot.anchorMax = new Vector2(0.5f, 1f);
+            visualRoot.pivot = new Vector2(0.5f, 1f);
+            visualRoot.sizeDelta = new Vector2(PanelWidth, PanelHeight);
+            visualRoot.anchoredPosition = Vector2.zero;
+
+            visualImage = visualRoot.GetComponent<Image>();
+
+            if (visualImage == null)
+            {
+                visualImage = visualRoot.gameObject.AddComponent<Image>();
+            }
+
+            visualImage.color = panelColor;
+            // 背包本体要能接住按下 / 长按，所以视觉背景也参与射线
+            visualImage.raycastTarget = true;
 
             bagIcon = FindChild<Image>("BagIcon");
 
@@ -848,6 +1004,46 @@ namespace Yujian.UI
             upgradeButton.onClick.AddListener(HandleUpgradeClicked);
         }
 
+        /// <summary>
+        /// 底部兜底命中条：贴在屏幕最下方，高度 = bottomOffset + 余量。
+        ///
+        /// 为什么需要它：展开时 Visual 整体上移，最下面那一条缝会空出来。
+        /// 光标如果停在那条缝里，就会「升起 → 光标落到 Visual 外 → 落下 → 光标又进 Visual」
+        /// 反复循环，看起来就是上下抽搐（2026-11-26 用户报的问题）。
+        /// 这条永远不动的窄条把那段空隙补上，光标就不会被判成「离开」。
+        /// 只补在底部、不铺满整块，是为了不挡住身后的建筑栏。
+        /// </summary>
+        private void EnsureHitStrip()
+        {
+            RectTransform strip = transform.Find("HitStrip") as RectTransform;
+
+            if (strip == null)
+            {
+                GameObject go = new GameObject("HitStrip", typeof(RectTransform), typeof(Image));
+                strip = go.GetComponent<RectTransform>();
+                strip.SetParent(transform, false);
+            }
+
+            // 渲染在 Visual 之下，不影响观感
+            strip.SetAsFirstSibling();
+
+            strip.anchorMin = new Vector2(0.5f, 0f);
+            strip.anchorMax = new Vector2(0.5f, 0f);
+            strip.pivot = new Vector2(0.5f, 0f);
+            strip.sizeDelta = new Vector2(PanelWidth, Mathf.Max(32f, bottomOffset + 12f));
+            strip.anchoredPosition = Vector2.zero;
+
+            Image image = strip.GetComponent<Image>();
+
+            if (image == null)
+            {
+                image = strip.gameObject.AddComponent<Image>();
+            }
+
+            image.color = new Color(0f, 0f, 0f, 0f);
+            image.raycastTarget = true;
+        }
+
         private RectTransform CreateBar(string name, Vector2 position, Vector2 size, Color color)
         {
             Image image = CreateImage(name, position, size);
@@ -860,7 +1056,7 @@ namespace Yujian.UI
         {
             GameObject go = new GameObject(name, typeof(RectTransform), typeof(Image));
             RectTransform rect = go.GetComponent<RectTransform>();
-            rect.SetParent(transform, false);
+            rect.SetParent(visualRoot, false);
             rect.anchorMin = new Vector2(0.5f, 0f);
             rect.anchorMax = new Vector2(0.5f, 0f);
             rect.pivot = new Vector2(0.5f, 0.5f);
@@ -875,7 +1071,7 @@ namespace Yujian.UI
         {
             GameObject go = new GameObject(name, typeof(RectTransform), typeof(Text));
             RectTransform rect = go.GetComponent<RectTransform>();
-            rect.SetParent(transform, false);
+            rect.SetParent(visualRoot, false);
             rect.anchorMin = new Vector2(0.5f, 0f);
             rect.anchorMax = new Vector2(0.5f, 0f);
             rect.pivot = new Vector2(0.5f, 0.5f);
@@ -913,13 +1109,13 @@ namespace Yujian.UI
 
         private T FindChild<T>(string name) where T : Component
         {
-            Transform child = transform.Find(name);
+            Transform child = visualRoot != null ? visualRoot.Find(name) : null;
             return child != null ? child.GetComponent<T>() : null;
         }
 
         private RectTransform FindChildRect(string name)
         {
-            Transform child = transform.Find(name);
+            Transform child = visualRoot != null ? visualRoot.Find(name) : null;
             return child as RectTransform;
         }
     }
