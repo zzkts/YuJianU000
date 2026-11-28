@@ -15,7 +15,7 @@ namespace Yujian.UI
     /// 否则 Button 会在每次状态切换时把背景色改回去，和我们手写的配色打架。
     /// </summary>
     [DisallowMultipleComponent]
-    public class BuildingBarEntry : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+    public class BuildingBarEntry : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerMoveHandler
     {
         private const float UnselectedAlpha = 0.78f;
 
@@ -44,6 +44,23 @@ namespace Yujian.UI
         private bool isAvailable;
         private bool isHovered;
 
+        /// <summary>在建筑清单里的下标，用来向 BuildingUI 重新取判定结果。</summary>
+        public int Index { get; private set; }
+
+        /// <summary>本按钮当前对应的建筑数据。</summary>
+        public BuildingData Data { get; private set; }
+
+        /// <summary>悬停进入 / 离开。参数：本条目、是否进入、指针屏幕坐标。</summary>
+        public event System.Action<BuildingBarEntry, bool, Vector2> HoverChanged;
+
+        /// <summary>悬停期间指针移动。参数：指针屏幕坐标。</summary>
+        public event System.Action<Vector2> HoverMoved;
+
+        public void SetIndex(int index)
+        {
+            Index = index;
+        }
+
         /// <summary>由 BuildingBarUI 在创建条目时调用，把引用塞进来。</summary>
         public void Bind(Image entryBackground, Outline entryGlow, CanvasGroup group,
                          Text entryNameText, Text entryStatusText, Button entryButton)
@@ -59,6 +76,7 @@ namespace Yujian.UI
         /// <summary>按判定结果刷新外观。</summary>
         public void Apply(BuildingData data, BuildingAvailabilityInfo info, bool selected)
         {
+            Data = data;
             isSelected = selected;
             isAvailable = info.IsAvailable;
 
@@ -107,12 +125,24 @@ namespace Yujian.UI
         {
             isHovered = true;
             ApplyAlpha();
+            HoverChanged?.Invoke(this, true, eventData.position);
         }
 
         public void OnPointerExit(PointerEventData eventData)
         {
             isHovered = false;
             ApplyAlpha();
+            HoverChanged?.Invoke(this, false, eventData.position);
+        }
+
+        public void OnPointerMove(PointerEventData eventData)
+        {
+            if (!isHovered)
+            {
+                return;
+            }
+
+            HoverMoved?.Invoke(eventData.position);
         }
 
         private void ApplyAlpha()

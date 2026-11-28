@@ -74,6 +74,16 @@ namespace Yujian.UI
         [SerializeField] private int groupFontSize = 16;
         [SerializeField] private int emptyFontSize = 20;
 
+        [Header("建筑描述提示（跟随光标）")]
+        [Tooltip("提示框宽度")]
+        [SerializeField] private float tooltipWidth = 380f;
+
+        [Tooltip("提示框底边相对光标向上抬多少像素")]
+        [SerializeField] private float tooltipOffsetY = 22f;
+
+        [Tooltip("提示框底色")]
+        [SerializeField] private Color tooltipColor = new Color(0.05f, 0.06f, 0.08f, 0.94f);
+
         [Header("配色")]
         [SerializeField] private Color panelColor = new Color(0f, 0f, 0f, 0.72f);
         [SerializeField] private Color scrollbarTrackColor = new Color(1f, 1f, 1f, 0.12f);
@@ -92,6 +102,11 @@ namespace Yujian.UI
         private Scrollbar horizontalScrollbar;
         private RectTransform scrollbarRect;
         private Text emptyHint;
+
+        private RectTransform tooltipRoot;
+        private Text tooltipTitle;
+        private Text tooltipBody;
+        private Text tooltipStatus;
 
         private readonly List<BuildingBarEntry> entries = new List<BuildingBarEntry>();
         private readonly List<int> entryIndexes = new List<int>();
@@ -116,6 +131,7 @@ namespace Yujian.UI
             ResolveDependencies();
             BuildHierarchy();
             ApplyLayout();
+            BuildTooltip();
         }
 
         private void OnEnable()
@@ -127,6 +143,7 @@ namespace Yujian.UI
         private void OnDisable()
         {
             Unsubscribe();
+            HideTooltip();
         }
 
         private void Start()
@@ -145,6 +162,11 @@ namespace Yujian.UI
             {
                 lastFilling = filling;
                 SyncVisibility();
+
+                if (filling)
+                {
+                    HideTooltip();
+                }
             }
 
             if (selected != lastSelected || placing != lastPlacing)
@@ -321,6 +343,10 @@ namespace Yujian.UI
                 {
                     MarkDirty();
                 }
+                else
+                {
+                    HideTooltip();
+                }
             }
         }
 
@@ -391,6 +417,7 @@ namespace Yujian.UI
             scroll.horizontalScrollbar = horizontalScrollbar;
             scroll.horizontalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
             scroll.horizontalScrollbarSpacing = 0f;
+            scroll.onValueChanged.AddListener(HandleScrollValueChanged);
 
             built = true;
         }
@@ -595,6 +622,9 @@ namespace Yujian.UI
 
             BuildingBarEntry entry = go.AddComponent<BuildingBarEntry>();
             entry.Bind(background, glow, canvasGroup, nameText, statusText, button);
+            entry.SetIndex(index);
+            entry.HoverChanged += HandleEntryHover;
+            entry.HoverMoved += HandleEntryHoverMoved;
 
             int captured = index;
             button.onClick.AddListener(() => HandleEntryClicked(captured));
@@ -640,8 +670,176 @@ namespace Yujian.UI
                 return;
             }
 
+            HideTooltip();
             buildingUI.SelectBuilding(index);
             MarkDirty();
+        }
+
+        // ---------------- 建筑描述提示 ----------------
+
+        /// <summary>
+        /// 在 Canvas 根部搭一个跟随光标的描述框。
+        /// 不挂在 visual 下面：visual 会在离开建筑区时整体隐藏，提示框也会被一起关掉。
+        /// </summary>
+        private void BuildTooltip()
+        {
+            if (tooltipRoot != null)
+            {
+                return;
+            }
+
+            Canvas canvas = GetComponentInParent<Canvas>();
+            Transform canvasRoot = canvas != null ? canvas.rootCanvas.transform : transform;
+
+            GameObject rootObject = CreateUIObject("BuildingTooltip", canvasRoot);
+            tooltipRoot = (RectTransform)rootObject.transform;
+            tooltipRoot.anchorMin = new Vector2(0.5f, 0.5f);
+            tooltipRoot.anchorMax = new Vector2(0.5f, 0.5f);
+            tooltipRoot.pivot = new Vector2(0.5f, 0f);
+            tooltipRoot.sizeDelta = new Vector2(tooltipWidth, 0f);
+
+            Image background = rootObject.AddComponent<Image>();
+            background.sprite = UISprite();
+            background.type = Image.Type.Sliced;
+            background.color = tooltipColor;
+            background.raycastTarget = false;
+
+            VerticalLayoutGroup layout = rootObject.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(16, 16, 12, 14);
+            layout.spacing = 6f;
+            layout.childAlignment = TextAnchor.UpperLeft;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+
+            ContentSizeFitter fitter = rootObject.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            tooltipTitle = CreateText(tooltipRoot, "Title", string.Empty, 24,
+                                      Color.white, TextAnchor.UpperLeft);
+            tooltipTitle.fontStyle = FontStyle.Bold;
+
+            tooltipBody = CreateText(tooltipRoot, "Body", string.Empty, 18,
+                                     new Color(0.86f, 0.88f, 0.92f, 1f), TextAnchor.UpperLeft);
+
+            tooltipStatus = CreateText(tooltipRoot, "Status", string.Empty, 18,
+                                       Color.white, TextAnchor.UpperLeft);
+
+            tooltipRoot.gameObject.SetActive(false);
+        }
+
+        /// <summary>光标进入按钮：即时取一次判定，保证文案和按钮上的状态是同一份结论。</summary>
+        private void HandleEntryHover(BuildingBarEntry entry, bool entered, Vector2 screenPosition)
+        {
+            if (!entered)
+            {
+                HideTooltip();
+                return;
+            }
+
+            if (tooltipRoot == null || entry == null || entry.Data == null)
+            {
+                return;
+            }
+
+            if (buildingManager != null && buildingManager.IsFilling)
+            {
+                return;
+            }
+
+            BuildingData data = entry.Data;
+            BuildingAvailabilityInfo info = buildingUI != null
+                ? buildingUI.Evaluate(entry.Index)
+                : BuildingAvailabilityInfo.Invalid("建筑系统未就绪");
+
+            tooltipTitle.text = data.BuildingName;
+
+            string footprint = data.HasValidFootprint
+                ? $"{data.FootprintCells.x}×{data.FootprintCells.y} 格"
+                : "未配置";
+            tooltipBody.text = $"建造需要：{data.GetRequirementText()}\n占地：{footprint}";
+
+            if (info.IsAvailable)
+            {
+                tooltipStatus.text = info.JustEnoughMaterials ? "状态：可建造（原料刚好够）" : "状态：可建造";
+                tooltipStatus.color = new Color(0.62f, 0.92f, 0.66f, 1f);
+            }
+            else
+            {
+                tooltipStatus.text = $"状态：{(!string.IsNullOrEmpty(info.Reason) ? info.Reason : "暂不可建造")}";
+                tooltipStatus.color = new Color(1f, 0.76f, 0.44f, 1f);
+            }
+
+            tooltipRoot.gameObject.SetActive(true);
+            tooltipRoot.SetAsLastSibling();
+
+            Canvas.ForceUpdateCanvases();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(tooltipRoot);
+            PositionTooltip(screenPosition);
+        }
+
+        private void PositionTooltip(Vector2 screenPosition)
+        {
+            if (tooltipRoot == null)
+            {
+                return;
+            }
+
+            Canvas canvas = tooltipRoot.GetComponentInParent<Canvas>();
+            RectTransform canvasRect = canvas != null ? canvas.rootCanvas.transform as RectTransform : null;
+
+            if (canvasRect == null)
+            {
+                return;
+            }
+
+            Camera uiCamera = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    canvasRect, screenPosition, uiCamera, out Vector2 localPoint))
+            {
+                return;
+            }
+
+            Rect bounds = canvasRect.rect;
+            float halfWidth = tooltipWidth * 0.5f;
+            float margin = 10f;
+
+            float x = Mathf.Clamp(localPoint.x, bounds.xMin + halfWidth + margin, bounds.xMax - halfWidth - margin);
+            float height = tooltipRoot.rect.height;
+
+            // 光标靠近屏幕顶部时把提示翻到光标下方，避免被屏幕裁掉
+            bool flipBelow = localPoint.y + tooltipOffsetY + height > bounds.yMax - margin;
+
+            tooltipRoot.pivot = flipBelow ? new Vector2(0.5f, 1f) : new Vector2(0.5f, 0f);
+            float y = flipBelow ? localPoint.y - tooltipOffsetY : localPoint.y + tooltipOffsetY;
+            tooltipRoot.anchoredPosition = new Vector2(x, y);
+        }
+
+        private void HandleEntryHoverMoved(Vector2 screenPosition)
+        {
+            if (tooltipRoot == null || !tooltipRoot.gameObject.activeSelf)
+            {
+                return;
+            }
+
+            PositionTooltip(screenPosition);
+        }
+
+        private void HideTooltip()
+        {
+            if (tooltipRoot != null && tooltipRoot.gameObject.activeSelf)
+            {
+                tooltipRoot.gameObject.SetActive(false);
+            }
+        }
+
+        /// <summary>滚动时条目会从光标下滑过，旧描述立刻作废，先收起等下一次悬停。</summary>
+        private void HandleScrollValueChanged(Vector2 _)
+        {
+            HideTooltip();
         }
 
         // ---------------- 刷新 ----------------

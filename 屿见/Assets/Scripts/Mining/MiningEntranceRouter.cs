@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Yujian.Building;
 using Yujian.Core;
 using Yujian.Levels;
 
@@ -29,8 +30,14 @@ namespace Yujian.Mining
         [SerializeField] private float maxRayDistance = 500f;
 
         [Header("依赖")]
-        [Tooltip("区域控制器。只有处于观察模式时才允许通过入口进矿区")]
+        [Tooltip("区域控制器。观察模式与建筑模式下都允许通过入口进关卡")]
         [SerializeField] private GameAreaController areaController;
+
+        [Tooltip("建筑管理器。建筑区正在放蓝图 / 填料时不抢这一次点击；留空会自动查找")]
+        [SerializeField] private BuildingManager buildingManager;
+
+        [Tooltip("建筑迁移。正在迁移建筑时不抢这一次点击；留空会自动查找")]
+        [SerializeField] private BuildingMigration buildingMigration;
 
         [Header("调试")]
         [Tooltip("是否在 Console 打印进入矿洞的日志")]
@@ -82,9 +89,9 @@ namespace Yujian.Mining
                 return;
             }
 
-            // 只有「站在岛上观察」时，矿山才是可点击的入口。
-            // 在挖矿 / 建筑 / 商店里，这一次点击属于各自的系统。
-            if (areaController.CurrentArea != GameArea.Observation)
+            // 观察模式与建筑模式都能点关卡模型进关；
+            // 挖矿 / 商店里这一次点击属于各自的系统。
+            if (!IsEntranceClickAllowed())
             {
                 return;
             }
@@ -138,6 +145,40 @@ namespace Yujian.Mining
             entrance.Activate();
         }
 
+        /// <summary>
+        /// 当前区域的这一次点击能不能当作「点关卡入口」。
+        /// 建筑区里如果正在放蓝图、填料或迁移建筑，左键属于建造操作，必须让开。
+        /// </summary>
+        private bool IsEntranceClickAllowed()
+        {
+            GameArea area = areaController.CurrentArea;
+
+            if (area == GameArea.Observation)
+            {
+                return true;
+            }
+
+            if (area != GameArea.Building)
+            {
+                return false;
+            }
+
+            ResolveBuildingDependencies();
+
+            if (buildingManager != null &&
+                (buildingManager.IsPlacing || buildingManager.IsFilling))
+            {
+                return false;
+            }
+
+            if (buildingMigration != null && buildingMigration.IsActive)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         /// <summary>编辑器向导调用，一次接好相机和区域控制器。</summary>
         public void ConfigureForSetup(Camera camera, GameAreaController controller)
         {
@@ -155,6 +196,21 @@ namespace Yujian.Mining
             if (viewCamera == null)
             {
                 viewCamera = Camera.main;
+            }
+
+            ResolveBuildingDependencies();
+        }
+
+        private void ResolveBuildingDependencies()
+        {
+            if (buildingManager == null)
+            {
+                buildingManager = FindFirstObjectByType<BuildingManager>(FindObjectsInactive.Include);
+            }
+
+            if (buildingMigration == null)
+            {
+                buildingMigration = FindFirstObjectByType<BuildingMigration>(FindObjectsInactive.Include);
             }
         }
 

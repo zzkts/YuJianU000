@@ -136,13 +136,15 @@ namespace Yujian.EditorTools
             // ---------- 3. 升级界面 ----------
 
             GameObject upgradeContainer = EnsureContainer(canvas.transform, UpgradeContainerName);
-            RectTransform upgradeContent = RebuildContent(upgradeContainer, new Vector2(280f, 96f));
+            // 110 = 升级按钮 56 + 视觉间距 + 等级文字 28；96 会让按钮压住等级文字
+            RectTransform upgradeContent = RebuildContent(upgradeContainer, new Vector2(280f, 110f));
             BuildingUpgradeUI upgradeUI = EnsureComponent<BuildingUpgradeUI>(upgradeContainer);
 
             Button upgradeButton = CreateButton(
                 upgradeContent, templateButton, "Button_升级", "升级 ×0",
                 new Vector2(128f, 56f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(0f, -28f), 24);
+                // 按钮往上抬，给下面的「Lv.x / 50｜下一级 n 金币」留出空隙
+                new Vector2(0f, -6f), 24);
 
             Text upgradeButtonText = upgradeButton != null ? upgradeButton.GetComponentInChildren<Text>(true) : null;
 

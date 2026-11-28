@@ -1,17 +1,19 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.UI;
 using Yujian.Core;
 
 namespace Yujian.Building
 {
     /// <summary>
-    /// 建造模式下的相机平移/缩放。
+    /// 建造模式下的相机旋转/平移/缩放。
     ///
     /// 相机归属：本类只在 <see cref="BuildingCameraDirector.IsInBuildMode"/> 为 true 且
     /// 不处于机位过渡时写相机。过渡期间让位给 BuildingCameraDirector，
     /// 非建筑区则由 AreaCameraDirector 负责。这样三个脚本不会同帧抢同一个 Transform。
     ///
     /// 操作：
+    ///   · 按住鼠标中键拖动 → 绕地面焦点旋转（和观察模式一致：按下后锁定最先移动的那一轴）；
     ///   · 按住鼠标右键拖动 → 平移（左键保留给蓝图拖动 / ×/√，绝不复用）；
     ///   · 滚轮 → 沿相机前向缩放。
     /// 本轮不做触屏。
@@ -34,14 +36,33 @@ namespace Yujian.Building
         [Tooltip("指针位移。复用 InputSystem_Actions 的 Player/Look（<Pointer>/delta）")]
         [SerializeField] private InputActionReference lookAction;
 
+        [Tooltip("按住哪个键旋转。复用 InputSystem_Actions 的 UI/MiddleClick。留空会从 Pan 所在的同一份 InputActionAsset 里自动找")]
+        [SerializeField] private InputActionReference rotateAction;
+
         [Tooltip("按住哪个键平移。复用 InputSystem_Actions 的 UI/RightClick。不要用左键")]
         [SerializeField] private InputActionReference panAction;
 
         [Tooltip("滚轮缩放。复用 InputSystem_Actions 的 UI/ScrollWheel")]
         [SerializeField] private InputActionReference scrollAction;
 
-        [Tooltip("指针在 UI 上时不响应平移/缩放")]
+        [Tooltip("指针在 UI 上时不响应旋转/平移/缩放")]
         [SerializeField] private bool blockWhenPointerOverUI = true;
+
+        [Header("旋转（中键）")]
+        [Tooltip("旋转灵敏度：指针每移动 1 像素转多少度")]
+        [SerializeField] private float rotateSensitivity = 0.25f;
+
+        [Tooltip("勾选后上下拖动方向反转")]
+        [SerializeField] private bool invertRotateY = false;
+
+        [Tooltip("单轴锁定的判定阈值（像素）")]
+        [SerializeField] private float rotateAxisLockThreshold = 3f;
+
+        [Tooltip("俯仰角下限（度）。越小越接近水平视角")]
+        [SerializeField] private float minPitch = 15f;
+
+        [Tooltip("俯仰角上限（度）。不要到 90，否则平移方向会退化")]
+        [SerializeField] private float maxPitch = 85f;
 
         [Header("平移")]
         [Tooltip("平移灵敏度，1 = 指针下的地面大致跟手")]
@@ -70,20 +91,31 @@ namespace Yujian.Building
         [Tooltip("是否在 Console 打印进入/退出相机控制的日志")]
         [SerializeField] private bool logCameraControlFlow = true;
 
+        [Tooltip("进入建造视角后，在左上角显示中键 / 右键 / 滚轮的操作提示")]
+        [SerializeField] private bool showCameraControlHint = true;
+
         /// <summary>UI 射线结果的复用缓冲。</summary>
 
-        // 地面焦点 + 相机相对焦点的偏移。平移只改焦点，缩放只改偏移长度，旋转始终不变。
+        // 地面焦点 + 相机相对焦点的偏移。平移只改焦点，缩放只改偏移长度，旋转改偏移方向。
         private Vector3 focusPoint;
         private Vector3 cameraOffset;
+        private float yaw;
+        private float pitch;
         private Camera viewCamera;
         private bool initialized;
         private bool wasControlling;
 
+        // 中键旋转的单轴锁定：按下后先累计位移，超过阈值再按主轴锁定，松开中键复位。
+        private RotateAxis rotateAxisLock = RotateAxis.None;
+        private Vector2 rotateAxisProbeDelta;
+
         // 一次右键拖动如果从 UI 上开始，整个拖动过程都不平移，避免拖出 UI 后镜头突然跳一下
         private bool panBlockedByUI;
+        private bool rotateBlockedByUI;
 
         private bool warnedAboutMissingEventSystem;
         private bool warnedAboutBadZoomRange;
+        private GameObject cameraHintRoot;
 
         private bool CanControlCamera =>
             cameraDirector != null &&
@@ -94,6 +126,7 @@ namespace Yujian.Building
         {
             ResolveCameraTransform();
             viewCamera = cameraTransform != null ? cameraTransform.GetComponent<Camera>() : null;
+            ResolveRotateAction();
 
             if (cameraDirector == null)
             {
@@ -104,12 +137,12 @@ namespace Yujian.Building
             if (cameraTransform == null)
             {
                 Debug.LogError("[BuildingCameraController] 找不到相机，" +
-                               "建造模式内的平移/缩放不会生效。请手动指定 Camera Transform。", this);
+                               "建造模式内的旋转/平移/缩放不会生效。请手动指定 Camera Transform。", this);
             }
 
-            if (lookAction == null || panAction == null || scrollAction == null)
+            if (lookAction == null || rotateAction == null || panAction == null || scrollAction == null)
             {
-                Debug.LogError("[BuildingCameraController] 输入动作未配置完整（Look / Pan / Scroll），" +
+                Debug.LogError("[BuildingCameraController] 输入动作未配置完整（Look / Rotate / Pan / Scroll），" +
                                "缺失的动作不会响应。请重新运行菜单「屿见/建筑/配置建筑网格与建造相机（阶段 7）」。", this);
             }
 
@@ -125,6 +158,8 @@ namespace Yujian.Building
                                  "已把最大值抬到最小值。", this);
                 maxDistance = minDistance;
             }
+
+            BuildCameraControlHint();
         }
 
         private void OnEnable()
@@ -140,6 +175,17 @@ namespace Yujian.Building
             initialized = false;
             wasControlling = false;
             panBlockedByUI = false;
+            rotateBlockedByUI = false;
+            ResetRotateAxisLock();
+            SetCameraHintVisible(false);
+        }
+
+        private void OnDestroy()
+        {
+            if (cameraHintRoot != null)
+            {
+                Destroy(cameraHintRoot);
+            }
         }
 
         private void LateUpdate()
@@ -155,8 +201,13 @@ namespace Yujian.Building
                 wasControlling = false;
                 initialized = false;
                 panBlockedByUI = false;
+                rotateBlockedByUI = false;
+                ResetRotateAxisLock();
+                SetCameraHintVisible(false);
                 return;
             }
+
+            SetCameraHintVisible(showCameraControlHint);
 
             // 放置期间 MiningInput 可能会把共享动作关掉，这里兜底补回
             EnableActions();
@@ -172,18 +223,137 @@ namespace Yujian.Building
 
                 if (logCameraControlFlow)
                 {
-                    Debug.Log("[BuildingCameraController] 已接管相机：右键拖动平移，滚轮缩放。" +
+                    Debug.Log("[BuildingCameraController] 已接管相机：中键拖动旋转，右键拖动平移，滚轮缩放。" +
                               $"焦点 {focusPoint}，距离 {cameraOffset.magnitude:0.##}。");
                 }
             }
 
+            bool rotating = IsActionPressed(rotateAction);
+            bool panning = IsActionPressed(panAction);
+
+            if (!rotating)
+            {
+                ResetRotateAxisLock();
+            }
+
+            // 两个键同时按住时优先旋转，避免同一帧的指针位移被旋转和平移各消费一次
+            if (rotating)
+            {
+                HandleRotate();
+                panBlockedByUI = false;
+            }
+            else if (panning)
+            {
+                HandlePan();
+                rotateBlockedByUI = false;
+            }
+            else
+            {
+                rotateBlockedByUI = false;
+                panBlockedByUI = false;
+            }
+
             HandleZoom();
-            HandlePan();
+            ApplyPose();
+        }
+
+        /// <summary>
+        /// 建筑模式的操作提示。独立 Canvas 避免受建筑栏显隐影响；
+        /// 所有图形都不接收射线，不会挡住建筑点击。
+        /// </summary>
+        private void BuildCameraControlHint()
+        {
+            if (!showCameraControlHint || cameraHintRoot != null)
+            {
+                return;
+            }
+
+            cameraHintRoot = new GameObject(
+                "BuildingCameraControlHint",
+                typeof(RectTransform),
+                typeof(Canvas),
+                typeof(CanvasScaler));
+
+            Canvas canvas = cameraHintRoot.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 150;
+
+            CanvasScaler scaler = cameraHintRoot.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
+
+            GameObject panel = new GameObject("Panel", typeof(RectTransform), typeof(Image));
+            panel.layer = 5;
+            panel.transform.SetParent(cameraHintRoot.transform, false);
+
+            RectTransform panelRect = (RectTransform)panel.transform;
+            panelRect.anchorMin = new Vector2(0f, 1f);
+            panelRect.anchorMax = new Vector2(0f, 1f);
+            panelRect.pivot = new Vector2(0f, 1f);
+            panelRect.anchoredPosition = new Vector2(24f, -24f);
+            panelRect.sizeDelta = new Vector2(278f, 118f);
+
+            Image background = panel.GetComponent<Image>();
+            background.sprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/UISprite.psd");
+            background.type = Image.Type.Sliced;
+            background.color = new Color(0.04f, 0.05f, 0.07f, 0.84f);
+            background.raycastTarget = false;
+
+            VerticalLayoutGroup layout = panel.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(16, 16, 12, 12);
+            layout.spacing = 4f;
+            layout.childAlignment = TextAnchor.UpperLeft;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+
+            Text title = CreateHintText(panel.transform, "Title", "视角操作", 18,
+                                        new Color(1f, 0.86f, 0.48f, 1f));
+            title.fontStyle = FontStyle.Bold;
+
+            CreateHintText(panel.transform, "Body",
+                "中键拖动    旋转\n右键拖动    平移\n滚轮        缩放",
+                17, new Color(0.92f, 0.94f, 0.97f, 1f));
+
+            cameraHintRoot.SetActive(false);
+        }
+
+        private static Text CreateHintText(Transform parent, string name, string content,
+                                           int fontSize, Color color)
+        {
+            GameObject go = new GameObject(name, typeof(RectTransform));
+            go.layer = 5;
+            go.transform.SetParent(parent, false);
+
+            Text text = go.AddComponent<Text>();
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.text = content;
+            text.fontSize = fontSize;
+            text.color = color;
+            text.alignment = TextAnchor.UpperLeft;
+            text.horizontalOverflow = HorizontalWrapMode.Wrap;
+            text.verticalOverflow = VerticalWrapMode.Overflow;
+            text.supportRichText = false;
+            text.raycastTarget = false;
+            text.lineSpacing = 1.15f;
+            return text;
+        }
+
+        private void SetCameraHintVisible(bool visible)
+        {
+            if (cameraHintRoot == null || cameraHintRoot.activeSelf == visible)
+            {
+                return;
+            }
+
+            cameraHintRoot.SetActive(visible);
         }
 
         /// <summary>
         /// 第一次获得控制时，用相机前向与地面求交得到焦点，并记录相机相对焦点的偏移。
-        /// 之后平移只改焦点、缩放只改偏移长度，旋转保持不变。
+        /// 之后平移只改焦点、缩放只改偏移长度、旋转只改偏移方向。
         /// </summary>
         private bool TryInitializeFocus()
         {
@@ -210,6 +380,25 @@ namespace Yujian.Building
                 Debug.LogError("[BuildingCameraController] 相机几乎落在地面上，无法建立缩放偏移。", this);
                 return false;
             }
+
+            Vector3 forward = cameraTransform.forward;
+
+            if (forward.sqrMagnitude < 0.0001f)
+            {
+                return false;
+            }
+
+            forward.Normalize();
+            yaw = Mathf.Repeat(Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg, 360f);
+            pitch = Mathf.Clamp(-Mathf.Asin(Mathf.Clamp(forward.y, -1f, 1f)) * Mathf.Rad2Deg,
+                                minPitch, maxPitch);
+
+            float distance = Mathf.Clamp(cameraOffset.magnitude, minDistance, maxDistance);
+            cameraOffset = Quaternion.Euler(pitch, yaw, 0f) * Vector3.back * distance;
+
+            rotateBlockedByUI = false;
+            panBlockedByUI = false;
+            ResetRotateAxisLock();
 
             initialized = true;
             return true;
@@ -281,8 +470,9 @@ namespace Yujian.Building
                 return;
             }
 
-            Vector3 right = Vector3.ProjectOnPlane(cameraTransform.right, Vector3.up);
-            Vector3 forward = Vector3.ProjectOnPlane(cameraTransform.forward, Vector3.up);
+            Quaternion rotation = Quaternion.Euler(pitch, yaw, 0f);
+            Vector3 right = Vector3.ProjectOnPlane(rotation * Vector3.right, Vector3.up);
+            Vector3 forward = Vector3.ProjectOnPlane(rotation * Vector3.forward, Vector3.up);
 
             // 相机完全垂直向下时，前向在地面上的投影为零，无法判断平移方向
             if (right.sqrMagnitude < 0.0001f || forward.sqrMagnitude < 0.0001f)
@@ -312,7 +502,6 @@ namespace Yujian.Building
             focusPoint -= (right * delta.x + forward * deltaY) * (worldPerPixel * panSensitivity);
 
             ClampFocusToGrid();
-            cameraTransform.position = focusPoint + cameraOffset;
         }
 
         private void HandleZoom()
@@ -360,7 +549,90 @@ namespace Yujian.Building
                 distance - notches * zoomStepPerNotch, minDistance, maxDistance);
 
             cameraOffset = cameraOffset / distance * targetDistance;
-            cameraTransform.position = focusPoint + cameraOffset;
+        }
+
+        /// <summary>中键拖动绕焦点旋转。按下后按最先移动的主轴锁定，整段拖动只响应那一轴。</summary>
+        private void HandleRotate()
+        {
+            if (rotateAction == null || lookAction == null || cameraTransform == null)
+            {
+                return;
+            }
+
+            InputAction rotate = rotateAction.action;
+            InputAction look = lookAction.action;
+
+            if (rotate == null || look == null)
+            {
+                return;
+            }
+
+            if (rotate.WasPressedThisFrame())
+            {
+                rotateBlockedByUI = blockWhenPointerOverUI && IsPointerOverUI();
+                ResetRotateAxisLock();
+            }
+
+            if (rotateBlockedByUI)
+            {
+                return;
+            }
+
+            Vector2 delta = look.ReadValue<Vector2>();
+
+            if (delta.sqrMagnitude <= 0f)
+            {
+                return;
+            }
+
+            if (rotateAxisLock == RotateAxis.None)
+            {
+                rotateAxisProbeDelta += delta;
+
+                float threshold = Mathf.Max(0f, rotateAxisLockThreshold);
+
+                if (rotateAxisProbeDelta.sqrMagnitude < threshold * threshold)
+                {
+                    return;
+                }
+
+                rotateAxisLock = Mathf.Abs(rotateAxisProbeDelta.x) >= Mathf.Abs(rotateAxisProbeDelta.y)
+                    ? RotateAxis.Horizontal
+                    : RotateAxis.Vertical;
+
+                delta = rotateAxisProbeDelta;
+                rotateAxisProbeDelta = Vector2.zero;
+            }
+
+            if (rotateAxisLock == RotateAxis.Horizontal)
+            {
+                yaw = Mathf.Repeat(yaw + delta.x * rotateSensitivity, 360f);
+            }
+            else
+            {
+                float pitchDelta = (invertRotateY ? delta.y : -delta.y) * rotateSensitivity;
+                pitch = Mathf.Clamp(pitch + pitchDelta, minPitch, maxPitch);
+            }
+
+            cameraOffset = Quaternion.Euler(pitch, yaw, 0f) * Vector3.back * cameraOffset.magnitude;
+        }
+
+        private void ResetRotateAxisLock()
+        {
+            rotateAxisLock = RotateAxis.None;
+            rotateAxisProbeDelta = Vector2.zero;
+        }
+
+        private void ApplyPose()
+        {
+            if (cameraTransform == null)
+            {
+                return;
+            }
+
+            Quaternion rotation = Quaternion.Euler(pitch, yaw, 0f);
+            cameraOffset = rotation * Vector3.back * cameraOffset.magnitude;
+            cameraTransform.SetPositionAndRotation(focusPoint + cameraOffset, rotation);
         }
 
         /// <summary>
@@ -397,6 +669,7 @@ namespace Yujian.Building
         private void EnableActions()
         {
             EnableAction(lookAction);
+            EnableAction(rotateAction);
             EnableAction(panAction);
             EnableAction(scrollAction);
         }
@@ -412,6 +685,44 @@ namespace Yujian.Building
             {
                 reference.action.Enable();
             }
+        }
+
+        private static bool IsActionPressed(InputActionReference reference)
+        {
+            return reference != null && reference.action != null && reference.action.IsPressed();
+        }
+
+        /// <summary>
+        /// 场景里的旧版接线可能还没有 rotateAction。这里从 Pan 所在的同一份 InputActionAsset
+        /// 找 UI/MiddleClick，避免玩家必须手动补线才能旋转。
+        /// </summary>
+        private void ResolveRotateAction()
+        {
+            if (rotateAction != null)
+            {
+                return;
+            }
+
+            InputActionMap map = panAction != null && panAction.action != null
+                ? panAction.action.actionMap
+                : null;
+            InputActionAsset asset = map != null ? map.asset : null;
+
+            if (asset == null)
+            {
+                return;
+            }
+
+            InputAction action = asset.FindAction("UI/MiddleClick", false);
+
+            if (action == null)
+            {
+                Debug.LogWarning("[BuildingCameraController] 找不到 UI/MiddleClick，" +
+                                 "建造模式内无法用中键旋转视角。请手动指定 Rotate Action。", this);
+                return;
+            }
+
+            rotateAction = InputActionReference.Create(action);
         }
 
         /// <summary>
@@ -433,6 +744,14 @@ namespace Yujian.Building
         private void ResolveCameraTransform()
         {
             cameraTransform = CameraResolver.Resolve(cameraTransform, gameObject);
+        }
+
+        /// <summary>中键旋转当前锁定的轴。</summary>
+        private enum RotateAxis
+        {
+            None,
+            Horizontal,
+            Vertical,
         }
 
     }

@@ -20,7 +20,8 @@ namespace Yujian.UI
     /// 「清洁」按钮会记住玩家上一次进入的关卡：
     ///   · 在关卡内：再点一次退出到观察模式（原行为）；
     ///   · 在岛上 / 建筑系统：回到上一次进入的关卡（走正常的关卡入口流程）；
-    ///   · 从未进过关卡：只在屏幕中央提示「未进入关卡」，不切区域。
+    ///   · 从未进过关卡：自动进入关卡列表里编号最低的一关；
+    ///   · 等级不够：由 LevelManager 提示「当前等级不足，请建更多建筑」。
     ///
     /// 按钮的 OnClick 由编辑器向导「屿见/整合/配置 MVP 整合（阶段 6）」接成持久监听
     /// （决策 15 的老做法：接线在场景里看得见、改得动）。
@@ -84,7 +85,8 @@ namespace Yujian.UI
         /// <summary>
         /// 「清洁」按钮。
         /// 已经在关卡内：沿用原行为（再点一次退出到观察模式）；
-        /// 不在关卡内：回到玩家上一次进入的关卡；从未进过关卡才提示「未进入关卡」。
+        /// 不在关卡内：上一次进的关还没通关就继续那一关；
+        /// 已通关 / 从未进过关卡：自动进入编号最低的未通关关卡（等级不够时由 LevelManager 提示）。
         /// </summary>
         public void ShowMiningArea()
         {
@@ -96,24 +98,40 @@ namespace Yujian.UI
 
             LevelManager manager = ResolveLevelManager();
 
-            if (manager != null && manager.LastEnteredLevel != null)
+            if (manager == null)
             {
-                if (logNavFlow)
-                {
-                    Debug.Log($"[BottomNavUI] 回到上一次进入的关卡「{manager.LastEnteredLevel.name}」");
-                }
-
-                // 走正常的关卡入口流程：解锁检查 + 黑场转场 + 区域切换。
-                manager.TryEnter(manager.LastEnteredLevel);
+                ToastUI.Show("关卡系统未就绪");
                 return;
             }
 
-            ToastUI.Show("未进入关卡");
+            LevelEntrance last = manager.LastEnteredLevel;
 
-            if (logNavFlow)
+            if (last != null && !manager.IsLevelCleared(last))
             {
-                Debug.Log("[BottomNavUI] 尚未进入关卡，点击「清洁」已忽略，提示「未进入关卡」。");
+                if (logNavFlow)
+                {
+                    Debug.Log($"[BottomNavUI] 继续上一次进入的关卡「{last.name}」");
+                }
+
+                // 走正常的关卡入口流程：解锁检查 + 黑场转场 + 区域切换。
+                manager.TryEnter(last);
+                return;
             }
+
+            LevelEntrance nextLevel = manager.FindNextLevelEntrance();
+
+            if (nextLevel != null)
+            {
+                if (logNavFlow)
+                {
+                    Debug.Log($"[BottomNavUI] 自动进入下一关「{nextLevel.name}」");
+                }
+
+                manager.TryEnter(nextLevel);
+                return;
+            }
+
+            ToastUI.Show("暂无可进入的关卡");
         }
 
         private LevelManager ResolveLevelManager()

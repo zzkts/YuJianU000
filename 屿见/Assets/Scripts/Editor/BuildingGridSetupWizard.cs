@@ -193,6 +193,7 @@ namespace Yujian.EditorTools
             // ---------- 5. 建造相机控制 ----------
 
             InputActionReference lookAction = FindActionReference("Player", "Look");
+            InputActionReference rotateAction = FindActionReference("UI", "MiddleClick");
             InputActionReference panAction = FindActionReference("UI", "RightClick");
             InputActionReference scrollAction = FindActionReference("UI", "ScrollWheel");
 
@@ -201,6 +202,7 @@ namespace Yujian.EditorTools
             SetObject(controllerSo, "grid", grid);
             SetObject(controllerSo, "cameraTransform", mainCamera.transform);
             SetObjectIfEmpty(controllerSo, "lookAction", lookAction);
+            SetObjectIfEmpty(controllerSo, "rotateAction", rotateAction);
             SetObjectIfEmpty(controllerSo, "panAction", panAction);
             SetObjectIfEmpty(controllerSo, "scrollAction", scrollAction);
             controllerSo.ApplyModifiedPropertiesWithoutUndo();

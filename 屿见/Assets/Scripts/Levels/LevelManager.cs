@@ -329,12 +329,13 @@ namespace Yujian.Levels
 
             if (!entrance.IsUnlocked(playerLevelValue))
             {
-                ToastUI.Show("当前等级不足");
+                ToastUI.Show("当前等级不足，请建更多建筑");
 
                 if (logLevelFlow)
                 {
                     Debug.Log($"[LevelManager] 点击关卡 {entrance.LevelNumber}（{entrance.name}）：" +
-                              $"需要 {entrance.UnlockLevel} 级，当前 {playerLevelValue} 级，已提示「当前等级不足」。");
+                              $"需要 {entrance.UnlockLevel} 级，当前 {playerLevelValue} 级，" +
+                              "已提示「当前等级不足，请建更多建筑」。");
                 }
 
                 return;
@@ -354,6 +355,76 @@ namespace Yujian.Levels
 
             ActiveLevel = entrance;
             StartCoroutine(EnterRoutine(entrance));
+        }
+
+        /// <summary>
+        /// 按关卡编号取最低的一关（可能尚未解锁）。
+        /// 底部「清洁」在玩家从未进过关卡时用它自动进入第一关；
+        /// 如果这一关等级不够，<see cref="TryEnter"/> 会给出「请建更多建筑」的提示。
+        /// </summary>
+        public LevelEntrance FindFirstLevelEntrance()
+        {
+            if (entrances == null)
+            {
+                return null;
+            }
+
+            LevelEntrance first = null;
+
+            for (int i = 0; i < entrances.Length; i++)
+            {
+                LevelEntrance entrance = entrances[i];
+
+                if (entrance == null)
+                {
+                    continue;
+                }
+
+                if (first == null || entrance.LevelNumber < first.LevelNumber)
+                {
+                    first = entrance;
+                }
+            }
+
+            return first;
+        }
+
+        /// <summary>
+        /// 取「下一关」：优先编号最低、还没通关的那一关；全部通关时回到编号最低的一关重玩。
+        /// 「清洁」按钮在岛上用它继续推进，已通关的关卡不会被反复进入。
+        /// </summary>
+        public LevelEntrance FindNextLevelEntrance()
+        {
+            if (entrances == null)
+            {
+                return null;
+            }
+
+            LevelEntrance lowest = null;
+            LevelEntrance lowestUncleared = null;
+
+            for (int i = 0; i < entrances.Length; i++)
+            {
+                LevelEntrance entrance = entrances[i];
+
+                if (entrance == null)
+                {
+                    continue;
+                }
+
+                if (lowest == null || entrance.LevelNumber < lowest.LevelNumber)
+                {
+                    lowest = entrance;
+                }
+
+                if (!IsLevelCleared(entrance) &&
+                    (lowestUncleared == null || entrance.LevelNumber < lowestUncleared.LevelNumber))
+                {
+                    lowestUncleared = entrance;
+                }
+            }
+
+            return lowestUncleared != null ? lowestUncleared : lowest;
         }
 
         /// <summary>退出关卡，返回岛屿观察模式。右上角按钮与「返回主岛」都会走这里。</summary>
