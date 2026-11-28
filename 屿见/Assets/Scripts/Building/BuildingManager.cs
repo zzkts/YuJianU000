@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Yujian.Core;
 using Yujian.Core.Events;
 using Yujian.Mining;
 using Yujian.Shop;
@@ -894,6 +895,14 @@ namespace Yujian.Building
         /// </summary>
         private void ApplyLayerMaterials(GameObject instance, IReadOnlyList<MaterialData> layerMaterials)
         {
+            // 2026-11-24 原料退出核心循环后，楼层刷色失去意义：
+            // 既没有「这块料是什么颜色」可刷，也没必要为没有 BuildingLayerStack 的预制体报错。
+            // 建筑按预制体原样显示（真实模型 / 美术摆好的占位层）。
+            if (GameFeatureFlags.MaterialFreeLoop)
+            {
+                return;
+            }
+
             BuildingLayerStack stack = instance.GetComponent<BuildingLayerStack>();
 
             if (stack == null)

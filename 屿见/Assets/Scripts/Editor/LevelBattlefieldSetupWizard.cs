@@ -32,7 +32,7 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class LevelBattlefieldSetupWizard
     {
-        private const string SampleScenePath = "Assets/Scenes/SampleScene.unity";
+        private static string SampleScenePath => EditorScenePaths.MainScenePath;
 
         private const string LevelRootName = "关卡";
         private const string BattlefieldRootName = "关卡战场";

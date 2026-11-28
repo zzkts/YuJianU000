@@ -463,7 +463,7 @@ MonoBehaviour:
         m_Mode: 3
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName:
+          m_ObjectArgumentAssemblyTypeName: 
           m_IntArgument: 2
           m_FloatArgument: 0
           m_StringArgument: 
@@ -775,7 +775,7 @@ MonoBehaviour:
         m_Mode: 3
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName:
+          m_ObjectArgumentAssemblyTypeName: 
           m_IntArgument: 3
           m_FloatArgument: 0
           m_StringArgument: 
@@ -1234,6 +1234,8 @@ MonoBehaviour:
   levelManager: {fileID: 0}
   miningButton: {fileID: 362249775}
   buildingButton: {fileID: 1504536193}
+  placeButtonsOnSides: 1
+  sidePadding: {x: 24, y: 0}
   normalColor: {r: 1, g: 1, b: 1, a: 1}
   activeColor: {r: 1, g: 0.84, b: 0.42, a: 1}
   logNavFlow: 1
@@ -3552,11 +3554,11 @@ RectTransform:
   - {fileID: 395888606}
   m_Father: {fileID: 104431771}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -170, y: 0}
+  m_AnchorMin: {x: 0, y: 0.5}
+  m_AnchorMax: {x: 0, y: 0.5}
+  m_AnchoredPosition: {x: 24, y: 0}
   m_SizeDelta: {x: 300, y: 90}
-  m_Pivot: {x: 0.5, y: 0.5}
+  m_Pivot: {x: 0, y: 0.5}
 --- !u!1 &363450257
 GameObject:
   m_ObjectHideFlags: 0
@@ -3729,7 +3731,7 @@ MonoBehaviour:
         m_Mode: 3
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName:
+          m_ObjectArgumentAssemblyTypeName: 
           m_IntArgument: 6
           m_FloatArgument: 0
           m_StringArgument: 
@@ -6035,7 +6037,7 @@ MonoBehaviour:
         m_Mode: 3
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName:
+          m_ObjectArgumentAssemblyTypeName: 
           m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 
@@ -6239,6 +6241,7 @@ GameObject:
   - component: {fileID: 573473449}
   - component: {fileID: 573473450}
   - component: {fileID: 573473451}
+  - component: {fileID: 573473452}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -6452,6 +6455,24 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Player.PlayerGarbage
   startingGarbage: 0
+  bag: {fileID: 573473452}
+--- !u!114 &573473452
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 573473441}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6e3c8a25d1b74f9ab2d04e7c98f6a135, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Player.GarbageBag
+  table: {fileID: 11400000, guid: 8a6a144d745e8ce47bbd96f7ab844b5c, type: 2}
+  currency: {fileID: 573473444}
+  areas: {fileID: 1851669748}
+  startingLevel: 1
+  logBagFlow: 1
 --- !u!1 &588071604
 GameObject:
   m_ObjectHideFlags: 0
@@ -11438,7 +11459,7 @@ MonoBehaviour:
         m_Mode: 3
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName:
+          m_ObjectArgumentAssemblyTypeName: 
           m_IntArgument: 4
           m_FloatArgument: 0
           m_StringArgument: 
@@ -13962,6 +13983,114 @@ CanvasRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1235345202}
+  m_CullTransparentMesh: 1
+--- !u!1 &1238356150
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1238356151}
+  - component: {fileID: 1238356154}
+  - component: {fileID: 1238356153}
+  - component: {fileID: 1238356152}
+  m_Layer: 5
+  m_Name: BagPanel
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &1238356151
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1238356150}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2116815629}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0}
+  m_AnchorMax: {x: 0.5, y: 0}
+  m_AnchoredPosition: {x: 0, y: -80}
+  m_SizeDelta: {x: 340, y: 150}
+  m_Pivot: {x: 0.5, y: 0}
+--- !u!114 &1238356152
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1238356150}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7a4d9b36e2c85f01a3b15d8c09e7b246, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.UI.GarbageBagUI
+  bag: {fileID: 573473452}
+  storage: {fileID: 573473451}
+  resourceHud: {fileID: 272618542}
+  areas: {fileID: 1851669748}
+  bottomOffset: 16
+  buildingAreaLift: 200
+  collapsedDrop: 92
+  expandSpeed: 10
+  autoCollapseDelay: 3
+  longPressSeconds: 0.35
+  iconPerSecond: 8
+  iconFlightDuration: 0.42
+  maxFlyingIcons: 8
+  panelColor: {r: 0.07, g: 0.09, b: 0.12, a: 0.86}
+  textColor: {r: 0.95, g: 0.95, b: 0.95, a: 1}
+  accentColor: {r: 1, g: 0.84, b: 0.42, a: 1}
+  fullColor: {r: 0.9, g: 0.34, b: 0.3, a: 1}
+  barBackColor: {r: 0, g: 0, b: 0, a: 0.55}
+  barFillColor: {r: 0.42, g: 0.78, b: 0.52, a: 1}
+  logBagUiFlow: 1
+--- !u!114 &1238356153
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1238356150}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
+  m_Material: {fileID: 0}
+  m_Color: {r: 0.07, g: 0.09, b: 0.12, a: 0.86}
+  m_RaycastTarget: 1
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Sprite: {fileID: 0}
+  m_Type: 0
+  m_PreserveAspect: 0
+  m_FillCenter: 1
+  m_FillMethod: 4
+  m_FillAmount: 1
+  m_FillClockwise: 1
+  m_FillOrigin: 0
+  m_UseSpriteMesh: 0
+  m_PixelsPerUnitMultiplier: 1
+--- !u!222 &1238356154
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1238356150}
   m_CullTransparentMesh: 1
 --- !u!1 &1249779394
 GameObject:
@@ -17098,11 +17227,11 @@ RectTransform:
   - {fileID: 1839118758}
   m_Father: {fileID: 104431771}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 170, y: 0}
+  m_AnchorMin: {x: 1, y: 0.5}
+  m_AnchorMax: {x: 1, y: 0.5}
+  m_AnchoredPosition: {x: -24, y: 0}
   m_SizeDelta: {x: 300, y: 90}
-  m_Pivot: {x: 0.5, y: 0.5}
+  m_Pivot: {x: 1, y: 0.5}
 --- !u!1 &1515422539
 GameObject:
   m_ObjectHideFlags: 0
@@ -17934,7 +18063,7 @@ MonoBehaviour:
         m_Mode: 3
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName:
+          m_ObjectArgumentAssemblyTypeName: 
           m_IntArgument: 5
           m_FloatArgument: 0
           m_StringArgument: 
@@ -18387,6 +18516,11 @@ MonoBehaviour:
   undoButton: {fileID: 1046428068}
   statusText: {fileID: 1439236310}
   demolitionUI: {fileID: 0}
+  rotationRoot: {fileID: 0}
+  rotateLeftButton: {fileID: 0}
+  rotateRightButton: {fileID: 0}
+  rotationScreenOffset: {x: 0, y: -84}
+  rotationWorldHeightOffset: 0.1
   validColor: {r: 0.35, g: 0.9, b: 0.45, a: 1}
   invalidColor: {r: 0.95, g: 0.4, b: 0.35, a: 1}
   screenOffset: {x: 0, y: 90}
@@ -21555,6 +21689,7 @@ GameObject:
   - component: {fileID: 2037839266}
   - component: {fileID: 2037839265}
   - component: {fileID: 2037839267}
+  - component: {fileID: 2037839268}
   m_Layer: 0
   m_Name: SaveSystem
   m_TagString: Untagged
@@ -21614,6 +21749,7 @@ MonoBehaviour:
   - {fileID: 2037839264}
   - {fileID: 2037839263}
   - {fileID: 2037839267}
+  - {fileID: 2037839268}
   loadOnStart: 1
   saveOnQuit: 1
   saveOnFocusLost: 1
@@ -21744,6 +21880,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Yujian.Save.PlayerLevelSaveParticipant
   playerLevel: {fileID: 573473447}
+--- !u!114 &2037839268
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2037839255}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8b5e0c47f3d9612b4c26e9a17f8d0357, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.Save.GarbageBagSaveParticipant
+  bag: {fileID: 573473452}
 --- !u!1 &2054097398
 GameObject:
   m_ObjectHideFlags: 0
@@ -22272,6 +22421,76 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2098154911}
   m_CullTransparentMesh: 1
+--- !u!1 &2103433199
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2103433200}
+  - component: {fileID: 2103433201}
+  m_Layer: 5
+  m_Name: BuildingBar
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &2103433200
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2103433199}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2116815629}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 100, y: 100}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &2103433201
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2103433199}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f614787f8091389488a1d6fdb61e9e44, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Yujian.UI.BuildingBarUI
+  buildingUI: {fileID: 8800000000000000010}
+  buildingManager: {fileID: 8800000000000000003}
+  inventory: {fileID: 573473446}
+  playerLevel: {fileID: 573473447}
+  milestones: {fileID: 8800000000000000015}
+  areas: {fileID: 1851669748}
+  barSize: {x: 1100, y: 186}
+  bottomOffset: 146
+  itemSize: {x: 168, y: 132}
+  itemSpacing: 12
+  innerPadding: 14
+  scrollbarHeight: 12
+  nameFontSize: 22
+  statusFontSize: 15
+  groupFontSize: 16
+  emptyFontSize: 20
+  panelColor: {r: 0, g: 0, b: 0, a: 0.72}
+  scrollbarTrackColor: {r: 1, g: 1, b: 1, a: 0.12}
+  scrollbarHandleColor: {r: 1, g: 1, b: 1, a: 0.45}
+  dividerColor: {r: 1, g: 1, b: 1, a: 0.22}
+  mutedTextColor: {r: 0.62, g: 0.62, b: 0.62, a: 1}
+  logFlow: 1
 --- !u!1 &2116815625
 GameObject:
   m_ObjectHideFlags: 0
@@ -22381,6 +22600,7 @@ RectTransform:
   - {fileID: 423235293}
   - {fileID: 1604754719}
   - {fileID: 2103433200}
+  - {fileID: 1238356151}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -22786,6 +23006,9 @@ MonoBehaviour:
   - {fileID: 11400000, guid: fd3074d5927b429c98e75f48101130dd, type: 2}
   - {fileID: 11400000, guid: a51fee7edbbaaeb448d54f6ae5da737b, type: 2}
   milestoneProgress: {fileID: 8800000000000000015}
+  inventory: {fileID: 0}
+  goldShop: {fileID: 0}
+  playerLevel: {fileID: 0}
 --- !u!114 &8800000000000000011
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -23023,73 +23246,3 @@ SceneRoots:
   - {fileID: 2001127913}
   - {fileID: 272618543}
   - {fileID: 755882554}
---- !u!1 &2103433199
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 2103433200}
-  - component: {fileID: 2103433201}
-  m_Layer: 5
-  m_Name: BuildingBar
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!224 &2103433200
-RectTransform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2103433199}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 2116815629}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 100, y: 100}
-  m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &2103433201
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2103433199}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f614787f8091389488a1d6fdb61e9e44, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Yujian.UI.BuildingBarUI
-  buildingUI: {fileID: 8800000000000000010}
-  buildingManager: {fileID: 8800000000000000003}
-  inventory: {fileID: 573473446}
-  playerLevel: {fileID: 573473447}
-  milestones: {fileID: 8800000000000000015}
-  areas: {fileID: 1851669748}
-  barSize: {x: 1100, y: 186}
-  bottomOffset: 146
-  itemSize: {x: 168, y: 132}
-  itemSpacing: 12
-  innerPadding: 14
-  scrollbarHeight: 12
-  nameFontSize: 22
-  statusFontSize: 15
-  groupFontSize: 16
-  emptyFontSize: 20
-  panelColor: {r: 0, g: 0, b: 0, a: 0.72}
-  scrollbarTrackColor: {r: 1, g: 1, b: 1, a: 0.12}
-  scrollbarHandleColor: {r: 1, g: 1, b: 1, a: 0.45}
-  dividerColor: {r: 1, g: 1, b: 1, a: 0.22}
-  mutedTextColor: {r: 0.62, g: 0.62, b: 0.62, a: 1}
-  logFlow: 1

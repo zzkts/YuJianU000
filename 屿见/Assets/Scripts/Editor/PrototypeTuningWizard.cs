@@ -23,7 +23,7 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class PrototypeTuningWizard
     {
-        private const string SampleScenePath = "Assets/Scenes/SampleScene.unity";
+        private static string SampleScenePath => EditorScenePaths.MainScenePath;
         private const string FirstEntranceName = "清洁区入口";
         private const string SecondEntranceName = "清洁区入口 (1)";
 

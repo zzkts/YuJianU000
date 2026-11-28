@@ -290,14 +290,14 @@ namespace Yujian.Mining
             string oreName = owner.name;
             int reward = owner.Reward;
             bool suppressReward = owner.SuppressDeathReward;
-            float damage = damageSystem.CalculateCritPointDamage();
+            float damage = damageSystem.CalculateCritPointDamage(out bool isSuperCritical);
 
             if (damage <= 0f)
             {
                 return;
             }
 
-            bool destroyed = owner.TakeDamage(damage, DamageSource.Player, true);
+            bool destroyed = owner.TakeDamage(damage, DamageSource.Player, true, isSuperCritical);
             critPointSystem?.NotifyCritPointHit(point);
 
             if (!destroyed)

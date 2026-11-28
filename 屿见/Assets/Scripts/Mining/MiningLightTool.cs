@@ -64,9 +64,41 @@ namespace Yujian.Mining
         [Tooltip("基础存在时间。后续建筑可以在此基础上追加秒数")]
         [SerializeField] private float[] lifetimeByLevel = { 2.5f, 3f, 3.5f, 4f, 4.5f, 5f, 5.5f };
 
-        [Header("购买价格")]
-        [Tooltip("从当前等级买到下一级需要的金币。长度 = 等级数 - 1")]
-        [SerializeField] private int[] upgradeCosts = { 286, 1508, 7800, 40950, 217750, 1143000 };
+        [Header("购买价格（2026-11-26 起走公式，等级无上限）")]
+        [Tooltip("1 级升 2 级的基础花费")]
+        [SerializeField, Min(0)] private int upgradeCostBase = 4;
+
+        [Tooltip("每级花费倍数")]
+        [SerializeField, Min(1f)] private float upgradeCostGrowth = 1.2f;
+
+        [Tooltip("升到 10/20/30… 级时再乘的花费倍数")]
+        [SerializeField, Min(1f)] private float milestoneCostMultiplier = 4f;
+
+        [Header("等级上限")]
+        [Tooltip("最高等级。Demo 阶段填 999 等于无限；到顶后不再提供升级")]
+        [SerializeField, Min(1)] private int maxLevel = 999;
+
+        [Header("超级暴击（2026-11-26 新增）")]
+        [Tooltip("1 级的超级暴击概率。命中暴击点后再按这个概率判定")]
+        [SerializeField, Range(0f, 1f)] private float superCritBaseChance = 0.08f;
+
+        [Tooltip("每个里程碑（每 10 级）增加的概率")]
+        [SerializeField, Range(0f, 1f)] private float superCritChancePerMilestone = 0.07f;
+
+        [Tooltip("概率上限。36% 时约每 3 秒出一次，和「数字在跳」的节奏对齐")]
+        [SerializeField, Range(0f, 1f)] private float superCritChanceCap = 0.36f;
+
+        [Tooltip("1 级的超级暴击倍率（相对普通暴击）")]
+        [SerializeField, Min(1f)] private float superCritBaseMultiplier = 5f;
+
+        [Tooltip("每一级增加的超级暴击倍率")]
+        [SerializeField, Min(0f)] private float superCritMultiplierPerLevel = 0.15f;
+
+        [Tooltip("每个里程碑额外增加的超级暴击倍率")]
+        [SerializeField, Min(0f)] private float superCritMultiplierPerMilestone = 1f;
+
+        [Tooltip("普通暴击倍率。2026-11-26 起固定，不再随等级成长")]
+        [SerializeField, Min(1f)] private float normalCritMultiplier = 2f;
 
         [Header("调试")]
         [SerializeField] private bool logUpgradeFlow = true;
@@ -76,8 +108,17 @@ namespace Yujian.Mining
         /// <summary>当前等级。0 = 未拥有。</summary>
         public int Level => Mathf.Clamp(currentLevel, 0, MaxLevel);
 
-        /// <summary>最高等级（由名称数组长度决定）。</summary>
-        public int MaxLevel => Mathf.Max(0, levelNames != null ? levelNames.Length - 1 : 0);
+        /// <summary>最高等级。2026-11-26 起由 maxLevel 决定，不再跟名称数组走。</summary>
+        public int MaxLevel => Mathf.Max(1, maxLevel);
+
+        /// <summary>里程碑间隔：每多少级一次大跳。</summary>
+        public int MilestoneEvery => 10;
+
+        /// <summary>下一次里程碑等级（10/20/30…）。</summary>
+        public int NextMilestoneLevel => ((Level / MilestoneEvery) + 1) * MilestoneEvery;
+
+        /// <summary>下一级是不是里程碑。</summary>
+        public bool IsNextLevelMilestone => (Level + 1) % MilestoneEvery == 0;
 
         /// <summary>是否已经买满。</summary>
         public bool IsMaxed => Level >= MaxLevel;
@@ -109,15 +150,52 @@ namespace Yujian.Mining
         /// <summary>下一级的暴击点半径；已满级时返回当前值。</summary>
         public float NextCritPointRadius => IsMaxed ? CritPointRadius : LookupFloat(critPointRadiusByLevel, Level + 1, CritPointRadius);
 
-        /// <summary>当前等级的暴击伤害倍率（2 = 200%）。未拥有时为 1。</summary>
-        public float CritPointDamageMultiplier => Level <= 0
-            ? 1f
-            : Mathf.Max(1f, LookupFloat(criticalDamageMultiplierByLevel, Level, 2f));
+        /// <summary>当前等级的暴击伤害倍率（2 = 200%）。未拥有时为 1。2026-11-26 起固定值。</summary>
+        public float CritPointDamageMultiplier => Level <= 0 ? 1f : Mathf.Max(1f, normalCritMultiplier);
 
-        /// <summary>下一级的暴击伤害倍率；已满级时返回当前值。</summary>
-        public float NextCritPointDamageMultiplier => IsMaxed
-            ? CritPointDamageMultiplier
-            : Mathf.Max(1f, LookupFloat(criticalDamageMultiplierByLevel, Level + 1, CritPointDamageMultiplier));
+        /// <summary>下一级的暴击伤害倍率；现已固定，两个值相同。</summary>
+        public float NextCritPointDamageMultiplier => CritPointDamageMultiplier;
+
+        /// <summary>超级暴击概率。0 级为 0（还触发不了，UI 也不该显示）。</summary>
+        public float SuperCritChance
+        {
+            get
+            {
+                if (Level <= 0)
+                {
+                    return 0f;
+                }
+
+                float chance = superCritBaseChance +
+                               superCritChancePerMilestone * (Level / MilestoneEvery);
+                return Mathf.Clamp(chance, 0f, Mathf.Clamp01(superCritChanceCap));
+            }
+        }
+
+        /// <summary>超级暴击倍率（相对普通暴击）。无上限，随等级一直长。</summary>
+        public float SuperCritMultiplier
+        {
+            get
+            {
+                if (Level <= 0)
+                {
+                    return 1f;
+                }
+
+                int milestones = Level / MilestoneEvery;
+                return Mathf.Max(1f,
+                    superCritBaseMultiplier +
+                    superCritMultiplierPerLevel * (Level - 1) +
+                    superCritMultiplierPerMilestone * milestones);
+            }
+        }
+
+        /// <summary>掷一次超级暴击判定。未拥有时永远为 false。</summary>
+        public bool RollSuperCrit()
+        {
+            float chance = SuperCritChance;
+            return chance > 0f && UnityEngine.Random.value < chance;
+        }
 
         /// <summary>暴击点是否永久保留（不显示剩余时间进度条）。</summary>
         public bool CritPointsPersist => critPointsPersist;
@@ -134,24 +212,39 @@ namespace Yujian.Mining
             : LookupFloat(lifetimeByLevel, Level + 1, CritPointLifetime);
 
         /// <summary>当前等级名称。</summary>
-        public string LevelName => LookupName(Level);
+        public string LevelName => Level <= 0 ? "未拥有" : $"照明 Lv.{Level}";
 
         /// <summary>下一级名称；已满级时返回当前名称。</summary>
-        public string NextLevelName => IsMaxed ? LevelName : LookupName(Level + 1);
+        public string NextLevelName => IsMaxed ? LevelName : $"照明 Lv.{Level + 1}";
 
         /// <summary>升到下一级需要的金币；已满级返回 0。</summary>
         public int NextUpgradeCost => GetUpgradeCostAt(Level);
 
-        /// <summary>指定等级升到下一级需要的金币；越界返回 0。</summary>
+        /// <summary>
+        /// 指定等级升到下一级需要的金币（2026-11-26 起走公式，等级无上限）：
+        /// 基础花费 × 成长倍数^(等级-1)，升到 10/20/30… 级那一档再乘里程碑倍数。
+        /// </summary>
         public int GetUpgradeCostAt(int level)
         {
-            if (MaxLevel <= 0 || level < 0 || level >= MaxLevel ||
-                upgradeCosts == null || level >= upgradeCosts.Length)
+            if (level < 0 || level >= MaxLevel)
             {
                 return 0;
             }
 
-            return Mathf.Max(0, upgradeCosts[level]);
+            float cost = Mathf.Max(0, upgradeCostBase) *
+                         Mathf.Pow(Mathf.Max(1f, upgradeCostGrowth), level);
+
+            if ((level + 1) % MilestoneEvery == 0)
+            {
+                cost *= Mathf.Max(1f, milestoneCostMultiplier);
+            }
+
+            if (cost >= int.MaxValue)
+            {
+                return int.MaxValue;
+            }
+
+            return Mathf.Max(0, Mathf.RoundToInt(cost));
         }
 
         /// <summary>指定等级的刷新冷却，供界面逐行查看。</summary>

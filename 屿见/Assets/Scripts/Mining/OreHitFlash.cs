@@ -12,11 +12,26 @@ namespace Yujian.Mining
         [SerializeField] private Color flashColor = Color.white;
         [SerializeField] private float flashDuration = 0.08f;
 
+        [Header("超级暴击（2026-11-26）")]
+        [Tooltip("超级暴击时的闪光颜色。金色，和普通受击的白色拉开距离")]
+        [SerializeField] private Color superFlashColor = new Color(1f, 0.9f, 0.4f, 1f);
+
+        [Tooltip("超级暴击的闪光时长倍数。2.5 = 亮得更久，眼睛能记住")]
+        [SerializeField, Min(1f)] private float superFlashDurationScale = 2.5f;
+
         private Renderer[] renderers;
         private Color[] baseColors;
         private Coroutine routine;
 
         public void Play()
+        {
+            Play(false);
+        }
+
+        /// <summary>
+        /// 播放受击闪光。strong = true 用于超级暴击：换金色、时长拉长。
+        /// </summary>
+        public void Play(bool strong)
         {
             if (!isActiveAndEnabled) return;
 
@@ -29,7 +44,12 @@ namespace Yujian.Mining
                 RestoreBaseColors();
             }
 
-            routine = StartCoroutine(FlashRoutine());
+            Color color = strong ? superFlashColor : flashColor;
+            float duration = strong
+                ? flashDuration * Mathf.Max(1f, superFlashDurationScale)
+                : flashDuration;
+
+            routine = StartCoroutine(FlashRoutine(color, duration));
         }
 
         /// <summary>矿石换种类后重新记录底色，避免闪光结束把颜色还原成旧种类。</summary>
@@ -64,18 +84,18 @@ namespace Yujian.Mining
             }
         }
 
-        private IEnumerator FlashRoutine()
+        private IEnumerator FlashRoutine(Color color, float duration)
         {
             float t = 0f;
-            while (t < flashDuration)
+            while (t < duration)
             {
                 t += Time.deltaTime;
-                float k = 1f - Mathf.Clamp01(t / flashDuration);
+                float k = 1f - Mathf.Clamp01(t / duration);
 
                 for (int i = 0; i < renderers.Length; i++)
                 {
                     if (renderers[i] == null) continue;
-                    SetColor(renderers[i], Color.Lerp(baseColors[i], flashColor, k));
+                    SetColor(renderers[i], Color.Lerp(baseColors[i], color, k));
                 }
 
                 yield return null;

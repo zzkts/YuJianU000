@@ -40,6 +40,13 @@ namespace Yujian.UI
         [SerializeField] private Button miningButton;
         [SerializeField] private Button buildingButton;
 
+        [Header("两侧布局")]
+        [Tooltip("勾选后把「清洁」「建筑」分别贴到屏幕左下 / 右下，底部中间让给垃圾背包（2026-11-25 用户拍板）")]
+        [SerializeField] private bool placeButtonsOnSides = true;
+
+        [Tooltip("贴边留白（像素）")]
+        [SerializeField] private Vector2 sidePadding = new Vector2(24f, 0f);
+
         [Header("高亮配色")]
         [Tooltip("不在当前区域时的按钮底色")]
         [SerializeField] private Color normalColor = new Color(1f, 1f, 1f, 1f);
@@ -68,7 +75,61 @@ namespace Yujian.UI
             WarnIfMissingButton(miningButton, "挖矿");
             WarnIfMissingButton(buildingButton, "建筑");
 
+            ApplySideLayout();
             RefreshHighlight(areas != null ? areas.CurrentArea : GameArea.Mining);
+        }
+
+        /// <summary>
+        /// 把两个按钮贴到屏幕两侧。运行时改锚点，不动场景序列化值：
+        /// 想回到居中布局，取消 Inspector 上的「Place Buttons On Sides」即可。
+        /// 编辑器向导在配置背包时会调一次同名 public 方法，保证保存进场景的也是两侧布局。
+        /// </summary>
+        public void ApplySideLayout()
+        {
+            if (!placeButtonsOnSides)
+            {
+                return;
+            }
+
+            PlaceButtonAtSide(miningButton, true);
+            PlaceButtonAtSide(buildingButton, false);
+        }
+
+        private void PlaceButtonAtSide(Button button, bool left)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            RectTransform rect = button.transform as RectTransform;
+
+            if (rect == null)
+            {
+                return;
+            }
+
+            // 父物体若挂了 LayoutGroup，锚点会被它每帧覆盖，先关掉（本项目导航栏目前没有）
+            if (rect.parent != null)
+            {
+                LayoutGroup group = rect.parent.GetComponent<LayoutGroup>();
+
+                if (group != null && group.enabled)
+                {
+                    group.enabled = false;
+                }
+            }
+
+            Vector2 anchor = new Vector2(left ? 0f : 1f, 0.5f);
+            rect.anchorMin = anchor;
+            rect.anchorMax = anchor;
+            rect.pivot = anchor;
+            rect.anchoredPosition = new Vector2(left ? sidePadding.x : -sidePadding.x, sidePadding.y);
+
+            if (logNavFlow)
+            {
+                Debug.Log($"[BottomNavUI] 「{(left ? "清洁" : "建筑")}」移到屏幕{(left ? "左" : "右")}侧。", this);
+            }
         }
 
         private void OnDestroy()

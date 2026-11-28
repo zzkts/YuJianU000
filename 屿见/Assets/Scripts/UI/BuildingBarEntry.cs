@@ -28,6 +28,7 @@ namespace Yujian.UI
 
         private static readonly Color ReadyStatusColor = new Color(0.72f, 0.92f, 0.72f, 1f);
         private static readonly Color JustEnoughStatusColor = new Color(1f, 0.87f, 0.45f, 1f);
+        private static readonly Color PriceStatusColor = new Color(1f, 0.84f, 0.42f, 1f);
         private static readonly Color DisabledStatusColor = new Color(0.62f, 0.62f, 0.62f, 1f);
 
         private static readonly Color SelectedGlowColor = new Color(1f, 0.84f, 0.40f, 0.60f);
@@ -90,8 +91,22 @@ namespace Yujian.UI
             {
                 if (isAvailable)
                 {
-                    statusText.text = info.JustEnoughMaterials ? "原料刚好够" : "可建造";
-                    statusText.color = info.JustEnoughMaterials ? JustEnoughStatusColor : ReadyStatusColor;
+                    // 金币建造：直接把价格写在按钮上，玩家不用点进蓝图才知道要多少钱
+                    if (info.Price > 0)
+                    {
+                        statusText.text = $"{info.Price} 金币";
+                        statusText.color = PriceStatusColor;
+                    }
+                    else if (info.JustEnoughMaterials)
+                    {
+                        statusText.text = "原料刚好够";
+                        statusText.color = JustEnoughStatusColor;
+                    }
+                    else
+                    {
+                        statusText.text = "可建造";
+                        statusText.color = ReadyStatusColor;
+                    }
                 }
                 else
                 {

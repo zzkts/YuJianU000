@@ -15,9 +15,12 @@ MonoBehaviour:
   displayName: "\u77F3\u5934"
   itemId: mine_01
   baseAttack: 2.2
-  attackGrowthPerLevel: 5.25
+  attackGrowthPerLevel: 1.2
   attackPerLevel: 1
-  goldCostPerLevel: 64
-  goldCostGrowthPerLevel: 5.25
+  goldCostPerLevel: 10
+  goldCostGrowthPerLevel: 1.2
   goldCostIncreasePerLevel: 3
-  maxLevel: 6
+  maxLevel: 999
+  milestoneEvery: 10
+  milestoneAttackMultiplier: 2
+  milestoneCostMultiplier: 4

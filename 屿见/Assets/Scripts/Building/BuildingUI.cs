@@ -36,6 +36,10 @@ namespace Yujian.Building
         [Tooltip("原料库存。建筑栏位（3.7）用它判断「原料不足」。留空则跳过原料检查")]
         [SerializeField] private MaterialInventory inventory;
 
+        [Tooltip("建筑金币商店。原料退出核心循环后，建筑栏位改用它判断「金币够不够」；" +
+                 "留空会在运行时自动查找")]
+        [SerializeField] private BuildingGoldShop goldShop;
+
         [Tooltip("玩家等级。建筑栏位（3.7）用它判断「需要等级 N」。留空则跳过等级检查")]
         [SerializeField] private PlayerLevel playerLevel;
 
@@ -98,11 +102,17 @@ namespace Yujian.Building
         /// <summary>
         /// 判定清单里第 index 项现在能不能建，并给出给玩家看的原因（策划案 3.7）。
         ///
-        /// 判定顺序：等级 → 数量上限 → 原料。
-        /// 顺序有意义：一座同时「等级不够」和「原料不够」的建筑，
-        /// 提示「需要等级 5」比「原料不足」更有用（玩家知道该去干什么）。
+        /// 判定顺序：等级 → 数量上限 → 建造代价。
+        /// 顺序有意义：一座同时「等级不够」和「钱不够」的建筑，
+        /// 提示「需要等级 5」比「金币不足」更有用（玩家知道该去干什么）。
         ///
-        /// 按钮置灰、按钮里的原因文案、原料刚好够的微光，全部读这一份结论。
+        /// 建造代价分两种口径：
+        ///   · 原料系统开启：查库存，缺料返回 <see cref="BuildingAvailabilityState.MissingMaterial"/>；
+        ///   · 原料已剔除（<see cref="GameFeatureFlags.MaterialsEnabled"/> = false）：
+        ///     查金币余额，钱不够返回 <see cref="BuildingAvailabilityState.InsufficientGold"/>。
+        ///     **这一段必须先于原料检查**，否则玩家会因为「没买过材料」而选不了任何建筑。
+        ///
+        /// 按钮置灰、按钮里的原因文案、价格标签，全部读这一份结论。
         /// </summary>
         public BuildingAvailabilityInfo Evaluate(int index)
         {
@@ -145,6 +155,12 @@ namespace Yujian.Building
                     BuiltCount = builtCount,
                     Limit = limit,
                 };
+            }
+
+            // 原料退出核心循环后的判定口径：等级 / 上限之后只看金币。
+            if (GameFeatureFlags.MaterialFreeLoop)
+            {
+                return EvaluateGold(data, builtCount, limit);
             }
 
             if (inventory != null)
@@ -208,6 +224,69 @@ namespace Yujian.Building
             };
         }
 
+        /// <summary>
+        /// 原料剔除后的判定：等级与上限已经查过，这里只看金币。
+        /// 只判「现在点得动吗」，真正扣钱仍在 BuildingConstruction.ConfirmBuild，
+        /// 所以余额在这里刚够、落位后又被花掉的情况由 √ 按钮自己置灰处理。
+        /// </summary>
+        private BuildingAvailabilityInfo EvaluateGold(BuildingData data, int builtCount, int limit)
+        {
+            BuildingGoldShop shop = ResolveGoldShop();
+
+            if (shop == null || !shop.IsGoldModeActive)
+            {
+                return new BuildingAvailabilityInfo
+                {
+                    State = BuildingAvailabilityState.Invalid,
+                    Reason = "建造系统未配置金币商店",
+                    BuiltCount = builtCount,
+                    Limit = limit,
+                };
+            }
+
+            if (!shop.TryGetPrice(data, out int price))
+            {
+                return new BuildingAvailabilityInfo
+                {
+                    State = BuildingAvailabilityState.Invalid,
+                    Reason = "未配置金币价格",
+                    BuiltCount = builtCount,
+                    Limit = limit,
+                };
+            }
+
+            if (!shop.CanAfford(price))
+            {
+                return new BuildingAvailabilityInfo
+                {
+                    State = BuildingAvailabilityState.InsufficientGold,
+                    Reason = $"金币不足（需 {price}）",
+                    BuiltCount = builtCount,
+                    Limit = limit,
+                    Price = price,
+                };
+            }
+
+            return new BuildingAvailabilityInfo
+            {
+                State = BuildingAvailabilityState.Available,
+                Reason = string.Empty,
+                BuiltCount = builtCount,
+                Limit = limit,
+                Price = price,
+            };
+        }
+
+        private BuildingGoldShop ResolveGoldShop()
+        {
+            if (goldShop == null)
+            {
+                goldShop = FindFirstObjectByType<BuildingGoldShop>(FindObjectsInactive.Include);
+            }
+
+            return goldShop;
+        }
+
         /// <summary>场上已有多少座这个建筑。没有 PlacedBuildingInfo 的实例不计入。</summary>
         public int CountPlaced(BuildingData data)
         {
@@ -257,10 +336,13 @@ namespace Yujian.Building
         /// <summary>
         /// 补接线：建筑栏位在运行时发现这两个引用是空的就调一次。
         /// 已经有引用时不覆盖（Inspector 里手接的优先）。
+        ///
+        /// 原料被剔除时**不接库存**：接了会让 Evaluate 走进原料分支，
+        /// 玩家没买料就选不了任何建筑（2026-11-24 修的就是这个死锁）。
         /// </summary>
         public void EnsureAvailabilitySources(MaterialInventory materialInventory, PlayerLevel level)
         {
-            if (inventory == null)
+            if (inventory == null && GameFeatureFlags.MaterialsEnabled)
             {
                 inventory = materialInventory;
             }

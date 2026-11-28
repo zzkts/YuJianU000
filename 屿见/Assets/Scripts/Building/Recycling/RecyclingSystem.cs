@@ -345,7 +345,7 @@ namespace Yujian.Building.Recycling
             // 单线程下容量不会在两步之间变化；真发生了就把差额退回，绝不吞垃圾
             if (placed < accepted)
             {
-                garbage.AddGarbage(accepted - placed);
+                garbage.AddToStorage(accepted - placed);
             }
 
             Changed?.Invoke();
@@ -475,7 +475,7 @@ namespace Yujian.Building.Recycling
             {
                 if (garbage != null)
                 {
-                    garbage.AddGarbage(pendingRestoreQueued);
+                    garbage.AddToStorage(pendingRestoreQueued);
                 }
                 else
                 {
@@ -555,7 +555,7 @@ namespace Yujian.Building.Recycling
 
             if (garbage != null)
             {
-                garbage.AddGarbage(overflow);
+                garbage.AddToStorage(overflow);
 
                 if (logRecyclingFlow)
                 {

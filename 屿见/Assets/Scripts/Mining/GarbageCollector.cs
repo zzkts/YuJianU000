@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 using Yujian.Player;
 using Yujian.UI;
 
@@ -8,31 +9,47 @@ namespace Yujian.Mining
 {
     /// <summary>
     /// 掉落垃圾的统一收集。
-    /// 掉下来的垃圾先排队，每隔固定时间把这一批**一起**收走：
-    /// 批次里的所有垃圾块同时飞向画面右上角的资源栏，
-    /// 先加速后减速、带一段向上的弧线，拖着一条渐隐的尾迹；
-    /// 到达时增加垃圾数量，并让资源栏数字 / 图标弹一下。
     ///
-    /// 碎片在屏幕空间 Canvas 上画不出 Trail，所以这里用世界空间的物体飞行，
-    /// 目标点由 HUD 的资源栏屏幕坐标反算得到。
+    /// 掉下来的垃圾先在世界里原地缩一下、排队；每隔 <see cref="collectInterval"/> 秒
+    /// 把这一批**一起**收走，收走的瞬间整体换成 UI 图标，沿弧线飞向容器
+    /// （关卡内是垃圾背包，岛上是右上角资源栏），到达时入账并让容器弹一下。
+    ///
+    /// 2026-11-26 用户反馈「转移视觉割裂，像垃圾突然消失」，改的就是这里：
+    /// 旧实现让**世界空间的垃圾块**飞向「屏幕坐标反算出来的世界点」，
+    /// 飞到尽头时既不在 UI 层、也没真正进入 UI，画面上就是凭空消失。
+    /// 现在整段飞行都在 Canvas 上做：
+    ///   · 世界块一被收走就销毁，同一帧在它的屏幕位置生成 UI 图标，位置连续；
+    ///   · 图标在 UI 层飞，终点就是背包 / 资源栏图标的屏幕坐标，落点准确；
+    ///   · 不再需要拖尾、材质替换、世界弧线，也不会有深度错位。
+    ///
+    /// 本类不产垃圾（GarbageDropper 负责）、不决定入账规则（PlayerGarbage 负责）。
     /// </summary>
     public class GarbageCollector : MonoBehaviour
     {
         [Header("依赖")]
-        [Tooltip("全局唯一的「垃圾 · 金币」资源栏。留空时自动查找")]
+        [Tooltip("全局唯一的「垃圾 · 金币」资源栏。留空时自动查找；岛上的垃圾飞向它")]
         [SerializeField] private RecyclingHudUI resourceHud;
 
         [Tooltip("玩家垃圾。留空时自动查找（2026-11-19 起垃圾是独立资源，金币只由回收站产出）")]
         [SerializeField] private PlayerGarbage garbage;
 
-        [Tooltip("取景相机，用来把 UI 屏幕坐标换算成世界坐标。留空时用 Main Camera")]
+        [Tooltip("垃圾背包。关卡内垃圾飞向它；留空时自动查找")]
+        [SerializeField] private GarbageBag bag;
+
+        [Tooltip("背包 UI。用来取图标的屏幕位置；留空时自动查找")]
+        [SerializeField] private GarbageBagUI bagUI;
+
+        [Tooltip("取景相机，用来把垃圾块的世界坐标换算成屏幕坐标。留空时用 Main Camera")]
         [SerializeField] private Camera viewCamera;
+
+        [Tooltip("承载飞行动画的 Canvas。留空时跟着背包 / 资源栏找")]
+        [SerializeField] private Canvas uiCanvas;
 
         [Header("收集节奏")]
         [Tooltip("每隔多少秒把队列里攒下的垃圾统一收走一批")]
         [SerializeField, Min(0.01f)] private float collectInterval = 0.5f;
 
-        [Tooltip("单块垃圾从脱落点飞到资源栏的时长（秒）")]
+        [Tooltip("单个 UI 图标从垃圾块飞到容器的时长（秒）")]
         [SerializeField, Min(0.05f)] private float flightDuration = 0.45f;
 
         [Header("等待回收")]
@@ -42,35 +59,15 @@ namespace Yujian.Mining
         [Tooltip("缩小到脱落时尺寸的比例。0.45 = 缩到 45% 后停在原地排队")]
         [SerializeField, Range(0.05f, 1f)] private float queuedScale = 0.45f;
 
-        [Tooltip("飞行弧线的最高点高度（世界单位）")]
-        [SerializeField, Min(0f)] private float arcHeight = 1.2f;
+        [Header("UI 飞行表现")]
+        [Tooltip("飞行图标的大小（像素）")]
+        [SerializeField] private Vector2 iconSize = new Vector2(46f, 46f);
 
-        [Tooltip("目标点在相机前方的距离，用于把资源栏屏幕坐标换算成世界坐标")]
-        [SerializeField, Min(0.1f)] private float targetDepth = 5f;
+        [Tooltip("弧线最高点（像素）。0 = 直线")]
+        [SerializeField, Min(0f)] private float iconArcHeight = 70f;
 
-        [Header("飞行表现")]
-        [Tooltip("起飞瞬间垃圾块的缩放倍数，让它在空中稍微显眼")]
-        [SerializeField, Min(0.1f)] private float flightScaleMultiplier = 1.35f;
-
-        [Tooltip("飞行时自转速度（度 / 秒）")]
-        [SerializeField] private float spinSpeed = 240f;
-
-        [Tooltip("脱落 / 飞行时替换的材质。留空时运行时生成一个 Unlit 材质，" +
-                 "避免 Lit 材质在较暗的清洁区里看不清")]
-        [SerializeField] private Material flightMaterial;
-
-        [Tooltip("运行时生成的飞行材质颜色（flightMaterial 留空时生效）")]
-        [SerializeField] private Color flightColor = new Color(0.93f, 0.94f, 0.97f, 1f);
-
-        [Header("尾迹")]
-        [Tooltip("尾迹材质。留空时用运行时创建的白色 Sprites/Default 材质")]
-        [SerializeField] private Material trailMaterial;
-
-        [SerializeField] private Color trailStartColor = new Color(1f, 1f, 1f, 0.95f);
-        [SerializeField] private Color trailEndColor = new Color(1f, 1f, 1f, 0f);
-        [SerializeField, Min(0.01f)] private float trailTime = 0.35f;
-        [SerializeField, Min(0f)] private float trailStartWidth = 0.12f;
-        [SerializeField, Min(0f)] private float trailEndWidth = 0f;
+        [Tooltip("到达前最后这段开始淡出（0.75 = 只淡出最后 25%）")]
+        [SerializeField, Range(0f, 1f)] private float iconFadeStart = 0.75f;
 
         [Header("调试")]
         [Tooltip("是否在 Console 打印收集日志")]
@@ -94,9 +91,11 @@ namespace Yujian.Mining
         private readonly Queue<PendingPiece> pending = new Queue<PendingPiece>();
         private readonly List<PendingPiece> batchBuffer = new List<PendingPiece>();
         private readonly List<ShrinkState> shrinking = new List<ShrinkState>();
+        private readonly Stack<Image> iconPool = new Stack<Image>();
+
         private Coroutine collectRoutine;
-        private Material runtimeTrailMaterial;
-        private Material runtimeFlightMaterial;
+        private Sprite iconSprite;
+        private Camera uiCamera;
 
         /// <summary>还没被收走的垃圾块数量。</summary>
         public int PendingCount => pending.Count;
@@ -104,16 +103,6 @@ namespace Yujian.Mining
         private void Awake()
         {
             ResolveDependencies();
-
-            if (trailMaterial == null)
-            {
-                runtimeTrailMaterial = CreateRuntimeTrailMaterial();
-            }
-
-            if (flightMaterial == null)
-            {
-                runtimeFlightMaterial = CreateRuntimeFlightMaterial(flightColor);
-            }
         }
 
         private void OnEnable()
@@ -174,27 +163,16 @@ namespace Yujian.Mining
             }
         }
 
-        private void OnDestroy()
-        {
-            if (runtimeTrailMaterial != null)
-            {
-                Destroy(runtimeTrailMaterial);
-            }
-
-            if (runtimeFlightMaterial != null)
-            {
-                Destroy(runtimeFlightMaterial);
-            }
-        }
-
-        /// <summary>编辑器向导调用。</summary>
+        /// <summary>
+        /// 编辑器向导调用。
+        /// trailMaterial 是旧世界飞行留下的参数，现在不再使用，保留签名只为不破坏已有向导。
+        /// </summary>
         public void ConfigureForSetup(RecyclingHudUI newResourceHud, PlayerGarbage newGarbage,
-            Camera newCamera, Material newTrailMaterial)
+            Camera newCamera, Material trailMaterial)
         {
             resourceHud = newResourceHud;
             garbage = newGarbage;
             viewCamera = newCamera;
-            trailMaterial = newTrailMaterial;
         }
 
         private void ResolveDependencies()
@@ -207,6 +185,16 @@ namespace Yujian.Mining
             if (garbage == null)
             {
                 garbage = FindFirstObjectByType<PlayerGarbage>(FindObjectsInactive.Include);
+            }
+
+            if (bag == null)
+            {
+                bag = FindFirstObjectByType<GarbageBag>(FindObjectsInactive.Include);
+            }
+
+            if (bagUI == null)
+            {
+                bagUI = FindFirstObjectByType<GarbageBagUI>(FindObjectsInactive.Include);
             }
 
             if (viewCamera == null)
@@ -242,9 +230,6 @@ namespace Yujian.Mining
                 {
                     continue;
                 }
-
-                // 一脱落就换成不依赖光照的材质：垃圾在暗处等待收集时也看得见。
-                ApplyFlightMaterial(piece);
 
                 // 掉落表现：先在原地缩小，再停在缩小的尺寸上排队等这一批被收走
                 BeginShrink(piece);
@@ -314,9 +299,9 @@ namespace Yujian.Mining
                     batchAmount += batchBuffer[i].Amount;
                 }
 
-                if (resourceHud != null && !resourceHud.IsResourceVisible)
+                if (!HasVisibleTarget())
                 {
-                    // 资源栏不在屏幕上（界面未构建 / 被关掉）：
+                    // 容器不在屏幕上（界面未构建 / 被关掉）：
                     // 整批直接结算并清掉世界里的垃圾块，避免垃圾飘在场景里。
                     for (int i = 0; i < batchBuffer.Count; i++)
                     {
@@ -330,7 +315,7 @@ namespace Yujian.Mining
 
                     if (logCollectFlow)
                     {
-                        Debug.Log($"[GarbageCollector] 界面隐藏，直接结算一批 {batchBuffer.Count} 块，垃圾 +{batchAmount}。", this);
+                        Debug.Log($"[GarbageCollector] 容器不可见，直接结算一批 {batchBuffer.Count} 块，垃圾 +{batchAmount}。", this);
                     }
 
                     continue;
@@ -359,18 +344,36 @@ namespace Yujian.Mining
             }
         }
 
+        /// <summary>
+        /// 单个垃圾块的「世界 → UI 图标 → 容器」动画。
+        /// 世界块在这里就销毁，UI 图标接在同一屏幕位置上，所以玩家看到的是连续的。
+        /// </summary>
         private IEnumerator FlyRoutine(PendingPiece entry)
         {
             GameObject piece = entry.Piece;
-            TrailRenderer trail = AttachTrail(piece);
 
-            // 还在缩小的块直接落到目标尺寸再起飞，避免起飞后 Update 又把它改回大尺寸
-            FinishShrinkImmediately(piece);
+            Vector2 start = Vector2.zero;
+            bool hasStart = piece != null && TryWorldToCanvasPoint(piece.transform.position, out start);
 
-            Vector3 start = piece.transform.position;
-            Vector3 startScale = piece.transform.localScale;
-            piece.transform.localScale = startScale * Mathf.Max(0.1f, flightScaleMultiplier);
+            if (piece != null)
+            {
+                // 立刻退场：接下来由 UI 图标代表这块垃圾
+                Destroy(piece);
+            }
 
+            Image icon = null;
+            Canvas canvas = ResolveUiCanvas();
+
+            if (hasStart && canvas != null)
+            {
+                icon = RentIcon(canvas);
+                icon.rectTransform.anchoredPosition = start;
+                icon.rectTransform.localScale = Vector3.one;
+                icon.color = Color.white;
+                icon.gameObject.SetActive(true);
+            }
+
+            Vector2 target = ResolveTargetCanvasPoint();
             float duration = Mathf.Max(0.05f, flightDuration);
             float elapsed = 0f;
 
@@ -380,14 +383,28 @@ namespace Yujian.Mining
 
                 float t = Mathf.Clamp01(elapsed / duration);
                 float eased = Mathf.SmoothStep(0f, 1f, t);
-                Vector3 target = ResolveTargetWorld();
-                Vector3 position = Vector3.Lerp(start, target, eased);
-                position += Vector3.up * (arcHeight * Mathf.Sin(t * Mathf.PI));
 
-                if (piece != null)
+                if (icon != null)
                 {
-                    piece.transform.position = position;
-                    piece.transform.Rotate(Vector3.up, spinSpeed * Time.deltaTime, Space.World);
+                    Vector2 position = Vector2.Lerp(start, target, eased);
+                    position.y += Mathf.Sin(t * Mathf.PI) * iconArcHeight;
+                    icon.rectTransform.anchoredPosition = position;
+
+                    // 排队时世界块已经缩到 45%，图标如果一上来就是原尺寸会“跳”一下。
+                    // 入场先小一点，飞到 30% 时回到原尺寸，再收进容器。
+                    float scale = t < 0.3f
+                        ? Mathf.Lerp(0.6f, 1f, t / 0.3f)
+                        : Mathf.Lerp(1f, 0.5f, (t - 0.3f) / 0.7f);
+                    icon.rectTransform.localScale = Vector3.one * scale;
+
+                    float fadeStart = Mathf.Clamp01(iconFadeStart);
+
+                    if (t > fadeStart)
+                    {
+                        Color color = icon.color;
+                        color.a = 1f - Mathf.InverseLerp(fadeStart, 1f, t);
+                        icon.color = color;
+                    }
                 }
 
                 yield return null;
@@ -396,42 +413,162 @@ namespace Yujian.Mining
             AddGarbage(entry.Amount);
 
             // 一批 4 块只分到 2 点垃圾时，会有 0 点的块；
-            // 它们只负责飞行动画，不应该让资源栏空弹一下。
+            // 它们只负责飞行动画，不应该让容器空弹一下。
             // 同批的块在同一帧到达，重复调用会重启同一个弹跳协程，视觉上只弹一次。
-            if (entry.Amount > 0 && resourceHud != null)
+            if (entry.Amount > 0)
             {
-                resourceHud.PlayResourcePunch();
+                bool intoBag = bag != null && bag.IsOpen;
+
+                if (intoBag && bagUI != null)
+                {
+                    bagUI.PlayPunch();
+                }
+                else if (resourceHud != null)
+                {
+                    resourceHud.PlayResourcePunch();
+                }
             }
 
-            if (trail != null)
+            if (icon != null)
             {
-                trail.emitting = false;
-            }
-
-            if (piece != null)
-            {
-                Destroy(piece);
+                ReturnIcon(icon);
             }
         }
 
-        private Vector3 ResolveTargetWorld()
+        /// <summary>当前有没有可见的容器可以飞——关卡内看背包，岛上卡资源栏。</summary>
+        private bool HasVisibleTarget()
         {
-            Camera camera = viewCamera != null ? viewCamera : Camera.main;
-
-            if (camera == null)
+            if (bag != null && bag.IsOpen && bagUI != null)
             {
-                return Vector3.zero;
+                return true;
             }
 
-            Vector2 screenPoint;
+            return resourceHud != null && resourceHud.IsResourceVisible;
+        }
 
-            if (resourceHud == null || !resourceHud.TryGetResourceScreenPoint(out screenPoint))
+        /// <summary>容器图标在屏幕上的位置：关卡内是背包，岛上是资源栏。</summary>
+        private Vector2 ResolveTargetScreenPoint()
+        {
+            if (bag != null && bag.IsOpen && bagUI != null && bagUI.TryGetBagScreenPoint(out Vector2 bagPoint))
             {
-                screenPoint = new Vector2(Screen.width * 0.92f, Screen.height * 0.95f);
+                return bagPoint;
             }
 
-            float depth = Mathf.Max(camera.nearClipPlane + 0.1f, targetDepth);
-            return camera.ScreenToWorldPoint(new Vector3(screenPoint.x, screenPoint.y, depth));
+            if (resourceHud != null && resourceHud.TryGetResourceScreenPoint(out Vector2 resourcePoint))
+            {
+                return resourcePoint;
+            }
+
+            return new Vector2(Screen.width * 0.92f, Screen.height * 0.95f);
+        }
+
+        private Vector2 ResolveTargetCanvasPoint()
+        {
+            Vector2 screen = ResolveTargetScreenPoint();
+            Canvas canvas = ResolveUiCanvas();
+
+            if (canvas != null &&
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    canvas.transform as RectTransform, screen, uiCamera, out Vector2 local))
+            {
+                return local;
+            }
+
+            return screen;
+        }
+
+        private bool TryWorldToCanvasPoint(Vector3 worldPosition, out Vector2 canvasPoint)
+        {
+            canvasPoint = default;
+
+            Canvas canvas = ResolveUiCanvas();
+            Camera worldCamera = viewCamera != null ? viewCamera : Camera.main;
+
+            if (canvas == null || worldCamera == null)
+            {
+                return false;
+            }
+
+            Vector3 screen = worldCamera.WorldToScreenPoint(worldPosition);
+
+            // 在相机背后就不飞了，免得图标从屏幕外窜进来
+            if (screen.z < 0f)
+            {
+                return false;
+            }
+
+            return RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                canvas.transform as RectTransform, screen, uiCamera, out canvasPoint);
+        }
+
+        private Canvas ResolveUiCanvas()
+        {
+            if (uiCanvas == null && bagUI != null)
+            {
+                uiCanvas = bagUI.GetComponentInParent<Canvas>(true);
+            }
+
+            if (uiCanvas == null && resourceHud != null)
+            {
+                uiCanvas = resourceHud.GetComponentInParent<Canvas>(true);
+            }
+
+            if (uiCanvas != null)
+            {
+                // Overlay 画布要传 null，Camera 模式要传 worldCamera
+                uiCamera = uiCanvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : uiCanvas.worldCamera;
+            }
+
+            return uiCanvas;
+        }
+
+        private Image RentIcon(Canvas canvas)
+        {
+            while (iconPool.Count > 0)
+            {
+                Image pooled = iconPool.Pop();
+
+                if (pooled != null)
+                {
+                    return pooled;
+                }
+            }
+
+            GameObject go = new GameObject("GarbageFlyIcon", typeof(RectTransform), typeof(Image));
+            Image image = go.GetComponent<Image>();
+            image.sprite = ResolveIconSprite();
+            image.raycastTarget = false;
+            image.preserveAspect = true;
+
+            RectTransform rect = image.rectTransform;
+            rect.SetParent(canvas.transform, false);
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = iconSize;
+
+            return image;
+        }
+
+        private void ReturnIcon(Image icon)
+        {
+            if (icon == null)
+            {
+                return;
+            }
+
+            icon.gameObject.SetActive(false);
+            iconPool.Push(icon);
+        }
+
+        private Sprite ResolveIconSprite()
+        {
+            if (iconSprite == null)
+            {
+                iconSprite = GarbageIconFactory.Create(64);
+            }
+
+            return iconSprite;
         }
 
         /// <summary>开始「脱落后原地缩小」的动画。</summary>
@@ -460,85 +597,6 @@ namespace Yujian.Mining
             });
         }
 
-        /// <summary>立刻结束缩小（起飞时用），把块固定到排队尺寸。</summary>
-        private void FinishShrinkImmediately(GameObject piece)
-        {
-            if (piece == null)
-            {
-                return;
-            }
-
-            for (int i = shrinking.Count - 1; i >= 0; i--)
-            {
-                if (shrinking[i].Piece != piece)
-                {
-                    continue;
-                }
-
-                Vector3 target = shrinking[i].TargetScale;
-                shrinking.RemoveAt(i);
-                piece.transform.localScale = target;
-                return;
-            }
-        }
-
-        /// <summary>
-        /// 把垃圾块的材质换成不依赖场景光照的版本。
-        /// 只换 Renderer，不动刚加上的 TrailRenderer。
-        /// </summary>
-        private void ApplyFlightMaterial(GameObject piece)
-        {
-            Material material = flightMaterial != null ? flightMaterial : runtimeFlightMaterial;
-
-            if (material == null || piece == null)
-            {
-                return;
-            }
-
-            Renderer[] renderers = piece.GetComponentsInChildren<Renderer>(true);
-
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                if (renderers[i] == null || renderers[i] is TrailRenderer)
-                {
-                    continue;
-                }
-
-                renderers[i].sharedMaterial = material;
-            }
-        }
-
-        private TrailRenderer AttachTrail(GameObject piece)
-        {
-            TrailRenderer trail = piece.GetComponent<TrailRenderer>();
-
-            if (trail == null)
-            {
-                trail = piece.AddComponent<TrailRenderer>();
-            }
-
-            Material material = trailMaterial != null ? trailMaterial : runtimeTrailMaterial;
-
-            if (material != null)
-            {
-                trail.sharedMaterial = material;
-            }
-
-            trail.time = trailTime;
-            trail.minVertexDistance = 0.02f;
-            trail.startWidth = trailStartWidth;
-            trail.endWidth = trailEndWidth;
-            trail.startColor = trailStartColor;
-            trail.endColor = trailEndColor;
-            trail.numCapVertices = 2;
-            trail.numCornerVertices = 2;
-            trail.alignment = LineAlignment.View;
-            trail.textureMode = LineTextureMode.Stretch;
-            trail.emitting = true;
-            trail.Clear();
-            return trail;
-        }
-
         private void AddGarbage(int amount)
         {
             if (amount <= 0)
@@ -557,89 +615,15 @@ namespace Yujian.Mining
             garbage.AddGarbage(amount);
         }
 
-        private static Material CreateRuntimeFlightMaterial(Color color)
-        {
-            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
-
-            if (shader == null)
-            {
-                shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-            }
-
-            if (shader == null)
-            {
-                shader = Shader.Find("Sprites/Default");
-            }
-
-            if (shader == null)
-            {
-                // 找不到 Unlit 时保留原材质，至少不会把垃圾换成洋红色。
-                Debug.LogWarning("[GarbageCollector] 找不到 Unlit 着色器，飞行垃圾仍使用原材质。", null);
-                return null;
-            }
-
-            Material material = new Material(shader)
-            {
-                name = "Garbage_Flight_Runtime",
-            };
-
-            if (material.HasProperty("_BaseColor"))
-            {
-                material.SetColor("_BaseColor", color);
-            }
-
-            if (material.HasProperty("_Color"))
-            {
-                material.SetColor("_Color", color);
-            }
-
-            return material;
-        }
-
-        private static Material CreateRuntimeTrailMaterial()
-        {
-            Shader shader = Shader.Find("Sprites/Default");
-
-            if (shader == null)
-            {
-                shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-            }
-
-            if (shader == null)
-            {
-                return null;
-            }
-
-            Material material = new Material(shader)
-            {
-                name = "Garbage_Trail_Runtime",
-            };
-
-            if (material.HasProperty("_Color"))
-            {
-                material.SetColor("_Color", Color.white);
-            }
-
-            if (material.HasProperty("_BaseColor"))
-            {
-                material.SetColor("_BaseColor", Color.white);
-            }
-
-            return material;
-        }
-
         private void OnValidate()
         {
             collectInterval = Mathf.Max(0.01f, collectInterval);
             flightDuration = Mathf.Max(0.05f, flightDuration);
             shrinkDuration = Mathf.Max(0f, shrinkDuration);
             queuedScale = Mathf.Clamp(queuedScale, 0.05f, 1f);
-            arcHeight = Mathf.Max(0f, arcHeight);
-            targetDepth = Mathf.Max(0.1f, targetDepth);
-            flightScaleMultiplier = Mathf.Max(0.1f, flightScaleMultiplier);
-            trailTime = Mathf.Max(0.01f, trailTime);
-            trailStartWidth = Mathf.Max(0f, trailStartWidth);
-            trailEndWidth = Mathf.Max(0f, trailEndWidth);
+            iconSize = new Vector2(Mathf.Max(8f, iconSize.x), Mathf.Max(8f, iconSize.y));
+            iconArcHeight = Mathf.Max(0f, iconArcHeight);
+            iconFadeStart = Mathf.Clamp(iconFadeStart, 0f, 1f);
         }
     }
 }

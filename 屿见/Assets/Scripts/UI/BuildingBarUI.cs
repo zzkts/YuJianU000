@@ -199,7 +199,9 @@ namespace Yujian.UI
                 buildingManager = Object.FindFirstObjectByType<BuildingManager>();
             }
 
-            if (inventory == null)
+            // 原料被剔除时不要去找库存：找到就会被接进 BuildingUI，
+            // 建筑栏随即按「原料不足」置灰，玩家没买料就再也点不动任何建筑。
+            if (GameFeatureFlags.MaterialsEnabled && inventory == null)
             {
                 inventory = Object.FindFirstObjectByType<MaterialInventory>();
             }
@@ -221,7 +223,8 @@ namespace Yujian.UI
 
             if (buildingUI != null)
             {
-                buildingUI.EnsureAvailabilitySources(inventory, playerLevel);
+                buildingUI.EnsureAvailabilitySources(
+                    GameFeatureFlags.MaterialsEnabled ? inventory : null, playerLevel);
             }
 
             if (buildingUI == null)
@@ -231,8 +234,12 @@ namespace Yujian.UI
 
             if (logFlow)
             {
+                string costSource = GameFeatureFlags.MaterialsEnabled
+                    ? $"库存 {(inventory != null ? "有" : "缺")}"
+                    : "金币建造（原料已剔除）";
+
                 Debug.Log($"[BuildingBarUI] 已接线：建筑清单 {(buildingUI != null ? buildingUI.AvailableBuildingCount : 0)} 项，" +
-                          $"库存 {(inventory != null ? "有" : "缺")}，等级 {(playerLevel != null ? "有" : "缺")}。", this);
+                          $"{costSource}，等级 {(playerLevel != null ? "有" : "缺")}。", this);
             }
         }
 

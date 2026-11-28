@@ -1,5 +1,6 @@
 using UnityEngine;
 using Yujian.Building;
+using Yujian.Core;
 using Yujian.Player;
 
 namespace Yujian.Shop
@@ -14,6 +15,9 @@ namespace Yujian.Shop
     ///
     /// 关掉开关（或把本组件从场景里移除）就完全回到原来的「拖原料建造」流程，
     /// 所以这是一版可随时回退的隔离实现，不改动 BuildingData 的材料配置。
+    /// **例外**：原料系统被 <see cref="GameFeatureFlags.MaterialsEnabled"/> 全局关闭时，
+    /// 开关不再有意义——金币是唯一建造路径（<see cref="IsGoldModeActive"/>），
+    /// 免得出现「材料没了、钱也不能花」的死局。
     ///
     /// 职责边界：只做「查价 / 能不能付 / 付 / 退」。
     /// 不生成建筑（BuildingConstruction 负责）、不画 UI、不碰材料库存。
@@ -39,8 +43,19 @@ namespace Yujian.Shop
         private bool warnedMissingCurrency;
         private bool warnedMissingCatalog;
 
-        /// <summary>当前是否处于金币建造模式。关掉后 BuildingConstruction 会走原料流程。</summary>
+        /// <summary>
+        /// Inspector 上的开关本身。
+        /// 注意：判断「现在到底是不是金币建造」请用 <see cref="IsGoldModeActive"/>——
+        /// 原料系统被 <see cref="GameFeatureFlags.MaterialsEnabled"/> 关掉时，
+        /// 就算这里没勾，实际也只能走金币建造。
+        /// </summary>
         public bool IsEnabled => useGoldPurchase;
+
+        /// <summary>
+        /// 当前**实际生效**的金币建造模式。
+        /// = Inspector 开关打开，或者原料系统已被全局剔除（此时金币是唯一建造路径）。
+        /// </summary>
+        public bool IsGoldModeActive => useGoldPurchase || GameFeatureFlags.MaterialFreeLoop;
 
         /// <summary>玩家金币组件，可能为空。</summary>
         public PlayerCurrency Currency => currency;
@@ -50,7 +65,7 @@ namespace Yujian.Shop
 
         private void Awake()
         {
-            if (!useGoldPurchase)
+            if (!IsGoldModeActive)
             {
                 return;
             }
@@ -78,13 +93,13 @@ namespace Yujian.Shop
 
         /// <summary>
         /// 查建筑的金币价。价目表或建筑缺失时返回 false。
-        /// 关闭金币模式时也返回 false——调用方应先看 <see cref="IsEnabled"/>。
+        /// 不在金币建造模式时也返回 false——调用方应先看 <see cref="IsGoldModeActive"/>。
         /// </summary>
         public bool TryGetPrice(BuildingData building, out int price)
         {
             price = 0;
 
-            if (!useGoldPurchase || building == null)
+            if (!IsGoldModeActive || building == null)
             {
                 return false;
             }

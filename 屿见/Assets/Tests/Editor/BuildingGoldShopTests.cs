@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using UnityEngine;
 using Yujian.Building;
+using Yujian.Core;
 using Yujian.Player;
 using Yujian.Shop;
 
@@ -20,6 +21,7 @@ namespace Yujian.Tests
         [SetUp]
         public void CreateShop()
         {
+            GameFeatureFlags.ResetToDefault();
             building = Track(ScriptableObject.CreateInstance<BuildingData>());
             building.name = "测试建筑";
             TestReflect.Set(building, "buildingName", "测试建筑");
@@ -115,10 +117,20 @@ namespace Yujian.Tests
         [Test]
         public void DisabledSwitch_ReportsDisabledAndHasNoPrices()
         {
+            // 「关掉开关」只有在原料系统还在的时候才有意义：
+            // 原料被全局剔除时金币是唯一建造路径，开关不起作用（见 MaterialFreeLoopTests）。
+            GameFeatureFlags.MaterialsEnabled = true;
             TestReflect.Set(shop, "useGoldPurchase", false);
 
             Assert.That(shop.IsEnabled, Is.False);
+            Assert.That(shop.IsGoldModeActive, Is.False);
             Assert.That(shop.TryGetPrice(building, out _), Is.False);
+        }
+
+        [TearDown]
+        public void ResetFeatureFlags()
+        {
+            GameFeatureFlags.ResetToDefault();
         }
     }
 }

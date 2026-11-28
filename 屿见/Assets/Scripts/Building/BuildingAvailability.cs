@@ -22,6 +22,9 @@ namespace Yujian.Building
 
         /// <summary>数据本身有问题（清单里是空引用等），不是玩家的问题。</summary>
         Invalid = 4,
+
+        /// <summary>金币不够。原料退出核心循环后，这是建筑栏最常见的「暂不可建」原因。</summary>
+        InsufficientGold = 5,
     }
 
     /// <summary>
@@ -43,6 +46,12 @@ namespace Yujian.Building
 
         /// <summary>原料不多不少、正好够建这一座。工具栏位用它点亮按钮边框。</summary>
         public bool JustEnoughMaterials;
+
+        /// <summary>
+        /// 建造价格（金币）。原料退出核心循环后由建筑栏直接显示在按钮上；
+        /// 0 表示免费或未走金币模式。
+        /// </summary>
+        public int Price;
 
         /// <summary>场上已有的同种建筑数量。</summary>
         public int BuiltCount;

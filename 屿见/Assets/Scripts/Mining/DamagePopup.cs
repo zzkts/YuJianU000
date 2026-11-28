@@ -35,6 +35,31 @@ namespace Yujian.Mining
         [Min(1f)]
         [SerializeField] private float criticalFontScale = 1.3f;
 
+        [Header("超级暴击（2026-11-26）")]
+        [Tooltip("超级暴击数字颜色，默认亮金")]
+        [SerializeField] private Color superCriticalColor = new Color(1f, 0.93f, 0.45f, 1f);
+
+        [Tooltip("超级暴击数字相对普通数字的放大倍数。要明显大于暴击")]
+        [Min(1f)]
+        [SerializeField] private float superCriticalFontScale = 2.6f;
+
+        [Tooltip("超级暴击的停留时长倍数。1.6 = 比普通伤害数字多留 60% 的时间")]
+        [Min(1f)]
+        [SerializeField] private float superCriticalLifetimeScale = 1.6f;
+
+        [Tooltip("超级暴击的弹入时长（秒）：从 55% 弹到 118% 再落回 100%")]
+        [Min(0.01f)]
+        [SerializeField] private float superCriticalPopDuration = 0.22f;
+
+        [Tooltip("超级暴击的描边颜色，用来和普通暴击的橙色拉开距离")]
+        [SerializeField] private Color superCriticalOutlineColor = new Color(0.55f, 0.22f, 0f, 1f);
+
+        [Tooltip("超级暴击描边粗细（像素偏移）")]
+        [SerializeField] private Vector2 superCriticalOutlineDistance = new Vector2(2.5f, -2.5f);
+
+        [Tooltip("超级暴击的前缀。内置字体没有中文字形，所以用英文")]
+        [SerializeField] private string superCriticalPrefix = "SUPER";
+
         [Header("调试")]
         [Tooltip("配置表缺失或缺行时是否在 Console 报错")]
         [SerializeField] private bool logStyleFallback = true;
@@ -56,6 +81,8 @@ namespace Yujian.Mining
         private Vector3 startWorldPosition;
         private float elapsed;
         private bool playing;
+        private bool superPopup;
+        private float activeLifetime = 1f;
 
         // 每次受击都会新建一个 DamagePopup，警告用静态标记，避免刷屏
         private static bool warnedAboutMissingCanvas;
@@ -80,6 +107,15 @@ namespace Yujian.Mining
         /// <param name="isCritical">本次伤害是否暴击。</param>
         public void Play(float damage, DamageSource source, bool isCritical)
         {
+            Play(damage, source, isCritical, false);
+        }
+
+        /// <summary>
+        /// 播放一次伤害数字；超级暴击用更大的金色字，是「数字在跳」最直接的反馈。
+        /// </summary>
+        /// <param name="isSuperCritical">本次是否触发超级暴击。为 true 时覆盖暴击样式。</param>
+        public void Play(float damage, DamageSource source, bool isCritical, bool isSuperCritical)
+        {
             if (!IsInMiningArea())
             {
                 Destroy(gameObject);
@@ -93,15 +129,64 @@ namespace Yujian.Mining
             }
 
             DamageNumberTable.Style style = ResolveStyle(source);
-            baseColor = isCritical ? criticalColor : style.Color;
 
-            // 伤害数字使用 Unity 内置字体，不含中文字形，所以暴击标记用 CRIT 而不是「暴击」，
-            // 避免显示成方框。以后换上中文字体可以再改成中文。
-            label.text = isCritical ? $"CRIT {damage:0.##}" : damage.ToString("0.##");
-            label.fontSize = Mathf.Max(1, Mathf.RoundToInt(style.FontSize * (isCritical ? Mathf.Max(1f, criticalFontScale) : 1f)));
-            label.fontStyle = style.Bold ? FontStyle.Bold : FontStyle.Normal;
+            // 超级暴击 > 普通暴击 > 普通
+            float scale = 1f;
+
+            if (isSuperCritical)
+            {
+                baseColor = superCriticalColor;
+                scale = Mathf.Max(criticalFontScale, superCriticalFontScale);
+            }
+            else if (isCritical)
+            {
+                baseColor = criticalColor;
+                scale = Mathf.Max(1f, criticalFontScale);
+            }
+            else
+            {
+                baseColor = style.Color;
+            }
+
+            // 伤害数字使用 Unity 内置字体，不含中文字形，所以暴击标记用英文，避免显示成方框。
+            // 2026-11-26：数值改走单位缩写（4.3k / 1.2m），否则新曲线下 40 级会糊一串长数字。
+            string amount = NumberFormat.Compact(damage);
+            label.text = isSuperCritical
+                ? $"{superCriticalPrefix} CRIT {amount}"
+                : isCritical
+                    ? $"CRIT {amount}"
+                    : amount;
+
+            label.fontSize = Mathf.Max(1, Mathf.RoundToInt(style.FontSize * scale));
+            label.fontStyle = style.Bold || isCritical || isSuperCritical ? FontStyle.Bold : FontStyle.Normal;
             label.color = baseColor;
             label.enabled = true;
+
+            superPopup = isSuperCritical;
+
+            // 超级暴击多留一会儿，让玩家来得及看清这个数字
+            activeLifetime = lifetime * (superPopup ? Mathf.Max(1f, superCriticalLifetimeScale) : 1f);
+
+            if (superPopup && labelRect != null)
+            {
+                // 描边：把金字从橙色暴击里彻底拎出来。每个飘字有自己的 Text，不会污染别的数字。
+                Outline outline = label.gameObject.GetComponent<Outline>();
+
+                if (outline == null)
+                {
+                    outline = label.gameObject.AddComponent<Outline>();
+                }
+
+                outline.effectColor = superCriticalOutlineColor;
+                outline.effectDistance = superCriticalOutlineDistance;
+                outline.useGraphicAlpha = false;
+
+                labelRect.localScale = Vector3.one * 0.55f;
+            }
+            else if (labelRect != null)
+            {
+                labelRect.localScale = Vector3.one;
+            }
 
             startWorldPosition = transform.position;
             elapsed = 0f;
@@ -118,7 +203,7 @@ namespace Yujian.Mining
             }
 
             elapsed += Time.deltaTime;
-            float progress = lifetime > 0f ? Mathf.Clamp01(elapsed / lifetime) : 1f;
+            float progress = activeLifetime > 0f ? Mathf.Clamp01(elapsed / activeLifetime) : 1f;
 
             UpdateVisuals(progress);
 
@@ -244,6 +329,19 @@ namespace Yujian.Mining
             Color faded = baseColor;
             faded.a = baseColor.a * (1f - progress);
             label.color = faded;
+
+            // 超级暴击的弹入：0.55 → 1.18 → 1.0。
+            // 只靠字号和颜色区分不够（连击时玩家根本来不及比大小），
+            // 加一段「弹一下」的运动，才是一眼能认出来的信号。
+            if (superPopup && labelRect != null)
+            {
+                float t = Mathf.Clamp01(elapsed / Mathf.Max(0.01f, superCriticalPopDuration));
+                float pop = t < 0.6f
+                    ? Mathf.Lerp(0.55f, 1.18f, t / 0.6f)
+                    : Mathf.Lerp(1.18f, 1f, (t - 0.6f) / 0.4f);
+
+                labelRect.localScale = Vector3.one * pop;
+            }
         }
 
         /// <summary>把伤害数字的世界坐标重投影到 Canvas 上。相机移动时数字仍贴着矿石。</summary>

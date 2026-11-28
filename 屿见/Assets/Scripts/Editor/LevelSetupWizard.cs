@@ -23,7 +23,7 @@ namespace Yujian.EditorTools
     /// </summary>
     public static class LevelSetupWizard
     {
-        private const string SampleScenePath = "Assets/Scenes/SampleScene.unity";
+        private static string SampleScenePath => EditorScenePaths.MainScenePath;
         private const string MaterialsFolder = "Assets/Materials";
         private const string LevelFolder = "Assets/Materials/Level";
         private const string LockedMaterialPath = "Assets/Materials/Level/Level_Block.mat";

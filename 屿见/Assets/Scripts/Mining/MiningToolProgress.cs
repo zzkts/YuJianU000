@@ -37,6 +37,14 @@ namespace Yujian.Mining
         /// <summary>是否已经到顶。满级后不再提供升级与升级费用。</summary>
         public bool IsMaxLevel => CurrentLevel >= MaxLevel;
 
+        /// <summary>下一次里程碑等级（10/20/30…）。数据未配置时按 +10 估算。</summary>
+        public int NextMilestoneLevel => toolData != null
+            ? toolData.NextMilestoneLevel(CurrentLevel)
+            : CurrentLevel + 10;
+
+        /// <summary>下一级是不是里程碑（伤害翻倍、花费翻几倍的那一下）。</summary>
+        public bool IsNextLevelMilestone => toolData != null && toolData.IsMilestoneLevel(CurrentLevel + 1);
+
         /// <summary>当前攻击力。D7=A 起是几何曲线的浮点值，可能是 1.82 这种小数。</summary>
         public float CurrentAttack => toolData != null ? toolData.GetAttackAtLevel(CurrentLevel) : 1f;
 
